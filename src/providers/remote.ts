@@ -89,23 +89,96 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+function githubApiHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { "user-agent": "aioplugins-local" };
+  const token = process.env.AIOPLUGINS_GITHUB_TOKEN || process.env.GITHUB_TOKEN || "";
+  if (token) headers.authorization = `Bearer ${token}`;
+  return headers;
+}
+
+function describeGithubError(kind: string, response: Response, body: string): string {
+  let detail = body.trim() || response.statusText || "no details";
+  try {
+    const parsed = JSON.parse(detail) as { message?: unknown; error?: unknown };
+    if (typeof parsed.message === "string") detail = parsed.message;
+    else if (typeof parsed.error === "string") detail = parsed.error;
+  } catch {
+    // keep the raw body as-is
+  }
+  if (detail.length > 300) detail = `${detail.slice(0, 300)}…`;
+  const used = response.headers.get("x-ratelimit-used");
+  const limit = response.headers.get("x-ratelimit-limit");
+  const reset = response.headers.get("x-ratelimit-reset");
+  let suffix = "";
+  if (limit) {
+    const when = reset ? `, resets ${new Date(Number(reset) * 1000).toISOString()}` : "";
+    suffix = ` [rate limit ${used ?? "?"}/${limit}${when}]`;
+  }
+  return `${kind} failed (${response.status}): ${detail}${suffix}`;
+}
+
 async function fetchJson(url: string): Promise<unknown> {
-  const response = await fetch(url, { headers: { "user-agent": "aioplugins-local" } });
-  if (!response.ok) throw new Error(`GitHub request failed (${response.status})`);
+  const response = await fetch(url, { headers: githubApiHeaders() });
+  if (!response.ok) {
+    throw new Error(describeGithubError("GitHub request", response, await response.text()));
+  }
   return response.json();
 }
 
 async function fetchText(url: string): Promise<string> {
-  const response = await fetch(url, { headers: { "user-agent": "aioplugins-local" } });
-  if (!response.ok) throw new Error(`GitHub file request failed (${response.status})`);
+  const response = await fetch(url, { headers: githubApiHeaders() });
+  if (!response.ok) {
+    throw new Error(describeGithubError("GitHub file request", response, await response.text()));
+  }
   const source = await response.text();
   if (Buffer.byteLength(source, "utf8") > MAX_PROVIDER_BYTES) throw new Error("Provider file is larger than 8 MB");
   return source;
 }
 
-async function loadSource(repositoryValue: string, refValue = "main") {
+interface DiscoveryCacheEntry {
+  commit: string;
+  manifest: unknown;
+  fetchedAt: number;
+}
+
+// In-production pages re-inspect every saved source on load. Caching the
+// discovered commit + manifest (10 minutes) keeps those restores off the
+// GitHub API, which is strictly rate-limited on shared hosts like Render.
+// `applyRemoteSelections` deliberately bypasses the cache so the
+// "source changed after discovery" integrity check still gets fresh data.
+const DISCOVERY_CACHE_TTL_MS = 10 * 60 * 1000;
+
+function discoveryCacheFile(storageRoot: string): string {
+  return resolve(storageRoot, ".aioplugins-discovery-cache.json");
+}
+
+function readDiscoveryCache(storageRoot: string): Record<string, DiscoveryCacheEntry> {
+  try {
+    const parsed = JSON.parse(readFileSync(discoveryCacheFile(storageRoot), "utf8"));
+    return parsed && typeof parsed === "object" ? parsed as Record<string, DiscoveryCacheEntry> : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeDiscoveryCache(storageRoot: string, entries: Record<string, DiscoveryCacheEntry>): void {
+  writeFileSync(discoveryCacheFile(storageRoot), JSON.stringify(entries, null, 2));
+}
+
+async function loadSource(repositoryValue: string, refValue = "main", storageRoot?: string) {
   const repository = parseRepository(repositoryValue);
   const ref = refValue.trim() || "main";
+  const cacheKey = `${repository.url}@${ref}`;
+  const cached = storageRoot ? readDiscoveryCache(storageRoot)[cacheKey] : undefined;
+  if (cached && Date.now() - cached.fetchedAt < DISCOVERY_CACHE_TTL_MS) {
+    return {
+      ...repository,
+      ref,
+      commit: cached.commit,
+      manifest: cached.manifest,
+      entries: manifestEntries(cached.manifest)
+    };
+  }
   const commitData = await fetchJson(`https://api.github.com/repos/${repository.owner}/${repository.repo}/commits/${encodeURIComponent(ref)}`);
   if (!commitData || typeof commitData !== "object" || typeof (commitData as { sha?: unknown }).sha !== "string") {
     throw new Error("GitHub did not return a commit for this ref");
@@ -113,11 +186,16 @@ async function loadSource(repositoryValue: string, refValue = "main") {
   const commit = (commitData as { sha: string }).sha;
   const manifestUrl = `https://raw.githubusercontent.com/${repository.owner}/${repository.repo}/${commit}/manifest.json`;
   const manifest = await fetchJson(manifestUrl);
+  if (storageRoot) {
+    const entries = readDiscoveryCache(storageRoot);
+    entries[cacheKey] = { commit, manifest, fetchedAt: Date.now() };
+    writeDiscoveryCache(storageRoot, entries);
+  }
   return { ...repository, ref, commit, manifest, entries: manifestEntries(manifest) };
 }
 
-export async function inspectGitHubSource(repository: string, ref = "main") {
-  const source = await loadSource(repository, ref);
+export async function inspectGitHubSource(repository: string, ref = "main", storageRoot = process.cwd()) {
+  const source = await loadSource(repository, ref, storageRoot);
   return {
     repository: source.url,
     ref: source.ref,

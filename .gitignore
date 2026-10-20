@@ -10,4 +10,5 @@ dist/
 .aioplugins-secret.tmp
 .aioplugins-profile-*.json
 .aioplugins-profile-*.json.tmp
+.aioplugins-discovery-cache.json
 coverage/

@@ -274,3 +274,30 @@ test("rejects non-loopback control requests when no admin password is configured
     else process.env.AIOPLUGINS_ADMIN_PASSWORD = previousPassword;
   }
 });
+
+test("serves repeated inspections from the discovery cache", async () => {
+  let apiCalls = 0;
+  const baseFetch = globalThis.fetch;
+  globalThis.fetch = async (input, options) => {
+    if (new URL(input).hostname === "api.github.com") apiCalls += 1;
+    return baseFetch(input, options);
+  };
+  try {
+    const discover = async () => {
+      const response = await originalFetch(`${serverUrl}/api/discover`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ repository: "https://github.com/example/cached-plugins", ref: "main" })
+      });
+      assert.equal(response.status, 200);
+      return response.json();
+    };
+    const first = await discover();
+    const second = await discover();
+    assert.ok(first.commit);
+    assert.equal(second.commit, first.commit);
+    assert.equal(apiCalls, 1, "the second inspection should reuse the cached commit and manifest");
+  } finally {
+    globalThis.fetch = baseFetch;
+  }
+});
