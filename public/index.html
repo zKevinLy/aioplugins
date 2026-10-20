@@ -461,13 +461,27 @@
       if (!configureView) refreshManifestPreview().catch((error) => setStatus(error.message, "error"));
     }
 
-    async function api(path, body, method) {
+    let adminToken = sessionStorage.getItem("aioplugins-admin-token") || "";
+    function adminHeaders(hasBody) {
+      const headers = adminToken ? { Authorization: `Bearer ${adminToken}` } : {};
+      if (hasBody) headers["content-type"] = "application/json";
+      return headers;
+    }
+    async function api(path, body, method, prompted = false) {
       const response = await fetch(path, {
         method: method || (body === undefined ? "GET" : "POST"),
-        headers: body === undefined ? {} : { "content-type": "application/json" },
+        headers: adminHeaders(body !== undefined),
         body: body === undefined ? undefined : JSON.stringify(body)
       });
-      const result = await response.json();
+      const result = await response.json().catch(() => ({}));
+      if (response.status === 401 && result.requiresAdminPassword && !prompted) {
+        const password = prompt("This AIOPlugins instance is managed remotely. Enter its admin password to use the builder controls.");
+        if (password) {
+          adminToken = password;
+          sessionStorage.setItem("aioplugins-admin-token", adminToken);
+          return api(path, body, method, true);
+        }
+      }
       if (!response.ok) throw new Error(result.error || `Request failed (${response.status})`);
       return result;
     }

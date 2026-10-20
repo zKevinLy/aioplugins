@@ -15,6 +15,7 @@ import {
 
 export interface PluginBuilderConfig {
   providerStorageRoot?: string;
+  adminPassword?: string;
 }
 
 function sendJson(response: ServerResponse, status: number, body: unknown): void {
@@ -62,6 +63,15 @@ function isLocalControlRequest(request: IncomingMessage): boolean {
   return isLoopback(request.headers.host);
 }
 
+function isAuthorizedControlRequest(request: IncomingMessage, config: PluginBuilderConfig): boolean {
+  if (isLocalControlRequest(request)) return true;
+  const adminPassword = config.adminPassword ?? process.env.AIOPLUGINS_ADMIN_PASSWORD;
+  if (!adminPassword) return false;
+  const authorization = request.headers.authorization || "";
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+  return match?.[1]?.trim() === adminPassword;
+}
+
 async function handleRequest(
   request: IncomingMessage,
   response: ServerResponse,
@@ -75,8 +85,11 @@ async function handleRequest(
   }
 
   if (url.pathname.startsWith("/api/")) {
-    if (!isLocalControlRequest(request)) {
-      sendJson(response, 403, { error: "The plugin builder controls are available only from this computer" });
+    if (!isAuthorizedControlRequest(request, config)) {
+      sendJson(response, 401, {
+        error: "Admin password required for remote control access",
+        requiresAdminPassword: true
+      });
       return;
     }
     if (url.pathname === "/api/profiles" && request.method === "GET") {

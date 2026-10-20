@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
+import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
@@ -176,4 +177,51 @@ test("keeps named profile manifests and plugin links isolated", async () => {
     body: JSON.stringify({ profileId: profile.id, password: "wrong", sources: [] })
   });
   assert.equal(invalidPasswordResponse.status, 400);
+});
+
+test("requires the admin password for non-loopback control requests", async () => {
+  const remoteServer = createPluginBuilderServer({
+    providerStorageRoot: storageRoot,
+    adminPassword: "AdminSecret"
+  });
+  await new Promise((resolve) => remoteServer.listen(0, "127.0.0.1", resolve));
+  const address = remoteServer.address();
+  try {
+    const call = (authorization) => new Promise((resolve, reject) => {
+      const req = request(
+        {
+          host: "127.0.0.1",
+          port: address.port,
+          path: "/api/profiles",
+          method: "GET",
+          headers: { host: "example.onrender.com", ...(authorization ? { authorization } : {}) }
+        },
+        (res) => {
+          let body = "";
+          res.setEncoding("utf8");
+          res.on("data", (chunk) => { body += chunk; });
+          res.on("end", () => resolve({ status: res.statusCode, body: JSON.parse(body) }));
+        }
+      );
+      req.on("error", reject);
+      req.end();
+    });
+
+    const denied = await call(undefined);
+    assert.equal(denied.status, 401);
+    assert.equal(denied.body.requiresAdminPassword, true);
+
+    const wrongPassword = await call("Bearer nope");
+    assert.equal(wrongPassword.status, 401);
+    assert.equal(wrongPassword.body.requiresAdminPassword, true);
+
+    const allowed = await call("Bearer AdminSecret");
+    assert.equal(allowed.status, 200);
+    assert.ok(Array.isArray(allowed.body.profiles));
+
+    const loopback = await originalFetch(`${serverUrl}/api/profiles`);
+    assert.equal(loopback.status, 200);
+  } finally {
+    await new Promise((resolve) => remoteServer.close(resolve));
+  }
 });
