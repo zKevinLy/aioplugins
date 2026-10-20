@@ -15,7 +15,6 @@ import {
 
 export interface PluginBuilderConfig {
   providerStorageRoot?: string;
-  adminPassword?: string;
 }
 
 function sendJson(response: ServerResponse, status: number, body: unknown): void {
@@ -49,7 +48,7 @@ async function readJsonBody(request: IncomingMessage): Promise<unknown> {
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
-function isLoopbackHost(value: string | undefined): boolean {
+function isLoopback(value: string | undefined): boolean {
   if (!value) return false;
   try {
     const hostname = new URL(`http://${value}`).hostname.toLowerCase();
@@ -59,30 +58,8 @@ function isLoopbackHost(value: string | undefined): boolean {
   }
 }
 
-function isLoopbackAddress(value: string | undefined): boolean {
-  if (!value) return false;
-  const address = value.toLowerCase().replace(/^::ffff:/, "");
-  return address === "127.0.0.1" || address === "::1";
-}
-
-// A control request counts as "local" only when it both arrives from a loopback
-// socket *and* names a loopback host. Requiring both keeps a remote client from
-// bypassing the admin password by sending a forged `Host: 127.0.0.1` header.
 function isLocalControlRequest(request: IncomingMessage): boolean {
-  return isLoopbackAddress(request.socket.remoteAddress) && isLoopbackHost(request.headers.host);
-}
-
-function hasAdminPassword(config: PluginBuilderConfig): boolean {
-  return Boolean(config.adminPassword ?? process.env.AIOPLUGINS_ADMIN_PASSWORD);
-}
-
-function matchesAdminPassword(request: IncomingMessage, config: PluginBuilderConfig): boolean {
-  const adminPassword = config.adminPassword ?? process.env.AIOPLUGINS_ADMIN_PASSWORD;
-  if (!adminPassword) return false;
-  const authorization = request.headers.authorization || "";
-  const match = authorization.match(/^Bearer\s+(.+)$/i);
-  const token = match?.[1]?.trim();
-  return Boolean(token) && token === adminPassword;
+  return isLoopback(request.headers.host);
 }
 
 async function handleRequest(
@@ -99,20 +76,8 @@ async function handleRequest(
 
   if (url.pathname.startsWith("/api/")) {
     if (!isLocalControlRequest(request)) {
-      if (!hasAdminPassword(config)) {
-        sendJson(response, 403, {
-          error: "Remote control access is disabled. Set AIOPLUGINS_ADMIN_PASSWORD on the server and restart it, or open the app from localhost.",
-          adminPasswordConfigured: false
-        });
-        return;
-      }
-      if (!matchesAdminPassword(request, config)) {
-        sendJson(response, 401, {
-          error: "Admin password required for remote control access",
-          requiresAdminPassword: true
-        });
-        return;
-      }
+      sendJson(response, 403, { error: "The plugin builder controls are available only from this computer" });
+      return;
     }
     if (url.pathname === "/api/profiles" && request.method === "GET") {
       sendJson(response, 200, { profiles: getPluginProfiles(config.providerStorageRoot) });

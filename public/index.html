@@ -461,33 +461,13 @@
       if (!configureView) refreshManifestPreview().catch((error) => setStatus(error.message, "error"));
     }
 
-    // Keep admin credential in memory only; do not persist sensitive data in Web Storage.
-    let adminToken = "";
-    function adminHeaders(hasBody) {
-      const headers = adminToken ? { Authorization: `Bearer ${adminToken}` } : {};
-      if (hasBody) headers["content-type"] = "application/json";
-      return headers;
-    }
-    async function api(path, body, method, prompted = false) {
+    async function api(path, body, method) {
       const response = await fetch(path, {
         method: method || (body === undefined ? "GET" : "POST"),
-        headers: adminHeaders(body !== undefined),
+        headers: body === undefined ? {} : { "content-type": "application/json" },
         body: body === undefined ? undefined : JSON.stringify(body)
       });
       const result = await response.json().catch(() => ({}));
-      if (response.status === 401 && result.requiresAdminPassword) {
-        if (!prompted) {
-          const password = prompt("This AIOPlugins instance is managed remotely. Enter the server's admin password (AIOPLUGINS_ADMIN_PASSWORD) to use the builder controls.");
-          if (password) {
-            adminToken = password;
-            return api(path, body, method, true);
-          }
-        } else {
-          // The token we just sent was rejected, so drop it and let the next action prompt again.
-          adminToken = "";
-          throw new Error("Incorrect admin password. It must match the server's AIOPLUGINS_ADMIN_PASSWORD variable.");
-        }
-      }
       if (!response.ok) throw new Error(result.error || `Request failed (${response.status})`);
       return result;
     }

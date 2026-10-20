@@ -16,22 +16,9 @@ Open `http://127.0.0.1:7000/`. Create a profile for each person or setup with a 
 
 No repository clone is needed. Selected bundled files are downloaded from the exact inspected commit and cached in `.nuvio-cache/`. The combined manifest uses the Nuvio `scrapers` format and rewrites each `filename` to a file served by this builder. Profile password hashes, the encryption key, and profile selections are stored locally in ignored `.aioplugins-*` files. Back up the `.aioplugins-secret` file with the profile data; losing it invalidates existing profile links. Restarting uses the cached selection; updates require inspecting and applying the source again with the profile password.
 
-The server binds to `0.0.0.0` so it is reachable from other devices and platforms (Render, containers, VPS). Configure it with environment variables:
+The server binds to `127.0.0.1` and is intended for local testing. Nuvio must be able to reach this address. To use a generated link from another device, host AIOPlugins at an address accessible to that device; do not expose its source-management API publicly without adding authentication.
 
-- `PORT` — HTTP port (default `7000`; Render injects its own `PORT`).
-- `HOST` — bind address (default `0.0.0.0`; set `127.0.0.1` to restrict to this computer).
-- `AIOPLUGINS_ADMIN_PASSWORD` — password required to use the `/api/*` builder controls from any non-loopback host. The web UI prompts for it once and sends it as a Bearer token. Requests that both originate from and address the loopback interface (`localhost`, `127.0.0.1`) never need it, so local development works unchanged. The loopback check uses the TCP socket address, so a remote client cannot bypass this by sending a forged `Host: 127.0.0.1` header. If this variable is not set, non-loopback `/api/*` requests are rejected with a 403 and no password will unlock them; set it and restart the server to manage the builder from other hosts.
-- `AIOPLUGINS_GITHUB_TOKEN` — optional [GitHub PAT](https://github.com/settings/tokens) (classic, no scopes needed for public repos; `repo` scope for private ones). Sent as a Bearer token on GitHub API/raw requests and raises the API quota from 60 to 5,000 requests/hour. **Recommended on Render, containers, and VPS hosts, where the shared egress IP quickly exhausts the anonymous limit** and `api.github.com` returns `403 GitHub request failed`. Falls back to an injected `GITHUB_TOKEN` if present.
-
-## Deploying on Render
-
-1. Create a **Web Service** from this repository.
-2. Set **Build Command** to `npm install; npm run build` and **Start Command** to `npm run start`.
-3. Under **Environment**, add `AIOPLUGINS_ADMIN_PASSWORD` (a strong password) so the builder controls work over the Render URL.
-4. Optional but recommended: set **Health Check Path** to `/health`.
-5. Deploy, then open the `https://<app>.onrender.com` URL, enter the admin password when prompted, and build your plugin links the same way as locally.
-
-Notes for Render (and any non-persistent host): profile data, the encryption key, and the `.nuvio-cache/` are stored in the container's filesystem and are **lost on every redeploy**, and each instance has its own copy. Use the backup/restore controls to move profiles between instances, or attach a persistent disk and point the storage at it. Profile links (the token in the URL) stay valid only while the backed-up `.aioplugins-secret` key and profile data are available.
+Optional: set `AIOPLUGINS_GITHUB_TOKEN` to a [classic GitHub PAT](https://github.com/settings/tokens) (no scopes needed for public repositories; `repo` scope for private ones). It is sent as a Bearer token on GitHub API and raw file requests, raising the API quota from 60 to 5,000 requests/hour when your machine's outbound IP is shared or heavily used. A `GITHUB_TOKEN` is used as a fallback if the variable is not set.
 
 ## Sources and execution
 
