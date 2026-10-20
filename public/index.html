@@ -3,11 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light">
+  <meta name="color-scheme" content="dark">
   <title>AIOPlugins</title>
   <style>
     :root {
-      color-scheme: light;
+      color-scheme: dark;
       --ink: #edf1f7;
       --muted: #8f9bad;
       --line: #293548;
@@ -36,7 +36,7 @@
       font-size: 14px;
     }
 
-    button, input { font: inherit; }
+    button, input, select { font: inherit; }
 
     .shell { max-width: 1220px; margin: 0 auto; padding: 32px 28px 48px; }
 
@@ -89,28 +89,6 @@
     .save-card { margin-bottom: 16px; }
     .save-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-top: 1px solid var(--line); }
     .backup-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
-    .backup-row p { margin: 4px 0 0; color: var(--muted); font-size: 11px; }
-    .view-tabs { display: flex; gap: 4px; margin: 4px 0 18px; border-bottom: 1px solid var(--line); }
-    .view-tab { position: relative; min-height: 43px; padding: 0 16px; border: 0; background: transparent; color: var(--muted); cursor: pointer; font-weight: 650; }
-    .view-tab[aria-selected="true"] { color: var(--ink); }
-    .view-tab[aria-selected="true"]::after { position: absolute; right: 12px; bottom: -1px; left: 12px; height: 2px; background: var(--green); content: ""; }
-    .view[hidden] { display: none; }
-    .view-intro { margin: 0 0 14px; color: var(--muted); font-size: 12px; }
-    .save-card { margin-bottom: 16px; }
-    .save-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-top: 1px solid var(--line); }
-    .backup-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
-    .backup-row p { margin: 4px 0 0; color: var(--muted); font-size: 11px; }
-
-    .view-tabs { display: flex; gap: 4px; margin: 4px 0 18px; border-bottom: 1px solid var(--line); }
-    .view-tab { position: relative; min-height: 43px; padding: 0 16px; border: 0; background: transparent; color: var(--muted); cursor: pointer; font-weight: 650; }
-    .view-tab[aria-selected="true"] { color: var(--ink); }
-    .view-tab[aria-selected="true"]::after { position: absolute; right: 12px; bottom: -1px; left: 12px; height: 2px; background: var(--green); content: ""; }
-    .view[hidden] { display: none; }
-    .view-intro { margin: 0 0 14px; color: var(--muted); font-size: 12px; }
-    .save-card { margin-bottom: 16px; }
-    .save-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-top: 1px solid var(--line); }
-    .backup-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
-    .backup-row p { margin: 0; color: var(--muted); font-size: 11px; }
 
     .workspace { display: grid; grid-template-columns: minmax(285px, 350px) minmax(0, 1fr); gap: 18px; align-items: start; }
     .panel { border: 1px solid var(--line); border-radius: 7px; background: var(--surface); box-shadow: var(--shadow); }
@@ -119,7 +97,7 @@
     .panel-body { padding: 18px; }
 
     label { display: block; margin-bottom: 7px; color: #c3cad6; font-size: 12px; font-weight: 650; }
-    input[type="url"], input[type="text"], .search {
+    input[type="url"], input[type="text"], input[type="password"], select, .search {
       width: 100%;
       min-height: 40px;
       padding: 9px 11px;
@@ -129,17 +107,9 @@
       background: var(--surface-raised);
       color: var(--ink);
     }
-    input:focus, .search:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgb(139 140 255 / 16%); }
+    input:focus, select:focus, .search:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgb(139 140 255 / 16%); }
     .field-row { display: grid; grid-template-columns: minmax(0, 1fr) 104px; gap: 10px; }
     .field { margin-bottom: 14px; }
-    .profile-controls { display: grid; grid-template-columns: minmax(110px, 1fr) minmax(130px, 1fr) minmax(130px, 1fr) minmax(130px, 1fr) auto auto; gap: 8px; align-items: end; margin-bottom: 18px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
-    .profile-controls select { width: 100%; min-height: 39px; padding: 8px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface-raised); color: var(--ink); }
-    .profile-controls .field { margin: 0; }
-    .profile-delete { min-height: 39px; }
-    .profile-guid { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; margin: -5px 0 16px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface-raised); }
-    .profile-guid[hidden] { display: none; }
-    .profile-guid-label { margin: 0; color: var(--muted); font-size: 11px; }
-    .profile-guid-value { overflow: hidden; color: var(--green-dark); font-family: Consolas, monospace; font-size: 12px; text-overflow: ellipsis; }
 
     .button {
       display: inline-flex;
@@ -214,35 +184,23 @@
     .loading { animation: pulse 1.2s ease-in-out infinite alternate; }
     @keyframes pulse { to { opacity: .45; } }
 
-    @media (max-width: 760px) {
-      .shell { padding: 19px 14px 28px; }
-      .topbar { align-items: flex-start; }
-      .server-state { font-size: 11px; }
-      .intro { display: block; }
-      .workspace { grid-template-columns: 1fr; }
-      .catalog-tools { flex: 1; }
-      .search { width: 100%; }
-      .panel-head { flex-wrap: wrap; }
-      .provider-row { grid-template-columns: 18px minmax(0, 1fr); }
-      .type-tag { grid-column: 2; justify-self: start; }
-      .actionbar { align-items: stretch; flex-direction: column; }
-      .actionbar .button { width: 100%; }
-      .output-body { grid-template-columns: 1fr; gap: 18px; }
-      .copy-row { grid-template-columns: 1fr; }
-      .copy-row .button { width: 100%; }
-      .profile-controls { grid-template-columns: 1fr 1fr; }
-      .profile-controls .profile-select-field { grid-column: 1 / -1; }
-      .profile-delete { width: 100%; }
-      .profile-guid { grid-template-columns: 1fr auto; }
-      .profile-guid-label { grid-column: 1 / -1; }
-      .save-actions { align-items: stretch; flex-direction: column; }
-      .save-actions .button { width: 100%; }
-      .backup-row { align-items: stretch; flex-direction: column; }
-    }
+    [hidden] { display: none !important; }
+    .backup-row p { margin: 3px 0 0; color: var(--muted); font-size: 11px; }
 
-    @media (prefers-reduced-motion: reduce) {
-      *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
-    }
+    .auth { max-width: 460px; margin: 40px auto 0; }
+    .auth-card { overflow: hidden; }
+    .auth-tabs { display: flex; gap: 4px; padding: 0 12px; border-bottom: 1px solid var(--line); }
+    .auth-card .status { margin: 0; padding: 0 18px 16px; }
+    .auth-card .view-intro { margin-bottom: 16px; line-height: 1.5; }
+    .uuid-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 9px 10px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface-raised); }
+    .uuid-row-label { color: var(--muted); font-size: 11px; }
+    .uuid-row code { overflow: hidden; color: var(--green-dark); font-family: Consolas, monospace; font-size: 12px; text-overflow: ellipsis; }
+    .check { display: flex; align-items: center; gap: 8px; margin: 14px 0; font-weight: 400; }
+    .session-bar { display: flex; align-items: center; gap: 10px; color: var(--muted); }
+    .session-bar code { font-family: Consolas, monospace; font-size: 12px; }
+    .button-danger { border-color: #6b3a3a; color: #ff8f87; }
+    .delete-controls { display: flex; align-items: center; gap: 6px; }
+    .delete-controls input { width: 170px; min-height: 30px; padding: 5px 8px; }
   </style>
 </head>
 <body>
@@ -251,17 +209,73 @@
       <div class="brand">
         <div class="brand-mark" aria-hidden="true">N</div>
         <div>
-          <p class="eyebrow">Nuvio plugin profiles</p>
+          <p class="eyebrow">Nuvio plugin manager</p>
           <h1>AIOPlugins</h1>
         </div>
       </div>
-      <div class="server-state">Running on this computer</div>
+      <div id="server-state" class="server-state">Running on this computer</div>
+      <div id="session-bar" class="session-bar" hidden>
+        <code id="session-id" title="Your UUID"></code>
+        <button id="logout" class="button button-small" type="button">Log out</button>
+      </div>
     </header>
 
+    <!-- Logged out -->
+    <section id="auth-view" class="auth" hidden>
+      <div class="panel auth-card">
+        <div id="auth-tabs" class="auth-tabs" role="tablist" aria-label="Account">
+          <button id="login-tab" class="view-tab" type="button" role="tab" aria-selected="true">Log in</button>
+          <button id="register-tab" class="view-tab" type="button" role="tab" aria-selected="false">Create account</button>
+        </div>
+
+        <form id="login-form" class="panel-body">
+          <p class="view-intro">Enter the UUID and password you saved when you created your account.</p>
+          <div class="field">
+            <label for="login-uuid">UUID</label>
+            <input id="login-uuid" type="text" autocomplete="username" spellcheck="false" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" required>
+          </div>
+          <div class="field">
+            <label for="login-password">Password</label>
+            <input id="login-password" type="password" autocomplete="current-password" required>
+          </div>
+          <button class="button button-primary button-wide" type="submit">Log in</button>
+        </form>
+
+        <form id="register-form" class="panel-body" hidden>
+          <p class="view-intro">We'll generate a UUID for you. You log in with that UUID and the password you choose here.</p>
+          <div class="field">
+            <label for="register-password">Password</label>
+            <input id="register-password" type="password" autocomplete="new-password" placeholder="At least 8 characters" required>
+          </div>
+          <div class="field">
+            <label for="register-confirm">Confirm password</label>
+            <input id="register-confirm" type="password" autocomplete="new-password" required>
+          </div>
+          <button class="button button-primary button-wide" type="submit">Create account</button>
+        </form>
+
+        <div id="new-account" class="panel-body" hidden>
+          <p><strong>Your account is ready.</strong></p>
+          <p class="view-intro">Save this UUID somewhere safe. You need it and your password to log in, and neither can be recovered.</p>
+          <div class="uuid-row">
+            <span class="uuid-row-label">UUID</span>
+            <code id="new-uuid"></code>
+            <button id="copy-new-uuid" class="button button-small" type="button">Copy</button>
+          </div>
+          <label class="check"><input id="saved-ack" type="checkbox"> I've saved my UUID and password</label>
+          <button id="continue" class="button button-primary button-wide" type="button" disabled>Continue</button>
+        </div>
+
+        <p id="auth-status" class="status" role="status" aria-live="polite"></p>
+      </div>
+    </section>
+
+    <!-- Logged in -->
+    <div id="app-view" hidden>
     <section class="intro">
       <div>
-          <h2>Build a plugin set</h2>
-          <p>Create a separate plugin link for each person or setup, using plugins from any inspected source.</p>
+        <h2>Build your plugin set</h2>
+        <p>Pick plugins from any GitHub source, save, and install your personal link in Nuvio.</p>
       </div>
     </section>
 
@@ -269,7 +283,6 @@
       <button id="configure-tab" class="view-tab" type="button" role="tab" aria-selected="true" aria-controls="configure-view">Configure</button>
       <button id="save-tab" class="view-tab" type="button" role="tab" aria-selected="false" aria-controls="save-view">Save &amp; Install</button>
     </nav>
-
     <section id="configure-view" class="view" role="tabpanel" aria-labelledby="configure-tab">
     <div class="workspace">
       <section class="panel" aria-labelledby="source-heading">
@@ -321,42 +334,45 @@
     </section>
 
     <section id="save-view" class="view" role="tabpanel" aria-labelledby="save-tab" hidden>
-      <p class="view-intro">Create or choose a password-protected configuration, then save and install its Nuvio plugin link.</p>
+      <p class="view-intro">Save your selection, then add your install link to Nuvio.</p>
+      
+      <!-- Profile Manager Card -->
       <section class="panel save-card" aria-labelledby="profile-heading">
-        <div class="panel-head"><h2 id="profile-heading">Configuration</h2></div>
+        <div class="panel-head"><h2 id="profile-heading">Profiles</h2></div>
         <div class="panel-body">
-          <div class="profile-controls">
-            <div class="field profile-select-field">
-              <label for="profile-select">Saved profile</label>
-              <select id="profile-select" aria-label="Saved profile"></select>
+          <div class="field">
+            <label for="profile-select">Active Profile</label>
+            <div class="field-row">
+              <select id="profile-select"></select>
+              <button id="delete-profile" class="button button-small button-danger" type="button">Delete</button>
             </div>
-            <div class="field">
-              <label for="profile-name">New profile name</label>
-              <input id="profile-name" type="text" maxlength="40" placeholder="e.g. Family room">
-            </div>
-            <div class="field">
-              <label for="profile-password">Configuration password</label>
-              <input id="profile-password" type="password" autocomplete="new-password" placeholder="At least 8 characters">
-            </div>
-            <div class="field">
-              <label for="profile-password-confirm">Confirm password</label>
-              <input id="profile-password-confirm" type="password" autocomplete="new-password" placeholder="Re-enter password">
-            </div>
-            <button id="create-profile" class="button" type="button">Create profile</button>
-            <button id="delete-profile" class="button profile-delete" type="button" disabled>Delete</button>
           </div>
-          <div id="profile-guid-row" class="profile-guid" hidden>
-            <span class="profile-guid-label">UUID</span>
-            <code id="profile-guid-value" class="profile-guid-value"></code>
-            <button id="copy-profile-guid" class="button button-small" type="button">Copy UUID</button>
+          <button id="save-new-profile" class="button button-small" type="button">Save Current Selection as New Profile</button>
+        </div>
+      </section>
+
+      <section class="panel save-card" aria-labelledby="account-heading">
+        <div class="panel-head"><h2 id="account-heading">Account</h2></div>
+        <div class="panel-body">
+          <div class="uuid-row">
+            <span class="uuid-row-label">UUID</span>
+            <code id="account-uuid"></code>
+            <button id="copy-uuid" class="button button-small" type="button">Copy UUID</button>
           </div>
           <p id="save-status" class="status" role="status" aria-live="polite"></p>
           <div class="backup-row">
-            <div><strong>Configuration backup</strong><p>Export or restore this profile's selected sources.</p></div>
+            <div><strong>Configuration backup</strong><p>Export or restore your selected sources.</p></div>
             <div class="source-actions">
-              <button id="export-profile" class="button button-small" type="button" disabled>Export</button>
-              <button id="import-profile" class="button button-small" type="button" disabled>Import</button>
-              <input id="import-profile-file" type="file" accept="application/json,.json" hidden>
+              <button id="export-config" class="button button-small" type="button">Export</button>
+              <button id="import-config" class="button button-small" type="button">Import</button>
+              <input id="import-config-file" type="file" accept="application/json,.json" hidden>
+            </div>
+          </div>
+          <div class="backup-row">
+            <div><strong>Delete account</strong><p>Permanently removes your account and saved selection.</p></div>
+            <div class="delete-controls">
+              <input id="delete-password" type="password" autocomplete="current-password" placeholder="Confirm password" aria-label="Confirm password to delete account">
+              <button id="delete-account" class="button button-small button-danger" type="button">Delete</button>
             </div>
           </div>
         </div>
@@ -366,100 +382,55 @@
         </div>
       </section>
 
-    <section class="panel output-panel" aria-labelledby="output-heading">
-      <div class="panel-head output-head">
-        <h2 id="output-heading">03 · Use your plugin link</h2>
-        <span id="output-state" class="output-state">Build a selection to preview the plugin repository</span>
-      </div>
-      <div class="output-body">
-        <div>
-          <p class="output-label">Nuvio plugin repository URL</p>
-          <div class="copy-row">
-            <button id="plugin-url" class="addon-url" type="button" title="Copy plugin repository URL">http://127.0.0.1:7000/manifest.json</button>
-            <button id="copy-plugin-url" class="button" type="button">Copy URL</button>
-          </div>
-          <p id="copy-feedback" class="output-hint" aria-live="polite">Paste this link into Nuvio's plugin source settings.</p>
+      <section class="panel output-panel" aria-labelledby="output-heading">
+        <div class="panel-head output-head">
+          <h2 id="output-heading">Install in Nuvio</h2>
+          <span id="output-state" class="output-state">Save a selection to preview the plugin repository</span>
         </div>
-        <div>
-          <div class="manifest-title">
-            <h3>Generated Nuvio manifest</h3>
-            <a id="open-manifest" href="/manifest.json" target="_blank" rel="noreferrer">Open JSON</a>
+        <div class="output-body">
+          <div>
+            <p class="output-label">Your private plugin repository URL</p>
+            <div class="copy-row">
+              <button id="plugin-url" class="addon-url" type="button" title="Copy plugin repository URL"></button>
+              <button id="copy-plugin-url" class="button" type="button">Copy URL</button>
+            </div>
+            <p id="copy-feedback" class="output-hint" aria-live="polite">Paste this link into Nuvio's plugin source settings. Treat it like a password: anyone with it can load your plugin list.</p>
           </div>
-          <pre id="manifest-preview" class="manifest-preview">Choose plugins and build to generate your Nuvio manifest.</pre>
+          <div>
+            <div class="manifest-title">
+              <h3>Generated Nuvio manifest</h3>
+              <a id="open-manifest" href="#" target="_blank" rel="noreferrer">Open JSON</a>
+            </div>
+            <pre id="manifest-preview" class="manifest-preview">Choose plugins and save to generate your Nuvio manifest.</pre>
+          </div>
         </div>
-      </div>
+      </section>
     </section>
-    </section>
+    </div>
   </main>
 
   <script>
+    const $ = (selector) => document.querySelector(selector);
+    let user = null;
+    let pendingUser = null;
     let state = new Map();
-    const profileStates = new Map();
-    const profilePasswords = new Map();
     let profiles = [];
-    let activeProfileId = "";
     let activeView = "configure";
-    const catalog = document.querySelector("#catalog");
-    const status = document.querySelector("#status");
-    const saveStatus = document.querySelector("#save-status");
-    const discoverButton = document.querySelector("#discover");
-    const applyButton = document.querySelector("#apply");
-    const goSaveButton = document.querySelector("#go-save");
-    const searchInput = document.querySelector("#search");
-    let pluginUrl = `${location.origin}/manifest.json`;
-    let manifestPath = "/manifest.json";
-    const pluginUrlButton = document.querySelector("#plugin-url");
-    const copyUrlButton = document.querySelector("#copy-plugin-url");
-    const copyFeedback = document.querySelector("#copy-feedback");
-    const manifestPreview = document.querySelector("#manifest-preview");
-    const outputState = document.querySelector("#output-state");
-    function updateProfileLink() {
-      const profile = profiles.find(({ id }) => id === activeProfileId);
-      manifestPath = profile?.linkToken
-        ? `/profiles/${encodeURIComponent(activeProfileId)}/${encodeURIComponent(profile.linkToken)}/manifest.json`
-        : "";
-      pluginUrl = `${location.origin}${manifestPath}`;
-      pluginUrlButton.textContent = manifestPath ? pluginUrl : "Create a profile to generate a private link";
-      pluginUrlButton.disabled = !manifestPath;
-      copyUrlButton.disabled = !manifestPath;
-      document.querySelector("#open-manifest").href = manifestPath || "#";
-      document.querySelector("#delete-profile").disabled = !activeProfileId;
-      document.querySelector("#export-profile").disabled = !activeProfileId;
-      document.querySelector("#import-profile").disabled = !activeProfileId;
-      document.querySelector("#profile-guid-row").hidden = !activeProfileId;
-      document.querySelector("#profile-guid-value").textContent = activeProfileId;
-      const passwordInput = document.querySelector("#profile-password");
-      passwordInput.value = profilePasswords.get(activeProfileId) || "";
-      passwordInput.placeholder = activeProfileId ? "Required to save or delete" : "Create a profile first";
-    }
-
-    function renderProfileOptions() {
-      const select = document.querySelector("#profile-select");
-      select.replaceChildren();
-      for (const profile of profiles) {
-        const option = document.createElement("option");
-        option.value = profile.id;
-        option.textContent = profile.name;
-        option.selected = profile.id === activeProfileId;
-        select.append(option);
-      }
-    }
-
-    function setStatus(message, kind = "") {
-      const target = activeView === "save" ? saveStatus : status;
-      target.textContent = message;
-      target.className = `status ${kind}`;
-    }
-
-    function setActiveView(view) {
-      activeView = view;
-      const configureView = view === "configure";
-      document.querySelector("#configure-view").hidden = !configureView;
-      document.querySelector("#save-view").hidden = configureView;
-      document.querySelector("#configure-tab").setAttribute("aria-selected", String(configureView));
-      document.querySelector("#save-tab").setAttribute("aria-selected", String(!configureView));
-      if (!configureView) refreshManifestPreview().catch((error) => setStatus(error.message, "error"));
-    }
+    let pluginUrl = "";
+    let manifestPath = "";
+    const catalog = $("#catalog");
+    const status = $("#status");
+    const saveStatus = $("#save-status");
+    const authStatus = $("#auth-status");
+    const discoverButton = $("#discover");
+    const applyButton = $("#apply");
+    const goSaveButton = $("#go-save");
+    const searchInput = $("#search");
+    const pluginUrlButton = $("#plugin-url");
+    const copyUrlButton = $("#copy-plugin-url");
+    const copyFeedback = $("#copy-feedback");
+    const manifestPreview = $("#manifest-preview");
+    const outputState = $("#output-state");
 
     async function api(path, body, method) {
       const response = await fetch(path, {
@@ -472,29 +443,71 @@
       return result;
     }
 
-    async function copyPluginUrl() {
-      try {
-        await navigator.clipboard.writeText(pluginUrl);
-        copyFeedback.textContent = "Copied. Paste this link into Nuvio's plugin source settings.";
-      } catch {
-        copyFeedback.textContent = "Clipboard access is unavailable. Select and copy the link above.";
+    function setStatus(message, kind = "") {
+      const target = !user ? authStatus : activeView === "save" ? saveStatus : status;
+      target.textContent = message;
+      target.className = `status ${kind}`;
+    }
+
+    async function copyText(text, onDone, onFail) {
+      try { await navigator.clipboard.writeText(text); onDone(); } catch { onFail(); }
+    }
+
+    function showAuthTab(tab) {
+      const login = tab === "login";
+      $("#login-form").hidden = !login;
+      $("#register-form").hidden = login;
+      $("#login-tab").setAttribute("aria-selected", String(login));
+      $("#register-tab").setAttribute("aria-selected", String(!login));
+      authStatus.textContent = "";
+    }
+
+    function setUser(next) {
+      user = next;
+      state = new Map();
+      const authed = Boolean(next);
+      $("#auth-view").hidden = authed;
+      $("#app-view").hidden = !authed;
+      $("#session-bar").hidden = !authed;
+      $("#server-state").hidden = authed;
+      if (!authed) {
+        for (const input of document.querySelectorAll("#auth-view input, #delete-password")) {
+          input.value = "";
+          if (input.type === "checkbox") input.checked = false;
+        }
+        pendingUser = null;
+        $("#new-account").hidden = true;
+        $("#auth-tabs").hidden = false;
+        $("#continue").disabled = true;
+        showAuthTab("login");
+        return;
       }
+      $("#session-id").textContent = `${next.id.slice(0, 8)}…`;
+      $("#account-uuid").textContent = next.id;
+      manifestPath = next.installPath;
+      pluginUrl = `${location.origin}${manifestPath}`;
+      pluginUrlButton.textContent = pluginUrl;
+      $("#open-manifest").href = manifestPath;
+      setActiveView("configure");
+      loadProfilesList().then(() => restoreSelection());
+    }
+
+    async function enter(nextUser) {
+      setUser(nextUser);
+    }
+
+    function setActiveView(view) {
+      activeView = view;
+      const configureView = view === "configure";
+      $("#configure-view").hidden = !configureView;
+      $("#save-view").hidden = configureView;
+      $("#configure-tab").setAttribute("aria-selected", String(configureView));
+      $("#save-tab").setAttribute("aria-selected", String(!configureView));
+      if (!configureView) refreshManifestPreview().catch((error) => setStatus(error.message, "error"));
     }
 
     async function refreshManifestPreview() {
-      if (!manifestPath) {
-          manifestPreview.textContent = "Create a password-protected profile to generate an install link.";
-          outputState.textContent = "Profile required";
-        outputState.classList.remove("ready");
-        return;
-      }
       const response = await fetch(manifestPath, { cache: "no-store" });
-      if (response.status === 401) {
-        manifestPreview.textContent = "This profile link is invalid. Recreate the profile to generate a new password link.";
-        outputState.textContent = "Invalid profile link";
-        outputState.classList.remove("ready");
-        return;
-      }
       if (!response.ok) throw new Error("Could not load the Nuvio manifest preview");
       const manifest = await response.json();
       manifestPreview.textContent = JSON.stringify(manifest, null, 2);
@@ -509,10 +522,11 @@
 
     function updateCounts() {
       const count = selectionCount();
-      document.querySelector("#source-count").textContent = String(state.size);
-      document.querySelector("#selection-count").textContent = count === 1 ? "1 plugin selected" : `${count} plugins selected`;
-      document.querySelector("#save-selection-count").textContent = count === 1 ? "1 plugin selected" : `${count} plugins selected`;
-      applyButton.disabled = count === 0 || !activeProfileId;
+      const label = count === 1 ? "1 plugin selected" : `${count} plugins selected`;
+      $("#source-count").textContent = String(state.size);
+      $("#selection-count").textContent = label;
+      $("#save-selection-count").textContent = label;
+      applyButton.disabled = count === 0;
       goSaveButton.disabled = count === 0;
     }
 
@@ -619,10 +633,7 @@
         const source = await api("/api/discover", { repository, ref });
         const key = `${source.repository}@${source.ref}`;
         const prior = state.get(key);
-        state.set(key, {
-          ...source,
-          selected: prior?.selected || new Set()
-        });
+        state.set(key, { ...source, selected: prior?.selected || new Set() });
         render();
         setStatus(`Found ${source.providers.length} providers at commit ${source.commit.slice(0, 8)}.`, "success");
       } catch (error) {
@@ -633,45 +644,204 @@
       }
     }
 
+    function suggestedSources() {
+      return [...document.querySelectorAll(".quick-source")].map((button) => ({ repository: button.dataset.repo, ref: "main" }));
+    }
+
+    async function restoreSelection() {
+      discoverButton.disabled = true;
+      setStatus("Loading plugin sources…");
+      try {
+        const saved = await api("/api/config");
+        const wanted = new Map();
+        for (const source of [...suggestedSources(), ...saved.sources]) {
+          wanted.set(`${source.repository}@${source.ref}`, source);
+        }
+        const results = await Promise.allSettled(
+          [...wanted.values()].map((source) => api("/api/discover", { repository: source.repository, ref: source.ref }))
+        );
+        const failed = [];
+        results.forEach((result, index) => {
+          const requested = [...wanted.values()][index];
+          if (result.status === "rejected") {
+            failed.push(`${requested.repository.split("/").slice(-1)[0]}: ${result.reason.message}`);
+            return;
+          }
+          const source = result.value;
+          const key = `${source.repository}@${source.ref}`;
+          const savedSelection = saved.sources.find((item) => `${item.repository}@${item.ref}` === key);
+          state.set(key, { ...source, selected: new Set(savedSelection ? savedSelection.providerIds : []) });
+        });
+        render();
+        if (failed.length) setStatus(`Couldn't load: ${failed.join("; ")}`, "error");
+        else setStatus(`Loaded ${state.size} plugin sources.`, "success");
+      } catch (error) {
+        setStatus(error.message, "error");
+      } finally {
+        discoverButton.disabled = false;
+      }
+    }
+
+    // Profiles Management
+    async function loadProfilesList() {
+      try {
+        const res = await api("/api/profiles");
+        profiles = res.sources ? [] : (res.profiles || []);
+        const select = $("#profile-select");
+        select.innerHTML = "";
+        if (profiles.length === 0) {
+          const opt = document.createElement("option");
+          opt.value = "";
+          opt.textContent = "Default Profile";
+          select.appendChild(opt);
+        } else {
+          profiles.forEach(p => {
+            const opt = document.createElement("option");
+            opt.value = p.id;
+            opt.textContent = p.name;
+            select.appendChild(opt);
+          });
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    $("#profile-select").addEventListener("change", async (e) => {
+      const profileId = e.target.value;
+      const found = profiles.find(p => p.id === profileId);
+      if (!found) return;
+      
+      setStatus("Switching profile...");
+      state = new Map();
+      for (const src of found.sources) {
+        await inspect(src.repository, src.ref);
+        const loaded = state.get(`${src.repository}@${src.ref}`);
+        if (loaded) loaded.selected = new Set(src.providerIds);
+      }
+      render();
+      setStatus("Profile loaded successfully.", "success");
+    });
+
+    $("#save-new-profile").addEventListener("click", async () => {
+      const name = prompt("Enter profile name:", "My Custom Profile");
+      if (!name) return;
+      const sources = [...state.values()].map((source) => ({
+        repository: source.repository,
+        ref: source.ref,
+        commit: source.commit,
+        providerIds: [...source.selected]
+      })).filter((source) => source.providerIds.length);
+
+      try {
+        await api("/api/profiles", { name, sources });
+        await loadProfilesList();
+        setStatus("Profile saved successfully.", "success");
+      } catch (error) {
+        setStatus(error.message, "error");
+      }
+    });
+
+    $("#delete-profile").addEventListener("click", async () => {
+      const profileId = $("#profile-select").value;
+      if (!profileId) return alert("Select a profile to delete.");
+      if (!confirm("Are you sure you want to delete this profile?")) return;
+      try {
+        await api(`/api/profiles/${profileId}`, undefined, "DELETE");
+        await loadProfilesList();
+        setStatus("Profile deleted.", "success");
+      } catch (error) {
+        setStatus(error.message, "error");
+      }
+    });
+
+    $("#login-tab").addEventListener("click", () => showAuthTab("login"));
+    $("#register-tab").addEventListener("click", () => showAuthTab("register"));
+
+    $("#login-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      try {
+        const result = await api("/api/login", { uuid: $("#login-uuid").value.trim(), password: $("#login-password").value });
+        await enter(result.user);
+      } catch (error) {
+        setStatus(error.message, "error");
+      }
+    });
+
+    $("#register-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const password = $("#register-password").value;
+      if (password.length < 8) return setStatus("Password must be at least 8 characters.", "error");
+      if (password !== $("#register-confirm").value) return setStatus("Passwords do not match.", "error");
+      try {
+        const result = await api("/api/register", { password });
+        pendingUser = result.user;
+        $("#new-uuid").textContent = pendingUser.id;
+        $("#register-form").hidden = true;
+        $("#auth-tabs").hidden = true;
+        $("#new-account").hidden = false;
+        authStatus.textContent = "";
+      } catch (error) {
+        setStatus(error.message, "error");
+      }
+    });
+
+    $("#copy-new-uuid").addEventListener("click", () => copyText(
+      pendingUser.id,
+      () => setStatus("UUID copied.", "success"),
+      () => setStatus("Clipboard access is unavailable.", "error")
+    ));
+    $("#saved-ack").addEventListener("change", (event) => { $("#continue").disabled = !event.target.checked; });
+    $("#continue").addEventListener("click", () => { if (pendingUser) enter(pendingUser); });
+
+    $("#logout").addEventListener("click", async () => {
+      try { await api("/api/logout", {}); } finally { setUser(null); }
+    });
+
+    $("#copy-uuid").addEventListener("click", () => copyText(
+      user.id,
+      () => setStatus("UUID copied.", "success"),
+      () => setStatus("Clipboard access is unavailable.", "error")
+    ));
+
+    $("#delete-account").addEventListener("click", async () => {
+      const password = $("#delete-password").value;
+      if (!password) return setStatus("Enter your password to delete your account.", "error");
+      if (!confirm("Permanently delete this account and its saved selection?")) return;
+      try {
+        await api("/api/account", { password }, "DELETE");
+        setUser(null);
+        setStatus("Account deleted.", "success");
+      } catch (error) {
+        setStatus(error.message, "error");
+      }
+    });
+
     discoverButton.addEventListener("click", () => {
-      inspect(document.querySelector("#repository").value.trim(), document.querySelector("#ref").value.trim() || "main");
+      inspect($("#repository").value.trim(), $("#ref").value.trim() || "main");
     });
 
     document.querySelectorAll(".quick-source").forEach((button) => button.addEventListener("click", () => {
-      document.querySelector("#repository").value = button.dataset.repo;
-      document.querySelector("#ref").value = "main";
+      $("#repository").value = button.dataset.repo;
+      $("#ref").value = "main";
       inspect(button.dataset.repo, "main");
     }));
 
     searchInput.addEventListener("input", render);
-    document.querySelector("#configure-tab").addEventListener("click", () => setActiveView("configure"));
-    document.querySelector("#save-tab").addEventListener("click", () => setActiveView("save"));
+    $("#configure-tab").addEventListener("click", () => setActiveView("configure"));
+    $("#save-tab").addEventListener("click", () => setActiveView("save"));
     goSaveButton.addEventListener("click", () => setActiveView("save"));
-    document.querySelector("#configure-tab").addEventListener("click", () => setActiveView("configure"));
-    document.querySelector("#save-tab").addEventListener("click", () => setActiveView("save"));
-    goSaveButton.addEventListener("click", () => setActiveView("save"));
-    document.querySelector("#profile-password").addEventListener("change", (event) => {
-      if (activeProfileId) profilePasswords.set(activeProfileId, event.target.value);
-    });
-    document.querySelector("#copy-profile-guid").addEventListener("click", async () => {
-      if (!activeProfileId) return;
-      try {
-        await navigator.clipboard.writeText(activeProfileId);
-        setStatus("Profile UUID copied.", "success");
-      } catch {
-        setStatus("Clipboard access is unavailable. Select and copy the UUID above.", "error");
-      }
-    });
+
+    const copyPluginUrl = () => copyText(
+      pluginUrl,
+      () => { copyFeedback.textContent = "Copied. Paste this link into Nuvio's plugin source settings."; },
+      () => { copyFeedback.textContent = "Clipboard access is unavailable."; }
+    );
     pluginUrlButton.addEventListener("click", copyPluginUrl);
     copyUrlButton.addEventListener("click", copyPluginUrl);
+
     applyButton.addEventListener("click", async () => {
       applyButton.disabled = true;
-      const password = document.querySelector("#profile-password").value;
-      if (!activeProfileId || !password) {
-        setStatus("Create or select a password-protected profile before building its link.", "error");
-        applyButton.disabled = selectionCount() === 0;
-        return;
-      }
       setStatus("Fetching the selected plugin files and building your link…");
       const sources = [...state.values()].map((source) => ({
         repository: source.repository,
@@ -680,162 +850,54 @@
         providerIds: [...source.selected]
       })).filter((source) => source.providerIds.length);
       try {
-        const result = await api("/api/apply", { profileId: activeProfileId, password, sources });
+        const result = await api("/api/apply", { sources });
         await refreshManifestPreview();
-        setStatus(`Built a plugin repository with ${result.plugins} selected plugins.`, "success");
+        setStatus(`Saved ${result.plugins} selected plugins.`, "success");
+        $(".output-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+      } catch (error) {
+        setStatus(error.message, "error");
+      } finally {
         applyButton.disabled = selectionCount() === 0;
-        document.querySelector(".output-panel").scrollIntoView({ behavior: "smooth", block: "start" });
-      } catch (error) {
-        setStatus(error.message, "error");
-        applyButton.disabled = selectionCount() === 0;
       }
     });
 
-    async function restoreSelection(selectedProfileId = activeProfileId) {
+    $("#export-config").addEventListener("click", async () => {
       try {
-        const saved = await api(`/api/selection?profileId=${encodeURIComponent(selectedProfileId)}`);
-        for (const source of saved.sources) {
-          await inspect(source.repository, source.ref);
-          const key = `${source.repository}@${source.ref}`;
-          const loaded = state.get(key);
-          if (loaded) {
-            loaded.selected = new Set(source.providerIds);
-            render();
-          }
-        }
-        if (saved.sources.length) setStatus("Restored your last plugin selection.", "success");
-        await refreshManifestPreview();
-      } catch (error) {
-        setStatus(error.message, "error");
-      }
-    }
-
-    async function switchProfile(nextProfileId) {
-      if (!profiles.some(({ id }) => id === nextProfileId) || nextProfileId === activeProfileId) return;
-      profileStates.set(activeProfileId, state);
-      activeProfileId = nextProfileId;
-      state = profileStates.get(activeProfileId) || new Map();
-      localStorage.setItem("aioplugins-active-profile", activeProfileId);
-      renderProfileOptions();
-      updateProfileLink();
-      render();
-      await restoreSelection(activeProfileId);
-    }
-
-    document.querySelector("#profile-select").addEventListener("change", (event) => {
-      switchProfile(event.target.value);
-    });
-
-    document.querySelector("#create-profile").addEventListener("click", async () => {
-      const nameInput = document.querySelector("#profile-name");
-      const passwordInput = document.querySelector("#profile-password");
-      const confirmInput = document.querySelector("#profile-password-confirm");
-      const name = nameInput.value.trim();
-      const password = passwordInput.value;
-      if (!name || password.length < 8 || password !== confirmInput.value) {
-        setStatus(
-          !name ? "Enter a profile name." :
-            password.length < 8 ? "Password must be at least 8 characters." : "Passwords do not match.",
-          "error"
-        );
-        (!name ? nameInput : password.length < 8 ? passwordInput : confirmInput).focus();
-        return;
-      }
-      try {
-        const result = await api("/api/profiles", { name, password });
-        profiles = result.profiles;
-        const profile = profiles[profiles.length - 1];
-        nameInput.value = "";
-        confirmInput.value = "";
-        profilePasswords.set(profile.id, password);
-        profileStates.set(activeProfileId, state);
-        activeProfileId = profile.id;
-        profileStates.set(activeProfileId, state);
-        localStorage.setItem("aioplugins-active-profile", activeProfileId);
-        renderProfileOptions();
-        updateProfileLink();
-        render();
-        await restoreSelection(activeProfileId);
-        setStatus(`Created profile “${profile.name}”. Add plugins to customize its link.`, "success");
-      } catch (error) {
-        setStatus(error.message, "error");
-      }
-    });
-
-    document.querySelector("#delete-profile").addEventListener("click", async () => {
-      if (!activeProfileId) return;
-      try {
-        const result = await api(`/api/profiles/${encodeURIComponent(activeProfileId)}`, {
-          password: document.querySelector("#profile-password").value
-        }, "DELETE");
-        profileStates.delete(activeProfileId);
-        profilePasswords.delete(activeProfileId);
-        profiles = result.profiles;
-        activeProfileId = profiles[0]?.id || "";
-        state = profileStates.get(activeProfileId) || new Map();
-        localStorage.setItem("aioplugins-active-profile", activeProfileId);
-        renderProfileOptions();
-        updateProfileLink();
-        render();
-        if (activeProfileId) await restoreSelection(activeProfileId);
-        else {
-          await refreshManifestPreview();
-          setStatus("Create a password-protected profile to start building a private plugin link.");
-        }
-      } catch (error) {
-        setStatus(error.message, "error");
-      }
-    });
-
-    document.querySelector("#export-profile").addEventListener("click", async () => {
-      if (!activeProfileId) return;
-      try {
-        const saved = await api(`/api/selection?profileId=${encodeURIComponent(activeProfileId)}`);
-        const profile = profiles.find(({ id }) => id === activeProfileId);
-        const backup = {
-          format: "aioplugins-profile",
-          version: 1,
-          name: profile?.name || "Profile",
-          sources: saved.sources
-        };
+        const saved = await api("/api/config");
+        const backup = { format: "aioplugins-profile", version: 1, sources: saved.sources };
         const blobUrl = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" }));
         const link = document.createElement("a");
         link.href = blobUrl;
-        link.download = `aioplugins-${(profile?.name || "profile").toLowerCase().replace(/[^a-z0-9]+/g, "-")}.json`;
+        link.download = `aioplugins-${user.id.slice(0, 8)}.json`;
         link.click();
         URL.revokeObjectURL(blobUrl);
-        setStatus("Profile backup exported without its password.", "success");
+        setStatus("Backup exported.", "success");
       } catch (error) {
         setStatus(error.message, "error");
       }
     });
 
-    document.querySelector("#import-profile").addEventListener("click", () => {
-      document.querySelector("#import-profile-file").click();
-    });
+    $("#import-config").addEventListener("click", () => $("#import-config-file").click());
 
-    document.querySelector("#import-profile-file").addEventListener("change", async (event) => {
+    $("#import-config-file").addEventListener("change", async (event) => {
       const file = event.target.files?.[0];
-      if (!file || !activeProfileId) return;
+      if (!file) return;
       try {
         const backup = JSON.parse(await file.text());
         if (backup.format !== "aioplugins-profile" || backup.version !== 1 || !Array.isArray(backup.sources)) {
-          throw new Error("This file is not an AIOPlugins profile backup");
+          throw new Error("This file is not an AIOPlugins backup");
         }
-        const password = document.querySelector("#profile-password").value;
-        if (!password) throw new Error("Enter this profile's password before restoring a backup");
-        setStatus("Restoring profile plugins…");
-        await api("/api/apply", { profileId: activeProfileId, password, sources: backup.sources });
+        setStatus("Restoring plugins…");
+        await api("/api/apply", { sources: backup.sources });
         state = new Map();
         for (const source of backup.sources) {
           await inspect(source.repository, source.ref);
           const loaded = state.get(`${source.repository}@${source.ref}`);
           if (loaded) loaded.selected = new Set(source.providerIds);
         }
-        profileStates.set(activeProfileId, state);
         render();
         await refreshManifestPreview();
-        setStatus("Profile backup restored.", "success");
+        setStatus("Backup restored.", "success");
       } catch (error) {
         setStatus(error.message, "error");
       } finally {
@@ -845,22 +907,11 @@
 
     async function initialize() {
       try {
-        const result = await api("/api/profiles");
-        profiles = result.profiles;
-        const preferredId = localStorage.getItem("aioplugins-active-profile");
-        activeProfileId = profiles.some(({ id }) => id === preferredId) ? preferredId : (profiles[0]?.id || "");
-        state = profileStates.get(activeProfileId) || new Map();
-        renderProfileOptions();
-        updateProfileLink();
-        render();
-        document.querySelector("#export-profile").disabled = !activeProfileId;
-        document.querySelector("#import-profile").disabled = !activeProfileId;
-        if (activeProfileId) await restoreSelection(activeProfileId);
-        else {
-          await refreshManifestPreview();
-          setStatus("Create a password-protected profile to start building a private plugin link.");
-        }
+        const { user: current } = await api("/api/session");
+        if (current) await enter(current);
+        else setUser(null);
       } catch (error) {
+        setUser(null);
         setStatus(error.message, "error");
       }
     }

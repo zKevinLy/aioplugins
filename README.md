@@ -14,11 +14,9 @@ npm run dev
 
 Open `http://127.0.0.1:7000/`. Create a profile for each person or setup with a password of at least 8 characters, choose a suggested source or enter an HTTPS GitHub repository URL, inspect its manifest, select plugins, and click **Save & Install**. Each profile gets a UUID, an independent plugin selection, and a password-protected Nuvio repository URL. Add that URL to Nuvio's plugin source settings. The encrypted token in the URL is a bearer credential: share it only with people who should have access to that profile.
 
-No repository clone is needed. Selected bundled files are downloaded from the exact inspected commit and cached in `.nuvio-cache/`. The combined manifest uses the Nuvio `scrapers` format and rewrites each `filename` to a file served by this builder. Profile password hashes, the encryption key, and profile selections are stored locally in ignored `.aioplugins-*` files. Back up the `.aioplugins-secret` file with the profile data; losing it invalidates existing profile links. Restarting uses the cached selection; updates require inspecting and applying the source again with the profile password.
+No repository clone is needed. Selected bundled files are downloaded from the exact inspected commit and cached in `.nuvio-cache/`. The combined manifest uses the Nuvio `scrapers` format and rewrites each `filename` to a file served by this builder. Profile password hashes, the encryption key, and profile selections are stored locally in ignored `.aioplugins-*` files. Back up the `data/` folder with the profile data; losing it invalidates existing profile links. Restarting uses the cached selection; updates require inspecting and applying the source again with the profile password.
 
 The server binds to `127.0.0.1` and is intended for local testing. Nuvio must be able to reach this address. To use a generated link from another device, host AIOPlugins at an address accessible to that device; do not expose its source-management API publicly without adding authentication.
-
-Optional: set `AIOPLUGINS_GITHUB_TOKEN` to a [classic GitHub PAT](https://github.com/settings/tokens) (no scopes needed for public repositories; `repo` scope for private ones). It is sent as a Bearer token on GitHub API and raw file requests, raising the API quota from 60 to 5,000 requests/hour when your machine's outbound IP is shared or heavily used. A `GITHUB_TOKEN` is used as a fallback if the variable is not set.
 
 ## Sources and execution
 

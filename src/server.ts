@@ -1,30 +1,46 @@
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { createServer, type IncomingMessage, type OutgoingHttpHeaders, type Server, type ServerResponse } from "node:http";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { randomUUID } from "node:crypto";
 import {
-  applyRemoteSelections,
-  createPluginProfile,
-  deletePluginProfile,
+  fetchAndCacheSources,
   getCachedPluginFile,
-  getPluginProfiles,
   getPluginRepositoryManifest,
-  getSavedSelections,
-  inspectGitHubSource,
-  resolveProfileLinkPassword
+  inspectGitHubSource
 } from "./providers/remote.js";
+import {
+  HttpError,
+  createSession,
+  deleteUser,
+  destroySession,
+  getProfiles,
+  getSources,
+  loginUser,
+  registerUser,
+  saveProfile,
+  deleteProfile,
+  saveSources,
+  userFromInstallLink,
+  userFromSession,
+  type User
+} from "./users.js";
 
 export interface PluginBuilderConfig {
   providerStorageRoot?: string;
 }
 
-function sendJson(response: ServerResponse, status: number, body: unknown): void {
+const SESSION_COOKIE = "aio_session";
+
+function sendJson(response: ServerResponse, status: number, body: unknown, headers: OutgoingHttpHeaders = {}): void {
   response.writeHead(status, {
-    "access-control-allow-origin": "*",
     "content-type": "application/json; charset=utf-8",
-    "cache-control": "no-store"
+    "cache-control": "no-store",
+    ...headers
   });
   response.end(JSON.stringify(body));
 }
+
+const PUBLIC_CORS = { "access-control-allow-origin": "*" };
 
 function sendHtml(response: ServerResponse, body: string): void {
   response.writeHead(200, {
@@ -35,17 +51,24 @@ function sendHtml(response: ServerResponse, body: string): void {
   response.end(body);
 }
 
-async function readJsonBody(request: IncomingMessage): Promise<unknown> {
-  if (!request.headers["content-type"]?.includes("application/json")) throw new Error("Expected application/json");
+async function readJsonBody(request: IncomingMessage): Promise<Record<string, unknown>> {
+  if (!request.headers["content-type"]?.includes("application/json")) throw new HttpError(400, "Expected application/json");
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of request) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     size += buffer.length;
-    if (size > 1024 * 1024) throw new Error("Request body is too large");
+    if (size > 1024 * 1024) throw new HttpError(413, "Request body is too large");
     chunks.push(buffer);
   }
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } catch {
+    throw new HttpError(400, "Invalid JSON");
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new HttpError(400, "Expected a JSON object");
+  return parsed as Record<string, unknown>;
 }
 
 function isLoopback(value: string | undefined): boolean {
@@ -58,16 +81,111 @@ function isLoopback(value: string | undefined): boolean {
   }
 }
 
-function isLocalControlRequest(request: IncomingMessage): boolean {
-  return isLoopback(request.headers.host);
+function readSessionToken(request: IncomingMessage): string | undefined {
+  for (const part of (request.headers.cookie || "").split(";")) {
+    const [name, ...rest] = part.trim().split("=");
+    if (name === SESSION_COOKIE) return rest.join("=") || undefined;
+  }
+  return undefined;
 }
 
-async function handleRequest(
-  request: IncomingMessage,
-  response: ServerResponse,
-  config: PluginBuilderConfig
-): Promise<void> {
+function sessionCookie(token: string, maxAgeSeconds: number): string {
+  return `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAgeSeconds}`;
+}
+
+function publicUser(user: User) {
+  return { id: user.id, installPath: `/u/${user.id}/${user.installToken}/manifest.json` };
+}
+
+function startSession(response: ServerResponse, user: User, root: string, status = 200): void {
+  const { token, maxAgeSeconds } = createSession(user.id, root);
+  sendJson(response, status, { user: publicUser(user) }, { "set-cookie": sessionCookie(token, maxAgeSeconds) });
+}
+
+async function handleApi(request: IncomingMessage, response: ServerResponse, url: URL, root: string): Promise<void> {
+  const { pathname } = url;
+  const method = request.method;
+  const sessionToken = readSessionToken(request);
+
+  if (pathname === "/api/session" && method === "GET") {
+    const user = userFromSession(sessionToken, root);
+    sendJson(response, 200, { user: user ? publicUser(user) : null });
+    return;
+  }
+  if (pathname === "/api/register" && method === "POST") {
+    const body = await readJsonBody(request);
+    startSession(response, await registerUser(body.password, root), root, 201);
+    return;
+  }
+  if (pathname === "/api/login" && method === "POST") {
+    const body = await readJsonBody(request);
+    startSession(response, await loginUser(body.uuid, body.password, root), root);
+    return;
+  }
+  if (pathname === "/api/logout" && method === "POST") {
+    destroySession(sessionToken, root);
+    sendJson(response, 200, { user: null }, { "set-cookie": sessionCookie("", 0) });
+    return;
+  }
+
+  const user = userFromSession(sessionToken, root);
+  if (!user) throw new HttpError(401, "Please log in");
+
+  if (pathname === "/api/config" && method === "GET") {
+    const sources = getSources(user.id, root).map(({ repository, ref, providerIds }) => ({ repository, ref, providerIds }));
+    sendJson(response, 200, { sources });
+    return;
+  }
+  if (pathname === "/api/discover" && method === "POST") {
+    const body = await readJsonBody(request);
+    if (typeof body.repository !== "string") throw new HttpError(400, "Repository URL is required");
+    const ref = typeof body.ref === "string" ? body.ref : "main";
+    sendJson(response, 200, await inspectGitHubSource(body.repository, ref));
+    return;
+  }
+  if (pathname === "/api/apply" && method === "POST") {
+    const body = await readJsonBody(request);
+    const { sources, plugins } = await fetchAndCacheSources(body.sources, root);
+    saveSources(user.id, sources, root);
+    sendJson(response, 200, { plugins });
+    return;
+  }
+
+  // Profile endpoints
+  if (pathname === "/api/profiles" && method === "GET") {
+    sendJson(response, 200, { profiles: getProfiles(user.id, root) });
+    return;
+  }
+  if (pathname === "/api/profiles" && method === "POST") {
+    const body = await readJsonBody(request);
+    const profileId = typeof body.id === "string" && body.id ? body.id : randomUUID();
+    const name = typeof body.name === "string" ? body.name : "Default Profile";
+    const { sources, plugins } = await fetchAndCacheSources(body.sources, root);
+    saveProfile(user.id, profileId, name, sources, root);
+    saveSources(user.id, sources, root);
+    sendJson(response, 200, { profileId, plugins });
+    return;
+  }
+  if (pathname.startsWith("/api/profiles/") && method === "DELETE") {
+    const profileId = pathname.split("/")[3];
+    if (profileId) deleteProfile(user.id, profileId, root);
+    sendJson(response, 200, { success: true });
+    return;
+  }
+
+  if (pathname === "/api/account" && method === "DELETE") {
+    const body = await readJsonBody(request);
+    await deleteUser(user.id, body.password, root);
+    sendJson(response, 200, { user: null }, { "set-cookie": sessionCookie("", 0) });
+    return;
+  }
+
+  sendJson(response, 404, { error: "Not found" });
+}
+
+async function handleRequest(request: IncomingMessage, response: ServerResponse, config: PluginBuilderConfig): Promise<void> {
   const url = new URL(request.url || "/", "http://localhost");
+  const root = config.providerStorageRoot ?? process.cwd();
 
   if (url.pathname === "/" && request.method === "GET") {
     sendHtml(response, readFileSync(resolve(process.cwd(), "public/index.html"), "utf8"));
@@ -75,71 +193,15 @@ async function handleRequest(
   }
 
   if (url.pathname.startsWith("/api/")) {
-    if (!isLocalControlRequest(request)) {
+    if (!isLoopback(request.headers.host)) {
       sendJson(response, 403, { error: "The plugin builder controls are available only from this computer" });
       return;
     }
-    if (url.pathname === "/api/profiles" && request.method === "GET") {
-      sendJson(response, 200, { profiles: getPluginProfiles(config.providerStorageRoot) });
-      return;
-    }
-    if (url.pathname === "/api/selection" && request.method === "GET") {
-      const profileId = url.searchParams.get("profileId") || "";
-      sendJson(response, 200, { sources: getSavedSelections(config.providerStorageRoot, profileId) });
-      return;
-    }
-    const profileMatch = url.pathname.match(/^\/api\/profiles\/([a-z0-9-]+)$/);
-    if (profileMatch && request.method === "DELETE") {
-      try {
-        const body = await readJsonBody(request) as { password?: unknown };
-        if (typeof body.password !== "string") throw new Error("Profile password is required");
-        sendJson(response, 200, {
-          profiles: deletePluginProfile(profileMatch[1] || "", body.password, config.providerStorageRoot)
-        });
-      } catch (error) {
-        sendJson(response, 400, { error: error instanceof Error ? error.message : "Could not delete profile" });
-      }
-      return;
-    }
-    if (request.method !== "POST") {
-      sendJson(response, 405, { error: "Method not allowed" });
-      return;
-    }
     try {
-      const body = await readJsonBody(request);
-      if (url.pathname === "/api/profiles") {
-        if (!body || typeof body !== "object" || typeof (body as { name?: unknown }).name !== "string") {
-          throw new Error("Profile name is required");
-        }
-        const profileBody = body as { name: string; password?: unknown };
-        if (typeof profileBody.password !== "string") throw new Error("Profile password is required");
-        sendJson(response, 201, {
-          profiles: createPluginProfile(profileBody.name, profileBody.password, config.providerStorageRoot)
-        });
-        return;
-      }
-      if (url.pathname === "/api/discover") {
-        if (!body || typeof body !== "object") throw new Error("Invalid source request");
-        const source = body as Record<string, unknown>;
-        if (typeof source.repository !== "string") throw new Error("Repository URL is required");
-        const ref = typeof source.ref === "string" ? source.ref : "main";
-        sendJson(response, 200, await inspectGitHubSource(source.repository, ref, config.providerStorageRoot));
-        return;
-      }
-      if (url.pathname === "/api/apply") {
-        if (!body || typeof body !== "object" || !Array.isArray((body as { sources?: unknown }).sources)) {
-          throw new Error("A sources list is required");
-        }
-        const applyBody = body as { sources: unknown[]; profileId?: unknown; password?: unknown };
-        const profileId = typeof applyBody.profileId === "string" ? applyBody.profileId : "";
-        const password = typeof applyBody.password === "string" ? applyBody.password : "";
-        const plugins = await applyRemoteSelections(applyBody.sources, config.providerStorageRoot, profileId, password);
-        sendJson(response, 200, { plugins });
-        return;
-      }
-      sendJson(response, 404, { error: "Not found" });
+      await handleApi(request, response, url, root);
     } catch (error) {
-      sendJson(response, 400, { error: error instanceof Error ? error.message : "Source request failed" });
+      const status = error instanceof HttpError ? error.status : 400;
+      sendJson(response, status, { error: error instanceof Error ? error.message : "Request failed" });
     }
     return;
   }
@@ -150,59 +212,38 @@ async function handleRequest(
   }
 
   if (url.pathname === "/health") {
-    sendJson(response, 200, { status: "ok", profiles: getPluginProfiles(config.providerStorageRoot).length });
+    sendJson(response, 200, { status: "ok" });
     return;
   }
 
-  if (url.pathname === "/manifest.json") {
-    sendJson(response, 404, { error: "Create a password-protected profile to get an install link" });
+  const manifestMatch = url.pathname.match(/^\/u\/([0-9a-f-]{36})\/([A-Za-z0-9_-]+)\/manifest\.json$/);
+  if (manifestMatch) {
+    const user = userFromInstallLink(manifestMatch[1]!, manifestMatch[2]!, root);
+    if (!user) {
+      sendJson(response, 404, { error: "Not found" }, PUBLIC_CORS);
+      return;
+    }
+    sendJson(response, 200, getPluginRepositoryManifest(root, user.id, getSources(user.id, root)), PUBLIC_CORS);
     return;
   }
 
-  const profileManifest = url.pathname.match(/^\/profiles\/([a-z0-9-]+)\/([^/]+)\/manifest\.json$/);
-  if (profileManifest) {
-    let token: string;
+  const pluginMatch = url.pathname.match(/^\/u\/([0-9a-f-]{36})\/([A-Za-z0-9_-]+)\/providers\/([^/]+\.js)$/);
+  if (pluginMatch) {
+    const user = userFromInstallLink(pluginMatch[1]!, pluginMatch[2]!, root);
+    let filename: string;
     try {
-      token = decodeURIComponent(profileManifest[2] || "");
+      filename = decodeURIComponent(pluginMatch[3]!);
     } catch {
-      sendJson(response, 400, { error: "Malformed profile token" });
+      sendJson(response, 400, { error: "Malformed filename" }, PUBLIC_CORS);
       return;
     }
-    const profileId = profileManifest[1] || "";
-    const password = resolveProfileLinkPassword(profileId, token, config.providerStorageRoot);
-    if (password === null) {
-      sendJson(response, 401, { error: "Invalid profile link" });
-      return;
-    }
-    sendJson(response, 200, getPluginRepositoryManifest(config.providerStorageRoot, profileId, password));
-    return;
-  }
-
-  const profilePluginMatch = url.pathname.match(/^\/profiles\/([a-z0-9-]+)\/([^/]+)\/providers\/([^/]+\.js)$/);
-  const match = profilePluginMatch;
-  if (match) {
-    const profileId = profilePluginMatch[1] || "";
-    let password = "";
-    let token: string;
-    try {
-      token = decodeURIComponent(profilePluginMatch[2] || "");
-    } catch {
-      sendJson(response, 400, { error: "Malformed profile token" });
-      return;
-    }
-    const resolvedPassword = resolveProfileLinkPassword(profileId, token, config.providerStorageRoot);
-    if (resolvedPassword === null) {
-      sendJson(response, 401, { error: "Invalid profile link" });
-      return;
-    }
-    password = resolvedPassword;
-    const filename = decodeURIComponent(match[3] || "");
-    const source = getCachedPluginFile(`providers/${filename}`, config.providerStorageRoot, profileId, password);
+    const source = user ? getCachedPluginFile(root, getSources(user.id, root), `providers/${filename}`) : null;
     if (source === null) {
-      sendJson(response, 404, { error: "Plugin file not found" });
+      sendJson(response, 404, { error: "Not found" }, PUBLIC_CORS);
       return;
     }
     response.writeHead(200, {
+      ...PUBLIC_CORS,
       "content-type": "application/javascript; charset=utf-8",
       "cache-control": "no-store",
       "x-content-type-options": "nosniff"
