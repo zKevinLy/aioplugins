@@ -20,7 +20,7 @@ The server binds to `0.0.0.0` so it is reachable from other devices and platform
 
 - `PORT` — HTTP port (default `7000`; Render injects its own `PORT`).
 - `HOST` — bind address (default `0.0.0.0`; set `127.0.0.1` to restrict to this computer).
-- `AIOPLUGINS_ADMIN_PASSWORD` — optional password required to use the `/api/*` builder controls from any non-loopback host. The web UI prompts for it once and sends it as a Bearer token. Loopback requests (`localhost`, `127.0.0.1`) never need it, so local development works unchanged. Do not expose the source-management API publicly without setting this variable.
+- `AIOPLUGINS_ADMIN_PASSWORD` — password required to use the `/api/*` builder controls from any non-loopback host. The web UI prompts for it once and sends it as a Bearer token. Requests that both originate from and address the loopback interface (`localhost`, `127.0.0.1`) never need it, so local development works unchanged. The loopback check uses the TCP socket address, so a remote client cannot bypass this by sending a forged `Host: 127.0.0.1` header. If this variable is not set, non-loopback `/api/*` requests are rejected with a 403 and no password will unlock them; set it and restart the server to manage the builder from other hosts.
 
 ## Deploying on Render
 

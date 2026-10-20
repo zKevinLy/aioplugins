@@ -225,3 +225,52 @@ test("requires the admin password for non-loopback control requests", async () =
     await new Promise((resolve) => remoteServer.close(resolve));
   }
 });
+
+test("rejects non-loopback control requests when no admin password is configured", async () => {
+  const previousPassword = process.env.AIOPLUGINS_ADMIN_PASSWORD;
+  delete process.env.AIOPLUGINS_ADMIN_PASSWORD;
+  const unconfiguredServer = createPluginBuilderServer({ providerStorageRoot: storageRoot });
+  await new Promise((resolve) => unconfiguredServer.listen(0, "127.0.0.1", resolve));
+  const address = unconfiguredServer.address();
+  try {
+    const call = (authorization) => new Promise((resolve, reject) => {
+      const req = request(
+        {
+          host: "127.0.0.1",
+          port: address.port,
+          path: "/api/profiles",
+          method: "GET",
+          headers: { host: "example.onrender.com", ...(authorization ? { authorization } : {}) }
+        },
+        (res) => {
+          let body = "";
+          res.setEncoding("utf8");
+          res.on("data", (chunk) => { body += chunk; });
+          res.on("end", () => resolve({ status: res.statusCode, body: JSON.parse(body) }));
+        }
+      );
+      req.on("error", reject);
+      req.end();
+    });
+
+    const denied = await call(undefined);
+    assert.equal(denied.status, 403);
+    assert.equal(denied.body.adminPasswordConfigured, false);
+    assert.equal(denied.body.requiresAdminPassword, undefined);
+
+    // No password can succeed when none is configured, so the server must not
+    // send the flag that triggers the browser prompt.
+    const withToken = await call("Bearer anything");
+    assert.equal(withToken.status, 403);
+    assert.equal(withToken.body.requiresAdminPassword, undefined);
+
+    const loopback = await originalFetch(
+      `http://127.0.0.1:${address.port}/api/profiles`
+    );
+    assert.equal(loopback.status, 200);
+  } finally {
+    await new Promise((resolve) => unconfiguredServer.close(resolve));
+    if (previousPassword === undefined) delete process.env.AIOPLUGINS_ADMIN_PASSWORD;
+    else process.env.AIOPLUGINS_ADMIN_PASSWORD = previousPassword;
+  }
+});

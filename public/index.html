@@ -474,12 +474,19 @@
         body: body === undefined ? undefined : JSON.stringify(body)
       });
       const result = await response.json().catch(() => ({}));
-      if (response.status === 401 && result.requiresAdminPassword && !prompted) {
-        const password = prompt("This AIOPlugins instance is managed remotely. Enter its admin password to use the builder controls.");
-        if (password) {
-          adminToken = password;
-          sessionStorage.setItem("aioplugins-admin-token", adminToken);
-          return api(path, body, method, true);
+      if (response.status === 401 && result.requiresAdminPassword) {
+        if (!prompted) {
+          const password = prompt("This AIOPlugins instance is managed remotely. Enter the server's admin password (AIOPLUGINS_ADMIN_PASSWORD) to use the builder controls.");
+          if (password) {
+            adminToken = password;
+            sessionStorage.setItem("aioplugins-admin-token", adminToken);
+            return api(path, body, method, true);
+          }
+        } else {
+          // The token we just sent was rejected, so drop it and let the next action prompt again.
+          adminToken = "";
+          sessionStorage.removeItem("aioplugins-admin-token");
+          throw new Error("Incorrect admin password. It must match the server's AIOPLUGINS_ADMIN_PASSWORD variable.");
         }
       }
       if (!response.ok) throw new Error(result.error || `Request failed (${response.status})`);
