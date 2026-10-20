@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.env
+.nuvio-cache/
+.nuvio-provider-selection.json
+.nuvio-provider-selection.json.tmp
+.aioplugins-profiles.json
+.aioplugins-profiles.json.tmp
+.aioplugins-secret
+.aioplugins-secret.tmp
+.aioplugins-profile-*.json
+.aioplugins-profile-*.json.tmp
+coverage/
