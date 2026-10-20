@@ -21,6 +21,7 @@ The server binds to `0.0.0.0` so it is reachable from other devices and platform
 - `PORT` — HTTP port (default `7000`; Render injects its own `PORT`).
 - `HOST` — bind address (default `0.0.0.0`; set `127.0.0.1` to restrict to this computer).
 - `AIOPLUGINS_ADMIN_PASSWORD` — password required to use the `/api/*` builder controls from any non-loopback host. The web UI prompts for it once and sends it as a Bearer token. Requests that both originate from and address the loopback interface (`localhost`, `127.0.0.1`) never need it, so local development works unchanged. The loopback check uses the TCP socket address, so a remote client cannot bypass this by sending a forged `Host: 127.0.0.1` header. If this variable is not set, non-loopback `/api/*` requests are rejected with a 403 and no password will unlock them; set it and restart the server to manage the builder from other hosts.
+- `AIOPLUGINS_GITHUB_TOKEN` — optional [GitHub PAT](https://github.com/settings/tokens) (classic, no scopes needed for public repos; `repo` scope for private ones). Sent as a Bearer token on GitHub API/raw requests and raises the API quota from 60 to 5,000 requests/hour. **Recommended on Render, containers, and VPS hosts, where the shared egress IP quickly exhausts the anonymous limit** and `api.github.com` returns `403 GitHub request failed`. Falls back to an injected `GITHUB_TOKEN` if present.
 
 ## Deploying on Render
 

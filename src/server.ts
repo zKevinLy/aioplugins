@@ -158,7 +158,7 @@ async function handleRequest(
         const source = body as Record<string, unknown>;
         if (typeof source.repository !== "string") throw new Error("Repository URL is required");
         const ref = typeof source.ref === "string" ? source.ref : "main";
-        sendJson(response, 200, await inspectGitHubSource(source.repository, ref));
+        sendJson(response, 200, await inspectGitHubSource(source.repository, ref, config.providerStorageRoot));
         return;
       }
       if (url.pathname === "/api/apply") {
