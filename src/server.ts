@@ -71,16 +71,6 @@ async function readJsonBody(request: IncomingMessage): Promise<Record<string, un
   return parsed as Record<string, unknown>;
 }
 
-function isLoopback(value: string | undefined): boolean {
-  if (!value) return false;
-  try {
-    const hostname = new URL(`http://${value}`).hostname.toLowerCase();
-    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
-  } catch {
-    return false;
-  }
-}
-
 function readSessionToken(request: IncomingMessage): string | undefined {
   for (const part of (request.headers.cookie || "").split(";")) {
     const [name, ...rest] = part.trim().split("=");
@@ -90,7 +80,8 @@ function readSessionToken(request: IncomingMessage): string | undefined {
 }
 
 function sessionCookie(token: string, maxAgeSeconds: number): string {
-  return `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAgeSeconds}`;
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : ""; 
+  return `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAgeSeconds}${secure}`;
 }
 
 function publicUser(user: User) {
@@ -193,10 +184,6 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
   }
 
   if (url.pathname.startsWith("/api/")) {
-    if (!isLoopback(request.headers.host)) {
-      sendJson(response, 403, { error: "The plugin builder controls are available only from this computer" });
-      return;
-    }
     try {
       await handleApi(request, response, url, root);
     } catch (error) {

@@ -12,11 +12,11 @@
     "test": "npm run build && node --test tests/*.test.mjs"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.5.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
-    "tsx": "^4.23.15",
-    "typescript": "^7.0.2"
+    "tsx": "^4.19.0",
+    "typescript": "^5.9.3"
   }
 }
