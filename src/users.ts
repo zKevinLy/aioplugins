@@ -60,9 +60,15 @@ async function checkPassword(
     const parts = stored.split(":");
     if (parts.length !== 2) return false;
 
-    const [saltHex, hashHex] = parts;
+    const saltHex = parts[0];
+    const hashHex = parts[1];
 
-    if (!HASH_PATTERN.test(saltHex) || !KEY_PATTERN.test(hashHex)) {
+    if (
+      typeof saltHex !== "string" ||
+      typeof hashHex !== "string" ||
+      !HASH_PATTERN.test(saltHex) ||
+      !KEY_PATTERN.test(hashHex)
+    ) {
       return false;
     }
 
