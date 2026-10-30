@@ -104,9 +104,6 @@ function safeEqual(a: string, b: string): boolean {
 
 // ---------- login throttling ----------
 
-// Throttling is keyed by UUID and client IP when available.
-// It is intentionally in-memory and resets when the process restarts.
-
 const failures = new Map<
   string,
   { count: number; resetAt: number }
@@ -204,7 +201,9 @@ export async function registerUser(
   const db = getDb(root);
   const now = Date.now();
 
-  const createAccount = db.transaction(() => {
+  db.exec("BEGIN IMMEDIATE");
+
+  try {
     db.prepare(
       `INSERT INTO users
        (id, password_hash, install_token, created_at)
@@ -215,9 +214,12 @@ export async function registerUser(
       `INSERT INTO user_config (user_id, updated_at)
        VALUES (?, ?)`
     ).run(id, now);
-  });
 
-  createAccount();
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
 
   return { id, installToken };
 }
@@ -245,7 +247,6 @@ async function verifyCredentials(
       ? password.slice(0, MAX_PASSWORD_LENGTH)
       : "";
 
-  // Perform a derivation even when the UUID does not exist.
   const ok = row
     ? await checkPassword(given, row.password_hash)
     : (await derive(given, randomBytes(16)), false);
