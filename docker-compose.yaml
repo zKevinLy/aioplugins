@@ -18,7 +18,7 @@ services:
       - aioplugins_data:/app/persist
 
     networks:
-      - aioplugins_network
+      - website_network
 
     read_only: true
 
@@ -34,21 +34,10 @@ services:
     pids_limit: 100
     mem_limit: 512m
 
-    healthcheck:
-      test:
-        - CMD
-        - node
-        - -e
-        - "fetch('http://127.0.0.1:7000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
-
 volumes:
   aioplugins_data:
 
 networks:
-  aioplugins_network:
-    name: aioplugins_network
-    driver: bridge
+  website_network:
+    external: true
+    name: website_network
