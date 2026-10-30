@@ -1,0 +1,54 @@
+
+services:
+  aioplugins:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    container_name: aioplugins
+    restart: unless-stopped
+    init: true
+
+    environment:
+      NODE_ENV: production
+      PORT: 7000
+      DATA_DIR: /app/persist
+
+    volumes:
+      - aioplugins_data:/app/persist
+
+    networks:
+      - aioplugins_network
+
+    read_only: true
+
+    tmpfs:
+      - /tmp:size=32m,noexec,nosuid
+
+    cap_drop:
+      - ALL
+
+    security_opt:
+      - no-new-privileges:true
+
+    pids_limit: 100
+    mem_limit: 512m
+
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:7000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  aioplugins_data:
+
+networks:
+  aioplugins_network:
+    name: aioplugins_network
+    driver: bridge
