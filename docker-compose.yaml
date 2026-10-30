@@ -18,7 +18,7 @@ services:
       - aioplugins_data:/app/persist
 
     networks:
-      - website_network
+      - aioplugins_network
 
     read_only: true
 
@@ -38,6 +38,6 @@ volumes:
   aioplugins_data:
 
 networks:
-  website_network:
-    external: true
-    name: website_network
+  aioplugins_network:
+    name: aioplugins_network
+    driver: bridge
