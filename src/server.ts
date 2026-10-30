@@ -89,8 +89,6 @@ function sendHtml(response: ServerResponse, body: string): void {
 }
 
 function clientAddress(request: IncomingMessage): string {
-  // The app is intended to be reachable through Cloudflare Tunnel only.
-  // Cloudflare supplies CF-Connecting-IP for the original visitor.
   const forwarded = request.headers["cf-connecting-ip"];
 
   if (
@@ -145,7 +143,6 @@ function enforceRateLimit(
 
   rateLimits.set(key, entry);
 
-  // Bound memory usage if many different addresses make requests.
   if (rateLimits.size > RATE_LIMIT_MAX_KEYS) {
     for (const [storedKey, storedEntry] of rateLimits) {
       if (storedEntry.resetAt <= now) {
@@ -318,7 +315,8 @@ async function handleApi(
     const user = await loginUser(
       body.uuid,
       body.password,
-      root
+      root,
+      clientAddress(request)
     );
 
     startSession(response, user, root);
@@ -414,7 +412,6 @@ async function handleApi(
     return;
   }
 
-  // Profile endpoints
   if (pathname === "/api/profiles" && method === "GET") {
     sendJson(response, 200, {
       profiles: getProfiles(user.id, root)
@@ -533,7 +530,6 @@ async function handleRequest(
           error: error.message
         });
       } else {
-        // Keep internal errors and filesystem details out of responses.
         sendJson(response, 500, {
           error: "An internal server error occurred"
         });
