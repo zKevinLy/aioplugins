@@ -6,7 +6,7 @@ import {
   scrypt,
   timingSafeEqual
 } from "node:crypto";
-import { getDb, type Env } from "./lib/db.js";
+import type { Database } from "./lib/db.js";
 import type { SavedSourceSelection } from "./providers/remote.js";
 
 export class HttpError extends Error {
@@ -180,15 +180,13 @@ interface UserRow {
 }
 
 async function findUser(
-  env: Env,
+  db: Database,
   id: string
 ): Promise<UserRow | null> {
-  return getDb(env)
-    .prepare(
-      "SELECT id, password_hash, install_token FROM users WHERE id = ?"
-    )
-    .bind(id)
-    .first<UserRow>();
+  return db.first<UserRow>(
+    "SELECT id, password_hash, install_token FROM users WHERE id = ?",
+    [id]
+  );
 }
 
 function toUser(row: UserRow): User {
@@ -200,7 +198,7 @@ function toUser(row: UserRow): User {
 
 export async function registerUser(
   password: unknown,
-  env: Env
+  db: Database
 ): Promise<User> {
   assertPassword(password);
 
@@ -208,20 +206,21 @@ export async function registerUser(
   const installToken = randomBytes(24).toString("base64url");
   const passwordHash = await hashPassword(password);
 
-  const db = getDb(env);
   const now = Date.now();
 
   await db.batch([
-    db.prepare(
-      `INSERT INTO users
+    {
+      sql: `INSERT INTO users
        (id, password_hash, install_token, created_at)
-       VALUES (?, ?, ?, ?)`
-    ).bind(id, passwordHash, installToken, now),
+       VALUES (?, ?, ?, ?)`,
+      params: [id, passwordHash, installToken, now]
+    },
 
-    db.prepare(
-      `INSERT INTO user_config (user_id, updated_at)
-       VALUES (?, ?)`
-    ).bind(id, now)
+    {
+      sql: `INSERT INTO user_config (user_id, updated_at)
+       VALUES (?, ?)`,
+      params: [id, now]
+    }
   ]);
 
   return { id, installToken };
@@ -230,7 +229,7 @@ export async function registerUser(
 async function verifyCredentials(
   rawId: unknown,
   password: unknown,
-  env: Env,
+  db: Database,
   clientKey?: string
 ): Promise<UserRow> {
   const id =
@@ -243,7 +242,7 @@ async function verifyCredentials(
 
   assertNotLocked(key);
 
-  const row = validId ? await findUser(env, id) : null;
+  const row = validId ? await findUser(db, id) : null;
 
   const given =
     typeof password === "string"
@@ -266,21 +265,21 @@ async function verifyCredentials(
 export async function loginUser(
   rawId: unknown,
   password: unknown,
-  env: Env,
+  db: Database,
   clientKey?: string
 ): Promise<User> {
   return toUser(
-    await verifyCredentials(rawId, password, env, clientKey)
+    await verifyCredentials(rawId, password, db, clientKey)
   );
 }
 
 export async function deleteUser(
   userId: string,
   password: unknown,
-  env: Env
+  db: Database
 ): Promise<void> {
   try {
-    await verifyCredentials(userId, password, env);
+    await verifyCredentials(userId, password, db);
   } catch (error) {
     if (error instanceof HttpError && error.status === 401) {
       throw new HttpError(401, "Incorrect password");
@@ -289,10 +288,7 @@ export async function deleteUser(
     throw error;
   }
 
-  await getDb(env)
-    .prepare("DELETE FROM users WHERE id = ?")
-    .bind(userId)
-    .run();
+  await db.run("DELETE FROM users WHERE id = ?", [userId]);
 }
 
 // ---------- profiles ----------
@@ -306,23 +302,21 @@ export interface Profile {
 
 export async function getProfiles(
   userId: string,
-  env: Env
+  db: Database
 ): Promise<Profile[]> {
-  const result = await getDb(env)
-    .prepare(
-      `SELECT id, name, sources, updated_at
+  const rows = await db.all<{
+    id: string;
+    name: string;
+    sources: string;
+    updated_at: number;
+  }>(
+    `SELECT id, name, sources, updated_at
        FROM profiles
-       WHERE user_id = ?`
-    )
-    .bind(userId)
-    .all<{
-      id: string;
-      name: string;
-      sources: string;
-      updated_at: number;
-    }>();
+       WHERE user_id = ?`,
+    [userId]
+  );
 
-  return (result.results ?? []).map(row => {
+  return rows.map(row => {
     let sources: SavedSourceSelection[] = [];
 
     try {
@@ -348,65 +342,62 @@ export async function saveProfile(
   profileId: string,
   name: string,
   sources: SavedSourceSelection[],
-  env: Env
+  db: Database
 ): Promise<void> {
-  await getDb(env)
-    .prepare(
-      `INSERT INTO profiles
+  await db.run(
+    `INSERT INTO profiles
        (id, user_id, name, sources, updated_at)
        VALUES (?, ?, ?, ?, ?)
        ON CONFLICT(user_id, id)
        DO UPDATE SET
          name = excluded.name,
          sources = excluded.sources,
-         updated_at = excluded.updated_at`
-    )
-    .bind(
+         updated_at = excluded.updated_at`,
+    [
       profileId,
       userId,
       name,
       JSON.stringify(sources),
       Date.now()
-    )
-    .run();
+    ]
+  );
 }
 
 export async function deleteProfile(
   userId: string,
   profileId: string,
-  env: Env
+  db: Database
 ): Promise<void> {
-  await getDb(env)
-    .prepare(
-      "DELETE FROM profiles WHERE user_id = ? AND id = ?"
-    )
-    .bind(userId, profileId)
-    .run();
+  await db.run(
+    "DELETE FROM profiles WHERE user_id = ? AND id = ?",
+    [userId, profileId]
+  );
 }
 
 // ---------- sessions ----------
 
 export async function createSession(
   userId: string,
-  env: Env
+  db: Database
 ): Promise<{ token: string; maxAgeSeconds: number }> {
-  const db = getDb(env);
   const token = randomBytes(32).toString("base64url");
   const now = Date.now();
 
   await db.batch([
-    db.prepare(
-      "DELETE FROM sessions WHERE expires_at <= ?"
-    ).bind(now),
+    {
+      sql: "DELETE FROM sessions WHERE expires_at <= ?",
+      params: [now]
+    },
 
-    db.prepare(
-      `INSERT INTO sessions (token_hash, user_id, expires_at)
-       VALUES (?, ?, ?)`
-    ).bind(
-      sha256(token),
-      userId,
-      now + SESSION_TTL_MS
-    )
+    {
+      sql: `INSERT INTO sessions (token_hash, user_id, expires_at)
+       VALUES (?, ?, ?)`,
+      params: [
+        sha256(token),
+        userId,
+        now + SESSION_TTL_MS
+      ]
+    }
   ]);
 
   return {
@@ -417,7 +408,7 @@ export async function createSession(
 
 export async function userFromSession(
   token: string | undefined,
-  env: Env
+  db: Database
 ): Promise<User | null> {
   if (
     !token ||
@@ -427,31 +418,27 @@ export async function userFromSession(
     return null;
   }
 
-  const row = await getDb(env)
-    .prepare(
-      `SELECT u.id, u.password_hash, u.install_token
+  const row = await db.first<UserRow>(
+    `SELECT u.id, u.password_hash, u.install_token
        FROM sessions s
        JOIN users u ON u.id = s.user_id
-       WHERE s.token_hash = ? AND s.expires_at > ?`
-    )
-    .bind(sha256(token), Date.now())
-    .first<UserRow>();
+       WHERE s.token_hash = ? AND s.expires_at > ?`,
+    [sha256(token), Date.now()]
+  );
 
   return row ? toUser(row) : null;
 }
 
 export async function destroySession(
   token: string | undefined,
-  env: Env
+  db: Database
 ): Promise<void> {
   if (!token || token.length > 256) return;
 
-  await getDb(env)
-    .prepare(
-      "DELETE FROM sessions WHERE token_hash = ?"
-    )
-    .bind(sha256(token))
-    .run();
+  await db.run(
+    "DELETE FROM sessions WHERE token_hash = ?",
+    [sha256(token)]
+  );
 }
 
 // ---------- install link ----------
@@ -459,7 +446,7 @@ export async function destroySession(
 export async function userFromInstallLink(
   id: string,
   token: string,
-  env: Env
+  db: Database
 ): Promise<User | null> {
   if (
     !UUID_PATTERN.test(id) ||
@@ -469,7 +456,7 @@ export async function userFromInstallLink(
     return null;
   }
 
-  const row = await findUser(env, id);
+  const row = await findUser(db, id);
 
   return row && safeEqual(row.install_token, token)
     ? toUser(row)
@@ -480,14 +467,12 @@ export async function userFromInstallLink(
 
 export async function getSources(
   userId: string,
-  env: Env
+  db: Database
 ): Promise<SavedSourceSelection[]> {
-  const row = await getDb(env)
-    .prepare(
-      "SELECT sources FROM user_config WHERE user_id = ?"
-    )
-    .bind(userId)
-    .first<{ sources: string }>();
+  const row = await db.first<{ sources: string }>(
+    "SELECT sources FROM user_config WHERE user_id = ?",
+    [userId]
+  );
 
   try {
     const value: unknown = JSON.parse(row?.sources ?? "[]");
@@ -503,22 +488,20 @@ export async function getSources(
 export async function saveSources(
   userId: string,
   sources: SavedSourceSelection[],
-  env: Env
+  db: Database
 ): Promise<void> {
-  await getDb(env)
-    .prepare(
-      `INSERT INTO user_config
+  await db.run(
+    `INSERT INTO user_config
        (user_id, sources, updated_at)
        VALUES (?, ?, ?)
        ON CONFLICT(user_id)
        DO UPDATE SET
          sources = excluded.sources,
-         updated_at = excluded.updated_at`
-    )
-    .bind(
+         updated_at = excluded.updated_at`,
+    [
       userId,
       JSON.stringify(sources),
       Date.now()
-    )
-    .run();
+    ]
+  );
 }

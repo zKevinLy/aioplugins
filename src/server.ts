@@ -1,7 +1,8 @@
 
 import { randomUUID } from "node:crypto";
 
-import type { Env } from "./lib/db.js";
+import type { Database } from "./lib/db.js";
+import type { Platform } from "./lib/platform.js";
 
 import {
   fetchAndCacheSources,
@@ -100,8 +101,11 @@ function sendText(
 
 // ---------- request helpers ----------
 
-function clientAddress(request: Request): string {
-  const forwarded = request.headers.get("cf-connecting-ip");
+function clientAddress(
+  platform: Platform,
+  request: Request
+): string {
+  const forwarded = platform.getClientIp(request);
 
   if (
     forwarded &&
@@ -115,13 +119,13 @@ function clientAddress(request: Request): string {
 }
 
 function enforceRateLimit(
-  request: Request,
+  clientIp: string,
   bucket: string,
   maximum: number,
   windowMs: number
 ): Response | null {
   const now = Date.now();
-  const key = `${bucket}:${clientAddress(request)}`;
+  const key = `${bucket}:${clientIp}`;
 
   let entry = rateLimits.get(key);
 
@@ -247,10 +251,10 @@ function publicUser(user: User) {
 
 async function startSession(
   user: User,
-  env: Env,
+  db: Database,
   status = 200
 ): Promise<Response> {
-  const { token, maxAgeSeconds } = await createSession(user.id, env);
+  const { token, maxAgeSeconds } = await createSession(user.id, db);
 
   return sendJson(
     status,
@@ -266,14 +270,16 @@ async function startSession(
 async function handleApi(
   request: Request,
   url: URL,
-  env: Env
+  platform: Platform
 ): Promise<Response> {
+  const { db } = platform;
   const { pathname } = url;
   const method = request.method;
   const sessionToken = readSessionToken(request);
+  const clientIp = clientAddress(platform, request);
 
   if (pathname === "/api/session" && method === "GET") {
-    const user = await userFromSession(sessionToken, env);
+    const user = await userFromSession(sessionToken, db);
 
     return sendJson(200, {
       user: user ? publicUser(user) : null
@@ -282,7 +288,7 @@ async function handleApi(
 
   if (pathname === "/api/register" && method === "POST") {
     const limited = enforceRateLimit(
-      request,
+      clientIp,
       "register",
       5,
       60 * 60 * 1000
@@ -291,14 +297,14 @@ async function handleApi(
     if (limited) return limited;
 
     const body = await readJsonBody(request);
-    const user = await registerUser(body.password, env);
+    const user = await registerUser(body.password, db);
 
-    return startSession(user, env, 201);
+    return startSession(user, db, 201);
   }
 
   if (pathname === "/api/login" && method === "POST") {
     const limited = enforceRateLimit(
-      request,
+      clientIp,
       "login",
       10,
       15 * 60 * 1000
@@ -311,15 +317,15 @@ async function handleApi(
     const user = await loginUser(
       body.uuid,
       body.password,
-      env,
-      clientAddress(request)
+      db,
+      clientIp
     );
 
-    return startSession(user, env);
+    return startSession(user, db);
   }
 
   if (pathname === "/api/logout" && method === "POST") {
-    await destroySession(sessionToken, env);
+    await destroySession(sessionToken, db);
 
     return sendJson(
       200,
@@ -328,14 +334,14 @@ async function handleApi(
     );
   }
 
-  const user = await userFromSession(sessionToken, env);
+  const user = await userFromSession(sessionToken, db);
 
   if (!user) {
     throw new HttpError(401, "Please log in");
   }
 
   if (pathname === "/api/config" && method === "GET") {
-    const sources = (await getSources(user.id, env)).map(
+    const sources = (await getSources(user.id, db)).map(
       ({ repository, ref, providerIds }) => ({
         repository,
         ref,
@@ -348,7 +354,7 @@ async function handleApi(
 
   if (pathname === "/api/discover" && method === "POST") {
     const limited = enforceRateLimit(
-      request,
+      clientIp,
       "discover",
       20,
       10 * 60 * 1000
@@ -367,8 +373,7 @@ async function handleApi(
 
     const result = await inspectGitHubSource(
       body.repository,
-      ref,
-      env
+      ref
     );
 
     return sendJson(200, result);
@@ -376,7 +381,7 @@ async function handleApi(
 
   if (pathname === "/api/apply" && method === "POST") {
     const limited = enforceRateLimit(
-      request,
+      clientIp,
       "apply",
       10,
       10 * 60 * 1000
@@ -388,23 +393,23 @@ async function handleApi(
 
     const { sources, plugins } = await fetchAndCacheSources(
       body.sources,
-      env
+      db
     );
 
-    await saveSources(user.id, sources, env);
+    await saveSources(user.id, sources, db);
 
     return sendJson(200, { plugins });
   }
 
   if (pathname === "/api/profiles" && method === "GET") {
     return sendJson(200, {
-      profiles: await getProfiles(user.id, env)
+      profiles: await getProfiles(user.id, db)
     });
   }
 
   if (pathname === "/api/profiles" && method === "POST") {
     const limited = enforceRateLimit(
-      request,
+      clientIp,
       "profiles",
       10,
       10 * 60 * 1000
@@ -426,11 +431,11 @@ async function handleApi(
 
     const { sources, plugins } = await fetchAndCacheSources(
       body.sources,
-      env
+      db
     );
 
-    await saveProfile(user.id, profileId, name, sources, env);
-    await saveSources(user.id, sources, env);
+    await saveProfile(user.id, profileId, name, sources, db);
+    await saveSources(user.id, sources, db);
 
     return sendJson(200, { profileId, plugins });
   }
@@ -442,7 +447,7 @@ async function handleApi(
     const profileId = pathname.split("/")[3];
 
     if (profileId) {
-      await deleteProfile(user.id, profileId, env);
+      await deleteProfile(user.id, profileId, db);
     }
 
     return sendJson(200, { success: true });
@@ -451,7 +456,7 @@ async function handleApi(
   if (pathname === "/api/account" && method === "DELETE") {
     const body = await readJsonBody(request);
 
-    await deleteUser(user.id, body.password, env);
+    await deleteUser(user.id, body.password, db);
 
     return sendJson(
       200,
@@ -463,11 +468,11 @@ async function handleApi(
   return sendJson(404, { error: "Not found" });
 }
 
-// ---------- Worker request handler ----------
+// ---------- request handler ----------
 
 export async function handleRequest(
   request: Request,
-  env: Env
+  platform: Platform
 ): Promise<Response> {
   let url: URL;
 
@@ -480,7 +485,7 @@ export async function handleRequest(
   if (url.pathname === "/" && request.method === "GET") {
     const assetUrl = new URL("/index.html", url.origin);
 
-    const assetResponse = await env.ASSETS.fetch(
+    const assetResponse = await platform.assets.fetch(
       new Request(assetUrl.toString(), request)
     );
 
@@ -501,7 +506,7 @@ export async function handleRequest(
 
   if (url.pathname.startsWith("/api/")) {
     try {
-      return await handleApi(request, url, env);
+      return await handleApi(request, url, platform);
     } catch (error) {
       if (error instanceof HttpError) {
         return sendJson(error.status, {
@@ -538,7 +543,7 @@ export async function handleRequest(
       const user = await userFromInstallLink(
         manifestMatch[1]!,
         manifestMatch[2]!,
-        env
+        platform.db
       );
 
       if (!user) {
@@ -549,10 +554,10 @@ export async function handleRequest(
         );
       }
 
-      const sources = await getSources(user.id, env);
+      const sources = await getSources(user.id, platform.db);
 
       const manifest = await getPluginRepositoryManifest(
-        env,
+        platform.db,
         user.id,
         sources
       );
@@ -578,7 +583,7 @@ export async function handleRequest(
       const user = await userFromInstallLink(
         pluginMatch[1]!,
         pluginMatch[2]!,
-        env
+        platform.db
       );
 
       let filename: string;
@@ -594,12 +599,12 @@ export async function handleRequest(
       }
 
       const sources = user
-        ? await getSources(user.id, env)
+        ? await getSources(user.id, platform.db)
         : [];
 
       const source = user
         ? await getCachedPluginFile(
-            env,
+            platform.db,
             sources,
             `providers/${filename}`
           )

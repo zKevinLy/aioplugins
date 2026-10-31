@@ -1,6 +1,6 @@
 
 import { createHash } from "node:crypto";
-import { getDb, type Env } from "../lib/db.js";
+import type { Database, SqlStatement } from "../lib/db.js";
 
 type MediaType = "movie" | "series";
 
@@ -420,8 +420,7 @@ async function loadSource(
 
 export async function inspectGitHubSource(
   repository: string,
-  ref = "main",
-  _env: Env
+  ref = "main"
 ) {
   const source = await loadSource(repository, ref);
 
@@ -454,7 +453,7 @@ export async function inspectGitHubSource(
   };
 }
 
-// ---------- D1 cache ----------
+// ---------- database cache ----------
 
 function cacheKey(
   owner: string,
@@ -500,17 +499,17 @@ function base64ToBytes(value: string): Uint8Array {
 }
 
 async function saveCachedContent(
-  env: Env,
+  db: Database,
   key: string,
   content: string
 ): Promise<void> {
-  const db = getDb(env);
   const bytes = new TextEncoder().encode(content);
 
-  const statements = [
-    db.prepare(
-      "DELETE FROM provider_cache WHERE cache_key = ?"
-    ).bind(key)
+  const statements: SqlStatement[] = [
+    {
+      sql: "DELETE FROM provider_cache WHERE cache_key = ?",
+      params: [key]
+    }
   ];
 
   let chunkIndex = 0;
@@ -525,18 +524,17 @@ async function saveCachedContent(
       Math.min(offset + CACHE_CHUNK_BYTES, bytes.length)
     );
 
-    statements.push(
-      db.prepare(
-        `INSERT INTO provider_cache
+    statements.push({
+      sql: `INSERT INTO provider_cache
          (cache_key, chunk_index, content, updated_at)
-         VALUES (?, ?, ?, ?)`
-      ).bind(
+         VALUES (?, ?, ?, ?)`,
+      params: [
         key,
         chunkIndex++,
         bytesToBase64(chunk),
         Date.now()
-      )
-    );
+      ]
+    });
 
     if (bytes.length === 0) break;
   }
@@ -545,20 +543,16 @@ async function saveCachedContent(
 }
 
 async function getCachedContent(
-  env: Env,
+  db: Database,
   key: string
 ): Promise<string | null> {
-  const result = await getDb(env)
-    .prepare(
-      `SELECT chunk_index, content
+  const rows = await db.all<CacheChunkRow>(
+    `SELECT chunk_index, content
        FROM provider_cache
        WHERE cache_key = ?
-       ORDER BY chunk_index ASC`
-    )
-    .bind(key)
-    .all<CacheChunkRow>();
-
-  const rows = result.results ?? [];
+       ORDER BY chunk_index ASC`,
+    [key]
+  );
 
   if (rows.length === 0) return null;
 
@@ -583,7 +577,7 @@ async function getCachedContent(
 // ---------- cached plugin lookup ----------
 
 async function getCachedPluginFiles(
-  env: Env,
+  db: Database,
   sources: SavedSourceSelection[]
 ): Promise<CachedPluginFile[]> {
   const result: CachedPluginFile[] = [];
@@ -593,7 +587,7 @@ async function getCachedPluginFiles(
     const commit = validateCommit(selection.commit);
 
     const manifest = await getCachedContent(
-      env,
+      db,
       manifestCacheKey(owner, repo, commit)
     );
 
@@ -647,11 +641,11 @@ async function getCachedPluginFiles(
 }
 
 export async function getPluginRepositoryManifest(
-  env: Env,
+  db: Database,
   userId: string,
   sources: SavedSourceSelection[]
 ) {
-  const plugins = await getCachedPluginFiles(env, sources);
+  const plugins = await getCachedPluginFiles(db, sources);
 
   const scrapers = plugins.map(({ entry, filename }) => ({
     ...entry,
@@ -667,11 +661,11 @@ export async function getPluginRepositoryManifest(
 }
 
 export async function getCachedPluginFile(
-  env: Env,
+  db: Database,
   sources: SavedSourceSelection[],
   filename: string
 ): Promise<string | null> {
-  const plugins = await getCachedPluginFiles(env, sources);
+  const plugins = await getCachedPluginFiles(db, sources);
 
   const plugin = plugins.find(
     entry => entry.filename === filename
@@ -679,14 +673,14 @@ export async function getCachedPluginFile(
 
   if (!plugin) return null;
 
-  return getCachedContent(env, plugin.cacheKey);
+  return getCachedContent(db, plugin.cacheKey);
 }
 
 // ---------- fetch and cache selected providers ----------
 
 export async function fetchAndCacheSources(
   value: unknown,
-  env: Env
+  db: Database
 ): Promise<{
   sources: SavedSourceSelection[];
   plugins: number;
@@ -784,9 +778,9 @@ export async function fetchAndCacheSources(
       );
     }
 
-    // Cache the manifest in D1.
+    // Cache the manifest in the database.
     await saveCachedContent(
-      env,
+      db,
       manifestCacheKey(
         source.owner,
         source.repo,
@@ -814,7 +808,7 @@ export async function fetchAndCacheSources(
       );
 
       await saveCachedContent(
-        env,
+        db,
         cacheKey(
           source.owner,
           source.repo,

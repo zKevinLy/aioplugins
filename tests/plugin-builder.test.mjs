@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { readdirSync, readFileSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import { after, before, test } from "node:test";
-import { createPluginBuilderServer } from "../dist/server.js";
+import { handleRequest } from "../dist/server.js";
 
 const commit = "b".repeat(40);
 const sourceManifest = {
@@ -42,32 +41,95 @@ const pluginSource = `
   };
 `;
 
-let server;
-let serverUrl;
-let storageRoot;
+const mainPassword = "MainProfilePassword!";
+const BASE_URL = "https://aioplugins.test";
+
+// ---------- test platform ----------
+//
+// The app only depends on the Platform contract (src/lib/platform.ts),
+// so the tests run it against an in-memory SQLite database and the real
+// files from ./public instead of any Cloudflare service.
+
+function createSqliteDatabase() {
+  const sqlite = new DatabaseSync(":memory:");
+  sqlite.exec("PRAGMA foreign_keys = ON");
+
+  const migrations = new URL("../migrations/", import.meta.url);
+  const files = readdirSync(migrations)
+    .filter((name) => name.endsWith(".sql"))
+    .sort();
+
+  assert.ok(files.length > 0, "No migration files found in ./migrations");
+
+  for (const file of files) {
+    sqlite.exec(readFileSync(new URL(file, migrations), "utf8"));
+  }
+
+  const plain = (row) => (row ? { ...row } : null);
+
+  return {
+    sqlite,
+
+    async first(sql, params = []) {
+      return plain(sqlite.prepare(sql).get(...params));
+    },
+
+    async all(sql, params = []) {
+      return sqlite.prepare(sql).all(...params).map(plain);
+    },
+
+    async run(sql, params = []) {
+      sqlite.prepare(sql).run(...params);
+    },
+
+    async batch(statements) {
+      sqlite.exec("BEGIN");
+      try {
+        for (const { sql, params = [] } of statements) {
+          sqlite.prepare(sql).run(...params);
+        }
+        sqlite.exec("COMMIT");
+      } catch (error) {
+        sqlite.exec("ROLLBACK");
+        throw error;
+      }
+    }
+  };
+}
+
+let db;
+let platform;
 let originalFetch;
 let cookieJar = "";
 
-const mainPassword = "MainProfilePassword!";
+async function testFetch(target, options = {}) {
+  const headers = new Headers(options.headers || {});
+  if (cookieJar) headers.set("cookie", cookieJar);
 
-async function testFetch(url, options = {}) {
-  const headers = { ...(options.headers || {}) };
-  if (cookieJar) headers["cookie"] = cookieJar;
-  const res = await originalFetch(url, { ...options, headers });
-  const setCookie = res.headers.get("set-cookie");
-  if (setCookie) {
-    cookieJar = setCookie.split(";")[0];
-  }
-  return res;
+  const request = new Request(new URL(target, BASE_URL), {
+    ...options,
+    headers
+  });
+
+  const response = await handleRequest(request, platform);
+
+  const setCookie = response.headers.get("set-cookie");
+  if (setCookie) cookieJar = setCookie.split(";")[0];
+
+  return response;
 }
 
-before(async () => {
-  storageRoot = mkdtempSync(join(tmpdir(), "nuvio-plugin-builder-test-"));
+before(() => {
   originalFetch = globalThis.fetch;
-  globalThis.fetch = async (input, options) => {
+
+  globalThis.fetch = async (input) => {
     const url = new URL(input);
-    if (url.hostname === "127.0.0.1") return originalFetch(input, options);
-    if (url.hostname === "api.github.com") return new Response(JSON.stringify({ sha: commit }));
+
+    if (url.hostname === "github.com" && url.pathname.endsWith(".atom")) {
+      return new Response(
+        `<feed><entry><id>tag:github.com,2008:Grit::Commit/${commit}</id></entry></feed>`
+      );
+    }
     if (url.hostname === "raw.githubusercontent.com" && url.pathname.endsWith("/manifest.json")) {
       return new Response(JSON.stringify(sourceManifest));
     }
@@ -77,39 +139,47 @@ before(async () => {
     if (url.hostname === "raw.githubusercontent.com" && url.pathname.endsWith("/providers/not-selected.js")) {
       return new Response("module.exports = { getStreams: () => [] };");
     }
+
     throw new Error(`Unexpected mocked request: ${url}`);
   };
 
-  server = createPluginBuilderServer({ providerStorageRoot: storageRoot });
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const address = server.address();
-  serverUrl = `http://127.0.0.1:${address.port}`;
+  db = createSqliteDatabase();
+
+  platform = {
+    db,
+    assets: {
+      fetch: async (request) => {
+        assert.equal(new URL(request.url).pathname, "/index.html");
+        return new Response(
+          readFileSync(new URL("../public/index.html", import.meta.url)),
+          { headers: { "content-type": "text/html; charset=utf-8" } }
+        );
+      }
+    },
+    getClientIp: (request) => request.headers.get("cf-connecting-ip")
+  };
 });
 
-after(async () => {
+after(() => {
   globalThis.fetch = originalFetch;
-  await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
-  try {
-    rmSync(storageRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
-  } catch (err) {
-    // Silently ignore Windows file locking on temp SQLite files
-  }
+  db.sqlite.close();
 });
 
 test("builds a combined Nuvio manifest and serves selected files without executing them", async () => {
-  const home = await testFetch(serverUrl).then((response) => response.text());
+  const home = await testFetch("/").then((response) => response.text());
   assert.match(home, /AIOPlugins/);
 
-  const registerRes = await testFetch(`${serverUrl}/api/register`, {
+  const registerRes = await testFetch("/api/register", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ password: mainPassword })
   });
+  assert.equal(registerRes.status, 201);
   const registerData = await registerRes.json();
   assert.ok(registerData.user);
   const user = registerData.user;
 
-  const discovered = await testFetch(`${serverUrl}/api/discover`, {
+  const discovered = await testFetch("/api/discover", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ repository: "https://github.com/example/plugins", ref: "main" })
@@ -117,7 +187,7 @@ test("builds a combined Nuvio manifest and serves selected files without executi
   assert.equal(discovered.commit, commit);
   assert.equal(discovered.providers.length, 2);
 
-  const profileCreated = await testFetch(`${serverUrl}/api/profiles`, {
+  const profileCreated = await testFetch("/api/profiles", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -135,7 +205,10 @@ test("builds a combined Nuvio manifest and serves selected files without executi
 
   assert.equal(globalThis.fixturePluginExecuted, undefined);
 
-  const manifestUrl = `${serverUrl}${user.installPath}`;
+  // The install link is a bearer credential: it must work without a session.
+  const manifestUrl = new URL(user.installPath, BASE_URL);
+  const savedCookie = cookieJar;
+  cookieJar = "";
   const manifest = await testFetch(manifestUrl).then((response) => response.json());
   assert.match(manifest.name, /AIOPlugins/);
   assert.equal(manifest.scrapers.length, 1);
@@ -149,8 +222,9 @@ test("builds a combined Nuvio manifest and serves selected files without executi
   assert.equal(pluginResponse.headers.get("content-type"), "application/javascript; charset=utf-8");
   assert.equal(await pluginResponse.text(), pluginSource);
   assert.equal(globalThis.fixturePluginExecuted, undefined);
+  cookieJar = savedCookie;
 
-  const health = await testFetch(`${serverUrl}/health`).then((response) => response.json());
+  const health = await testFetch("/health").then((response) => response.json());
   assert.deepEqual(health, { status: "ok" });
 });
 
@@ -158,7 +232,7 @@ test("validates hardcoded media search against cached plugin code with latency t
   const cachedCode = pluginSource;
   const mockModule = {};
   const mockExports = {};
-  
+
   const startTime = performance.now();
   const fn = new Function('module', 'exports', cachedCode);
   fn(mockModule, mockExports);
@@ -176,13 +250,33 @@ test("validates hardcoded media search against cached plugin code with latency t
 });
 
 test("keeps named profiles and sources manageable", async () => {
-  const profilesRes = await testFetch(`${serverUrl}/api/profiles`).then((response) => response.json());
+  const profilesRes = await testFetch("/api/profiles").then((response) => response.json());
   assert.ok(Array.isArray(profilesRes.profiles));
   assert.ok(profilesRes.profiles.length > 0);
 
   const targetId = profilesRes.profiles[0].id;
-  const deleteRes = await testFetch(`${serverUrl}/api/profiles/${targetId}`, {
+  const deleteRes = await testFetch(`/api/profiles/${targetId}`, {
     method: "DELETE"
   }).then((response) => response.json());
   assert.equal(deleteRes.success, true);
+});
+
+test("rate limits by the client IP supplied by the platform", async () => {
+  const attempt = (ip) =>
+    testFetch("/api/register", {
+      method: "POST",
+      headers: { "content-type": "application/json", "cf-connecting-ip": ip },
+      body: JSON.stringify({ password: "short" })
+    });
+
+  for (let i = 0; i < 5; i++) {
+    assert.equal((await attempt("203.0.113.9")).status, 400);
+  }
+
+  const limited = await attempt("203.0.113.9");
+  assert.equal(limited.status, 429);
+  assert.ok(Number(limited.headers.get("retry-after")) >= 1);
+
+  // A different client is unaffected.
+  assert.equal((await attempt("203.0.113.10")).status, 400);
 });

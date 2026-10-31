@@ -1,9 +1,7 @@
 
-import { handleRequest } from "./server.js";
-import type { Env } from "./lib/db.js";
+// Wrangler entry point (wrangler `main` still points here).
+// Kept as a one-line re-export so deployment config does not change.
+// To host elsewhere, add another entry that calls `handleRequest`
+// from ./server.js with a different Platform adapter.
 
-export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
-    return handleRequest(request, env);
-  },
-} satisfies ExportedHandler<Env>;
+export { default } from "./adapters/cloudflare/worker.js";
