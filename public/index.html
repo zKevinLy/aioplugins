@@ -5,203 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <title>AIOPlugins</title>
-  <style>
-    :root {
-      color-scheme: dark;
-      --ink: #edf1f7;
-      --muted: #8f9bad;
-      --line: #293548;
-      --paper: #080c14;
-      --surface: #111927;
-      --surface-raised: #172233;
-      --green: #8b8cff;
-      --green-dark: #b4b5ff;
-      --green-wash: #292b4b;
-      --coral: #ff9778;
-      --yellow: #e8bd72;
-      --shadow: 0 18px 48px rgb(0 0 0 / 24%);
-    }
-
-    * { box-sizing: border-box; }
-
-    body {
-      margin: 0;
-      min-width: 320px;
-      background:
-        radial-gradient(ellipse at 8% 0%, rgb(49 53 103 / 32%), transparent 34rem),
-        linear-gradient(135deg, transparent 0 75%, rgb(34 43 61 / 35%) 75% 75.2%, transparent 75.2%),
-        var(--paper);
-      color: var(--ink);
-      font-family: "Segoe UI", Tahoma, sans-serif;
-      font-size: 14px;
-    }
-
-    button, input, select { font: inherit; }
-
-    .shell { max-width: 1220px; margin: 0 auto; padding: 32px 28px 48px; }
-
-    .topbar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 20px;
-      padding: 0 0 24px;
-      border-bottom: 1px solid var(--line);
-    }
-
-    .brand { display: flex; align-items: center; gap: 14px; }
-
-    .brand-mark {
-      display: grid;
-      width: 42px;
-      height: 42px;
-      place-items: center;
-      border-radius: 11px;
-      background: var(--green-dark);
-      color: #111526;
-      font-family: Georgia, serif;
-      font-size: 21px;
-    }
-
-    .eyebrow {
-      margin: 0 0 4px;
-      color: var(--green);
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-    }
-
-    h1, h2, h3, p { margin-top: 0; }
-    h1 { margin-bottom: 0; font-family: Georgia, serif; font-size: 25px; font-weight: 500; }
-
-    .server-state { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); }
-    .server-state::before { width: 8px; height: 8px; border-radius: 50%; background: #63c58b; content: ""; }
-
-    .intro { display: flex; align-items: end; justify-content: space-between; gap: 24px; padding: 24px 0 20px; }
-    .intro h2 { margin-bottom: 5px; font-family: Georgia, serif; font-size: 21px; font-weight: 500; }
-    .intro p { margin-bottom: 0; color: var(--muted); line-height: 1.55; }
-    .view-tabs { display: flex; gap: 4px; margin: 4px 0 18px; border-bottom: 1px solid var(--line); }
-    .view-tab { position: relative; min-height: 43px; padding: 0 16px; border: 0; background: transparent; color: var(--muted); cursor: pointer; font-weight: 650; }
-    .view-tab[aria-selected="true"] { color: var(--ink); }
-    .view-tab[aria-selected="true"]::after { position: absolute; right: 12px; bottom: -1px; left: 12px; height: 2px; background: var(--green); content: ""; }
-    .view[hidden] { display: none; }
-    .view-intro { margin: 0 0 14px; color: var(--muted); font-size: 12px; }
-    .save-card { margin-bottom: 16px; }
-    .save-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-top: 1px solid var(--line); }
-    .backup-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
-
-    .workspace { display: grid; grid-template-columns: minmax(285px, 350px) minmax(0, 1fr); gap: 18px; align-items: start; }
-    .panel { border: 1px solid var(--line); border-radius: 7px; background: var(--surface); box-shadow: var(--shadow); }
-    .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 17px 18px; border-bottom: 1px solid var(--line); }
-    .panel-head h2 { margin: 0; font-size: 14px; font-weight: 700; }
-    .panel-body { padding: 18px; }
-
-    label { display: block; margin-bottom: 7px; color: #c3cad6; font-size: 12px; font-weight: 650; }
-    input[type="url"], input[type="text"], input[type="password"], select, .search {
-      width: 100%;
-      min-height: 40px;
-      padding: 9px 11px;
-      border: 1px solid var(--line);
-      border-radius: 5px;
-      outline: none;
-      background: var(--surface-raised);
-      color: var(--ink);
-    }
-    input:focus, select:focus, .search:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgb(139 140 255 / 16%); }
-    .field-row { display: grid; grid-template-columns: minmax(0, 1fr) 104px; gap: 10px; }
-    .field { margin-bottom: 14px; }
-
-    .button {
-      display: inline-flex;
-      min-height: 39px;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      padding: 8px 12px;
-      border: 1px solid var(--line);
-      border-radius: 5px;
-      background: var(--surface-raised);
-      color: var(--ink);
-      cursor: pointer;
-      font-weight: 650;
-      transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
-    }
-    .button:hover:not(:disabled) { transform: translateY(-1px); border-color: #8eaaa0; }
-    .button:disabled { cursor: not-allowed; opacity: .5; }
-    .button-primary { border-color: var(--green); background: var(--green); color: #111526; }
-    .button-primary:hover:not(:disabled) { border-color: var(--green-dark); background: var(--green-dark); }
-    .button-wide { width: 100%; }
-    .button-small { min-height: 30px; padding: 5px 8px; font-size: 11px; }
-
-    .quick-sources { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 14px; }
-    .quick-source { border: 0; border-bottom: 1px solid #555784; padding: 3px 0; background: transparent; color: var(--green-dark); cursor: pointer; font-size: 11px; }
-    .quick-source:hover { border-color: var(--coral); color: var(--coral); }
-
-    .trust-note { margin: 17px 0 0; padding: 11px 12px; border-left: 3px solid var(--yellow); background: rgb(232 189 114 / 8%); color: #c7b897; font-size: 11px; line-height: 1.55; }
-    .source-summary { display: flex; justify-content: space-between; gap: 10px; color: var(--muted); font-size: 11px; }
-    .source-summary strong { color: var(--ink); font-size: 13px; }
-
-    .catalog-tools { display: flex; align-items: center; gap: 9px; }
-    .search { width: min(240px, 42vw); min-height: 34px; padding: 7px 10px; font-size: 12px; }
-    .catalog-empty { padding: 44px 20px; text-align: center; }
-    .catalog-empty strong { display: block; margin-bottom: 7px; font-family: Georgia, serif; font-size: 18px; font-weight: 500; }
-    .catalog-empty p { margin: 0; color: var(--muted); line-height: 1.5; }
-    .catalog-content { max-height: min(62vh, 720px); padding: 8px 18px 16px; overflow: auto; }
-    .source-group { padding: 14px 0 5px; }
-    .source-group + .source-group { border-top: 1px solid var(--line); }
-    .source-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
-    .source-title h3 { overflow: hidden; margin: 0; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
-    .source-meta { margin: 3px 0 0; color: var(--muted); font-family: Consolas, monospace; font-size: 10px; }
-    .source-actions { display: flex; flex: 0 0 auto; gap: 6px; }
-    .provider-row { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 11px 8px; border-radius: 5px; }
-    .provider-row:hover { background: rgb(139 140 255 / 7%); }
-    .provider-row input { width: 16px; height: 16px; margin: 2px 0 0; accent-color: var(--green); }
-    .provider-name { display: flex; align-items: baseline; gap: 7px; margin-bottom: 3px; font-weight: 700; }
-    .provider-id { color: var(--muted); font-family: Consolas, monospace; font-size: 10px; font-weight: 400; }
-    .provider-description { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
-    .type-tag { border-radius: 3px; padding: 3px 6px; background: var(--green-wash); color: var(--green-dark); font-size: 10px; white-space: nowrap; }
-    .type-tag.disabled { background: #2b2630; color: #bca8ac; }
-
-    .actionbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 18px; padding: 15px 18px; border-top: 1px solid var(--line); }
-    .selection-count { color: var(--muted); font-size: 12px; }
-    .status { min-height: 18px; margin-top: 10px; color: var(--muted); font-size: 12px; }
-    .status.error { color: #ff8f87; }
-    .status.success { color: #9de2b4; }
-    .output-panel { margin-top: 18px; overflow: hidden; }
-    .output-head { align-items: center; }
-    .output-state { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; }
-    .output-state.ready { color: #9de2b4; }
-    .output-state.ready::before { width: 7px; height: 7px; border-radius: 50%; background: #63c58b; content: ""; }
-    .output-body { display: grid; grid-template-columns: minmax(260px, .85fr) minmax(0, 1.15fr); gap: 24px; padding: 18px; }
-    .output-label { margin-bottom: 8px; color: var(--muted); font-size: 11px; font-weight: 650; }
-    .copy-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
-    .addon-url { display: block; width: 100%; min-width: 0; min-height: 40px; padding: 11px; overflow: hidden; border: 1px solid var(--line); border-radius: 5px; background: var(--surface-raised); color: var(--green-dark); font-family: Consolas, monospace; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; cursor: copy; }
-    .addon-url:focus { outline: 2px solid var(--green); outline-offset: 2px; }
-    .manifest-title { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
-    .manifest-title h3 { margin: 0; font-size: 11px; font-weight: 650; }
-    .manifest-preview { min-height: 86px; max-height: 220px; margin: 0; padding: 12px; overflow: auto; border-radius: 5px; background: #20332f; color: #e4f0e9; font-family: Consolas, monospace; font-size: 11px; line-height: 1.55; tab-size: 2; }
-    .output-hint { margin: 9px 0 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
-    .loading { animation: pulse 1.2s ease-in-out infinite alternate; }
-    @keyframes pulse { to { opacity: .45; } }
-
-    [hidden] { display: none !important; }
-    .backup-row p { margin: 3px 0 0; color: var(--muted); font-size: 11px; }
-
-    .auth { max-width: 460px; margin: 40px auto 0; }
-    .auth-card { overflow: hidden; }
-    .auth-tabs { display: flex; gap: 4px; padding: 0 12px; border-bottom: 1px solid var(--line); }
-    .auth-card .status { margin: 0; padding: 0 18px 16px; }
-    .auth-card .view-intro { margin-bottom: 16px; line-height: 1.5; }
-    .uuid-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 9px 10px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface-raised); }
-    .uuid-row-label { color: var(--muted); font-size: 11px; }
-    .uuid-row code { overflow: hidden; color: var(--green-dark); font-family: Consolas, monospace; font-size: 12px; text-overflow: ellipsis; }
-    .check { display: flex; align-items: center; gap: 8px; margin: 14px 0; font-weight: 400; }
-    .session-bar { display: flex; align-items: center; gap: 10px; color: var(--muted); }
-    .session-bar code { font-family: Consolas, monospace; font-size: 12px; }
-    .button-danger { border-color: #6b3a3a; color: #ff8f87; }
-    .delete-controls { display: flex; align-items: center; gap: 6px; }
-    .delete-controls input { width: 170px; min-height: 30px; padding: 5px 8px; }
-  </style>
+  <link rel="stylesheet" href="/index.css">
 </head>
 <body>
   <main class="shell">
@@ -210,17 +14,23 @@
         <div class="brand-mark" aria-hidden="true">N</div>
         <div>
           <p class="eyebrow">Nuvio plugin manager</p>
-          <h1>AIOPlugins</h1>
+          <div class="brand-title">
+            <h1>AIOPlugins</h1>
+            <span id="app-version" class="version-badge" hidden></span>
+          </div>
         </div>
       </div>
+
       <div id="server-state" class="server-state">Running on this computer</div>
+
       <div id="session-bar" class="session-bar" hidden>
         <code id="session-id" title="Your UUID"></code>
+        <button id="account-menu" class="button button-small" type="button">Account</button>
         <button id="logout" class="button button-small" type="button">Log out</button>
       </div>
     </header>
 
-    <!-- Logged out -->
+    <!-- Authentication -->
     <section id="auth-view" class="auth" hidden>
       <div class="panel auth-card">
         <div id="auth-tabs" class="auth-tabs" role="tablist" aria-label="Account">
@@ -230,187 +40,415 @@
 
         <form id="login-form" class="panel-body">
           <p class="view-intro">Enter the UUID and password you saved when you created your account.</p>
+
           <div class="field">
             <label for="login-uuid">UUID</label>
-            <input id="login-uuid" type="text" autocomplete="username" spellcheck="false" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" required>
+            <input id="login-uuid" type="text" autocomplete="username" spellcheck="false"
+              placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" required>
           </div>
+
           <div class="field">
             <label for="login-password">Password</label>
             <input id="login-password" type="password" autocomplete="current-password" required>
           </div>
+
           <button class="button button-primary button-wide" type="submit">Log in</button>
         </form>
 
         <form id="register-form" class="panel-body" hidden>
-          <p class="view-intro">We'll generate a UUID for you. You log in with that UUID and the password you choose here.</p>
+          <p class="view-intro">We'll generate a UUID for you. You'll use it with your password to log in.</p>
+
           <div class="field">
             <label for="register-password">Password</label>
-            <input id="register-password" type="password" autocomplete="new-password" placeholder="At least 8 characters" required>
+            <input id="register-password" type="password" autocomplete="new-password"
+              placeholder="At least 8 characters" required>
           </div>
+
           <div class="field">
             <label for="register-confirm">Confirm password</label>
             <input id="register-confirm" type="password" autocomplete="new-password" required>
           </div>
+
           <button class="button button-primary button-wide" type="submit">Create account</button>
         </form>
 
         <div id="new-account" class="panel-body" hidden>
           <p><strong>Your account is ready.</strong></p>
-          <p class="view-intro">Save this UUID somewhere safe. You need it and your password to log in, and neither can be recovered.</p>
+          <p class="view-intro">Save this UUID somewhere safe. You'll need it and your password to log in.</p>
+
           <div class="uuid-row">
             <span class="uuid-row-label">UUID</span>
             <code id="new-uuid"></code>
             <button id="copy-new-uuid" class="button button-small" type="button">Copy</button>
           </div>
-          <label class="check"><input id="saved-ack" type="checkbox"> I've saved my UUID and password</label>
-          <button id="continue" class="button button-primary button-wide" type="button" disabled>Continue</button>
+
+          <label class="check">
+            <input id="saved-ack" type="checkbox">
+            I've saved my UUID and password
+          </label>
+
+          <button id="continue" class="button button-primary button-wide" type="button" disabled>
+            Continue
+          </button>
         </div>
 
         <p id="auth-status" class="status" role="status" aria-live="polite"></p>
       </div>
     </section>
 
-    <!-- Logged in -->
+    <!-- Main application -->
     <div id="app-view" hidden>
-    <section class="intro">
-      <div>
-        <h2>Build your plugin set</h2>
-        <p>Pick plugins from any GitHub source, save, and install your personal link in Nuvio.</p>
+      <div class="app-layout">
+
+        <!-- LEFT SIDEBAR -->
+        <aside class="sidebar">
+          <div>
+            <p class="sidebar-heading">Workspace</p>
+
+            <nav class="sidebar-nav" aria-label="Main navigation">
+              <button id="configure-tab" class="nav-item active" type="button"
+                aria-current="page">
+                <span class="nav-icon" aria-hidden="true">▦</span>
+                <span class="nav-label">Plugins</span>
+                <span class="nav-tag">1</span>
+              </button>
+
+              <button id="filters-tab" class="nav-item" type="button" disabled
+                aria-label="Filters coming soon">
+                <span class="nav-icon" aria-hidden="true">⌕</span>
+                <span class="nav-label">Filters</span>
+                <span class="nav-tag">Soon</span>
+              </button>
+
+              <button id="sorting-tab" class="nav-item" type="button" disabled
+                aria-label="Sorting coming soon">
+                <span class="nav-icon" aria-hidden="true">↕</span>
+                <span class="nav-label">Sorting</span>
+                <span class="nav-tag">Soon</span>
+              </button>
+
+              <button id="save-tab" class="nav-item" type="button" aria-current="false">
+                <span class="nav-icon" aria-hidden="true">✓</span>
+                <span class="nav-label">Review &amp; Install</span>
+                <span class="nav-tag">2</span>
+              </button>
+            </nav>
+          </div>
+
+          <div class="sidebar-divider"></div>
+
+          <div>
+            <p class="sidebar-heading">Preferences</p>
+            <nav class="sidebar-nav" aria-label="Preferences">
+              <button id="account-nav" class="nav-item" type="button">
+                <span class="nav-icon" aria-hidden="true">⚙</span>
+                <span class="nav-label">Account settings</span>
+              </button>
+            </nav>
+          </div>
+
+          <div class="sidebar-note">
+            <strong>Your setup, your way.</strong><br>
+            Choose your plugins, review your selection, and install it in Nuvio.
+          </div>
+        </aside>
+
+        <!-- MAIN CONTENT -->
+        <div class="app-main">
+
+          <section class="intro">
+            <div>
+              <h2 id="page-title">Choose your plugins</h2>
+              <p id="page-description">Select plugin sources and choose the providers you want to use.</p>
+            </div>
+          </section>
+
+          <!-- STEP 1: Choose plugins -->
+          <section id="configure-view" class="view">
+            <div class="workspace">
+
+              <!-- Sources -->
+              <section class="panel" aria-labelledby="source-heading">
+                <div class="panel-head">
+                  <div>
+                    <h2 id="source-heading">Plugin sources</h2>
+                    <p class="panel-subtitle">Choose a source or add your own GitHub repository.</p>
+                  </div>
+                  <span class="source-summary">
+                    <span id="source-count">0</span> loaded
+                  </span>
+                </div>
+
+                <div class="panel-body">
+                  <div class="quick-source-section">
+                    <label>Suggested sources</label>
+                    <div class="quick-sources" aria-label="Suggested sources">
+                      <button class="quick-source"
+                        data-repo="https://github.com/yoruix/nuvio-providers"
+                        type="button">Yoru providers</button>
+
+                      <button class="quick-source"
+                        data-repo="https://github.com/NuvioPlugin/All-in-One-Nuvio"
+                        type="button">All-in-One</button>
+                    </div>
+                    <p class="field-hint">These sources load automatically when you log in.</p>
+                  </div>
+
+                  <details class="custom-source">
+                    <summary>Add a custom GitHub source</summary>
+
+                    <div class="custom-source-fields">
+                      <div class="field">
+                        <label for="repository">GitHub repository URL</label>
+                        <input id="repository" type="url"
+                          placeholder="https://github.com/username/repository"
+                          autocomplete="url" spellcheck="false">
+                      </div>
+
+                      <div class="field-row">
+                        <div class="field">
+                          <label for="ref">Branch or tag</label>
+                          <input id="ref" type="text" value="main" spellcheck="false">
+                        </div>
+
+                        <div class="field">
+                          <label aria-hidden="true">&nbsp;</label>
+                          <button id="discover" class="button button-primary button-wide" type="button">
+                            Add source
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </details>
+
+                  <p class="trust-note">
+                    <strong>Review sources before installing.</strong>
+                    Selected plugin files are fetched from the inspected commit and cached.
+                    Nuvio runs the plugin code after installation.
+                  </p>
+
+                  <p id="status" class="status" role="status" aria-live="polite"></p>
+                </div>
+              </section>
+
+              <!-- Plugin catalog -->
+              <section class="panel" aria-labelledby="catalog-heading">
+                <div class="panel-head">
+                  <div>
+                    <h2 id="catalog-heading">Available plugins</h2>
+                    <p class="panel-subtitle">Select the providers you want to include.</p>
+                  </div>
+
+                  <div class="catalog-tools">
+                    <input id="search" class="search" type="search"
+                      placeholder="Search plugins" aria-label="Search plugins">
+                  </div>
+                </div>
+
+                <div id="catalog" class="catalog-empty">
+                  <strong>Loading your plugin sources...</strong>
+                  <p>Your suggested sources will appear here automatically.</p>
+                </div>
+
+                <div class="actionbar">
+                  <span id="selection-count" class="selection-count">No plugins selected</span>
+                  <button id="go-save" class="button button-primary" type="button" disabled>
+                    Continue to review →
+                  </button>
+                </div>
+              </section>
+
+            </div>
+          </section>
+
+          <!-- STEP 2: Review and install -->
+          <section id="save-view" class="view" hidden>
+            <div class="step-heading">
+              <div>
+                <h2>Review your plugin setup</h2>
+                <p class="view-intro">Your selected plugins will be included in your private Nuvio repository.</p>
+              </div>
+
+              <button id="back-to-plugins" class="button button-small" type="button">
+                ← Back to plugins
+              </button>
+            </div>
+
+            <section class="panel save-card" aria-labelledby="review-heading">
+              <div class="panel-head">
+                <div>
+                  <h2 id="review-heading">Your selection</h2>
+                  <p class="panel-subtitle">Check your plugins before saving.</p>
+                </div>
+                <span id="review-count" class="source-summary">0 plugins</span>
+              </div>
+
+              <div id="review-selection" class="review-selection">
+                <p class="view-intro">No plugins selected yet.</p>
+              </div>
+
+              <div class="panel-body review-footer">
+                <button id="edit-selection" class="button button-small" type="button">
+                  Edit selection
+                </button>
+              </div>
+            </section>
+
+            <section class="panel save-card" aria-labelledby="save-heading">
+              <div class="panel-head">
+                <div>
+                  <h2 id="save-heading">Save your setup</h2>
+                  <p class="panel-subtitle">Generate your personal Nuvio plugin repository.</p>
+                </div>
+              </div>
+
+              <div class="panel-body">
+                <p id="save-status" class="status" role="status" aria-live="polite"></p>
+                <button id="apply" class="button button-primary button-wide" type="button" disabled>
+                  Save Plugin Setup
+                </button>
+              </div>
+            </section>
+
+            <section class="panel output-panel" aria-labelledby="output-heading">
+              <div class="panel-head output-head">
+                <div>
+                  <h2 id="output-heading">Install in Nuvio</h2>
+                  <p class="panel-subtitle">Your personal plugin repository link.</p>
+                </div>
+                <span id="output-state" class="output-state">Not saved yet</span>
+              </div>
+
+              <div class="output-body">
+                <div>
+                  <p class="output-label">Your private plugin repository URL</p>
+
+                  <div class="copy-row">
+                    <button id="plugin-url" class="addon-url" type="button"
+                      title="Copy plugin repository URL">
+                      Save your setup to generate a link.
+                    </button>
+
+                    <button id="copy-plugin-url" class="button" type="button" disabled>
+                      Copy URL
+                    </button>
+                  </div>
+
+                  <p id="copy-feedback" class="output-hint" aria-live="polite">
+                    After saving, copy this link and paste it into Nuvio's plugin source settings.
+                    Treat it like a password: anyone with it can load your plugin list.
+                  </p>
+                </div>
+
+                <div class="install-instructions">
+                  <h3>How to install</h3>
+                  <ol>
+                    <li>Save your plugin setup above.</li>
+                    <li>Copy your private repository URL.</li>
+                    <li>Open Nuvio and go to its plugin source settings.</li>
+                    <li>Add your copied URL as a plugin source.</li>
+                  </ol>
+                </div>
+              </div>
+            </section>
+
+            <details class="panel optional-settings">
+              <summary>Profiles</summary>
+              <div class="panel-body">
+                <p class="view-intro">
+                  Save different plugin combinations and switch between them whenever you want.
+                </p>
+
+                <div class="field">
+                  <label for="profile-select">Load a saved profile</label>
+                  <div class="field-row">
+                    <select id="profile-select"></select>
+                    <button id="delete-profile" class="button button-small button-danger" type="button">
+                      Delete
+                    </button>
+                  </div>
+                </div>
+
+                <button id="save-new-profile" class="button button-small" type="button">
+                  Save current selection as a profile
+                </button>
+              </div>
+            </details>
+
+            <details class="panel optional-settings">
+              <summary>Advanced settings &amp; manifest</summary>
+              <div class="panel-body">
+                <div class="manifest-title">
+                  <h3>Generated Nuvio manifest</h3>
+                  <a id="open-manifest" href="#" target="_blank" rel="noreferrer">Open JSON</a>
+                </div>
+                <pre id="manifest-preview" class="manifest-preview">Save your setup to generate your Nuvio manifest.</pre>
+              </div>
+            </details>
+          </section>
+
+          <!-- Account settings -->
+          <section id="account-view" class="view" hidden>
+            <div class="step-heading">
+              <div>
+                <h2>Account settings</h2>
+                <p class="view-intro">Manage your account and configuration backups.</p>
+              </div>
+
+              <button id="back-from-account" class="button button-small" type="button">
+                Back to plugins
+              </button>
+            </div>
+
+            <section class="panel save-card">
+              <div class="panel-head"><h2>Your account</h2></div>
+              <div class="panel-body">
+                <div class="uuid-row">
+                  <span class="uuid-row-label">UUID</span>
+                  <code id="account-uuid"></code>
+                  <button id="copy-uuid" class="button button-small" type="button">Copy UUID</button>
+                </div>
+                <p class="field-hint">Keep your UUID and password somewhere safe.</p>
+              </div>
+            </section>
+
+            <section class="panel save-card">
+              <div class="panel-head"><h2>Configuration backup</h2></div>
+              <div class="panel-body">
+                <p class="view-intro">Export your plugin selections or restore them from a previous backup.</p>
+                <div class="source-actions">
+                  <button id="export-config" class="button button-small" type="button">Export backup</button>
+                  <button id="import-config" class="button button-small" type="button">Import backup</button>
+                  <input id="import-config-file" type="file" accept="application/json,.json" hidden>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel save-card">
+              <div class="panel-head"><h2>Delete account</h2></div>
+              <div class="panel-body">
+                <p class="view-intro">
+                  Permanently removes your account and saved selection. This cannot be undone.
+                </p>
+                <div class="delete-controls">
+                  <input id="delete-password" type="password" autocomplete="current-password"
+                    placeholder="Confirm your password" aria-label="Confirm password to delete account">
+                  <button id="delete-account" class="button button-small button-danger" type="button">
+                    Delete account
+                  </button>
+                </div>
+              </div>
+            </section>
+          </section>
+
+        </div>
       </div>
-    </section>
-
-    <nav class="view-tabs" role="tablist" aria-label="AIOPlugins configuration">
-      <button id="configure-tab" class="view-tab" type="button" role="tab" aria-selected="true" aria-controls="configure-view">Configure</button>
-      <button id="save-tab" class="view-tab" type="button" role="tab" aria-selected="false" aria-controls="save-view">Save &amp; Install</button>
-    </nav>
-    <section id="configure-view" class="view" role="tabpanel" aria-labelledby="configure-tab">
-    <div class="workspace">
-      <section class="panel" aria-labelledby="source-heading">
-        <div class="panel-head">
-          <h2 id="source-heading">Plugin sources</h2>
-          <span class="source-summary"><span id="source-count">0</span>&nbsp; loaded</span>
-        </div>
-        <div class="panel-body">
-          <div class="field">
-            <label for="repository">GitHub repository</label>
-            <input id="repository" type="url" value="https://github.com/yoruix/nuvio-providers" autocomplete="url" spellcheck="false">
-          </div>
-          <div class="field-row">
-            <div class="field">
-              <label for="ref">Branch or tag</label>
-              <input id="ref" type="text" value="main" spellcheck="false">
-            </div>
-            <div class="field">
-              <label aria-hidden="true">&nbsp;</label>
-              <button id="discover" class="button button-primary button-wide" type="button">Discover</button>
-            </div>
-          </div>
-          <div class="quick-sources" aria-label="Suggested sources">
-            <button class="quick-source" data-repo="https://github.com/yoruix/nuvio-providers" type="button">Yoru providers</button>
-            <button class="quick-source" data-repo="https://github.com/NuvioPlugin/All-in-One-Nuvio" type="button">All-in-One</button>
-          </div>
-          <p class="trust-note"><strong>Review sources before installing.</strong> Selected plugin files are fetched from the inspected commit and cached. Nuvio runs the plugin code after installation.</p>
-          <p id="status" class="status" role="status" aria-live="polite"></p>
-        </div>
-      </section>
-
-      <section class="panel" aria-labelledby="catalog-heading">
-        <div class="panel-head">
-          <h2 id="catalog-heading">Selected plugin sources</h2>
-          <div class="catalog-tools">
-            <input id="search" class="search" type="search" placeholder="Filter providers" aria-label="Filter providers">
-          </div>
-        </div>
-        <div id="catalog" class="catalog-empty">
-          <strong>No source inspected yet</strong>
-          <p>Enter a repository or choose one of the suggested sources to browse its provider list.</p>
-        </div>
-        <div class="actionbar">
-          <span id="selection-count" class="selection-count">No plugins selected</span>
-          <button id="go-save" class="button button-primary" type="button">Continue to Save &amp; Install</button>
-        </div>
-      </section>
-    </div>
-    </section>
-
-    <section id="save-view" class="view" role="tabpanel" aria-labelledby="save-tab" hidden>
-      <p class="view-intro">Save your selection, then add your install link to Nuvio.</p>
-      
-      <!-- Profile Manager Card -->
-      <section class="panel save-card" aria-labelledby="profile-heading">
-        <div class="panel-head"><h2 id="profile-heading">Profiles</h2></div>
-        <div class="panel-body">
-          <div class="field">
-            <label for="profile-select">Active Profile</label>
-            <div class="field-row">
-              <select id="profile-select"></select>
-              <button id="delete-profile" class="button button-small button-danger" type="button">Delete</button>
-            </div>
-          </div>
-          <button id="save-new-profile" class="button button-small" type="button">Save Current Selection as New Profile</button>
-        </div>
-      </section>
-
-      <section class="panel save-card" aria-labelledby="account-heading">
-        <div class="panel-head"><h2 id="account-heading">Account</h2></div>
-        <div class="panel-body">
-          <div class="uuid-row">
-            <span class="uuid-row-label">UUID</span>
-            <code id="account-uuid"></code>
-            <button id="copy-uuid" class="button button-small" type="button">Copy UUID</button>
-          </div>
-          <p id="save-status" class="status" role="status" aria-live="polite"></p>
-          <div class="backup-row">
-            <div><strong>Configuration backup</strong><p>Export or restore your selected sources.</p></div>
-            <div class="source-actions">
-              <button id="export-config" class="button button-small" type="button">Export</button>
-              <button id="import-config" class="button button-small" type="button">Import</button>
-              <input id="import-config-file" type="file" accept="application/json,.json" hidden>
-            </div>
-          </div>
-          <div class="backup-row">
-            <div><strong>Delete account</strong><p>Permanently removes your account and saved selection.</p></div>
-            <div class="delete-controls">
-              <input id="delete-password" type="password" autocomplete="current-password" placeholder="Confirm password" aria-label="Confirm password to delete account">
-              <button id="delete-account" class="button button-small button-danger" type="button">Delete</button>
-            </div>
-          </div>
-        </div>
-        <div class="save-actions">
-          <span id="save-selection-count" class="selection-count">No plugins selected</span>
-          <button id="apply" class="button button-primary" type="button" disabled>Save &amp; Install</button>
-        </div>
-      </section>
-
-      <section class="panel output-panel" aria-labelledby="output-heading">
-        <div class="panel-head output-head">
-          <h2 id="output-heading">Install in Nuvio</h2>
-          <span id="output-state" class="output-state">Save a selection to preview the plugin repository</span>
-        </div>
-        <div class="output-body">
-          <div>
-            <p class="output-label">Your private plugin repository URL</p>
-            <div class="copy-row">
-              <button id="plugin-url" class="addon-url" type="button" title="Copy plugin repository URL"></button>
-              <button id="copy-plugin-url" class="button" type="button">Copy URL</button>
-            </div>
-            <p id="copy-feedback" class="output-hint" aria-live="polite">Paste this link into Nuvio's plugin source settings. Treat it like a password: anyone with it can load your plugin list.</p>
-          </div>
-          <div>
-            <div class="manifest-title">
-              <h3>Generated Nuvio manifest</h3>
-              <a id="open-manifest" href="#" target="_blank" rel="noreferrer">Open JSON</a>
-            </div>
-            <pre id="manifest-preview" class="manifest-preview">Choose plugins and save to generate your Nuvio manifest.</pre>
-          </div>
-        </div>
-      </section>
-    </section>
     </div>
   </main>
 
   <script>
     const $ = (selector) => document.querySelector(selector);
+
     let user = null;
     let pendingUser = null;
     let state = new Map();
@@ -418,6 +456,8 @@
     let activeView = "configure";
     let pluginUrl = "";
     let manifestPath = "";
+    let isSaving = false;
+
     const catalog = $("#catalog");
     const status = $("#status");
     const saveStatus = $("#save-status");
@@ -431,6 +471,31 @@
     const copyFeedback = $("#copy-feedback");
     const manifestPreview = $("#manifest-preview");
     const outputState = $("#output-state");
+    const copyrightYear = document.querySelector("#copyright-year");
+
+    if (copyrightYear) {
+      copyrightYear.textContent = new Date().getFullYear();
+    }
+    
+    async function loadAppVersion() {
+      try {
+        const response = await fetch("/version.json", {
+          cache: "no-store"
+        });
+
+        if (!response.ok) return;
+
+        const data = await response.json();
+
+        if (typeof data.version === "string" && data.version.trim()) {
+          const badge = $("#app-version");
+          badge.textContent = data.version;
+          badge.hidden = false;
+        }
+      } catch {
+        // Version information is optional.
+      }
+    }
 
     async function api(path, body, method) {
       const response = await fetch(path, {
@@ -438,19 +503,34 @@
         headers: body === undefined ? {} : { "content-type": "application/json" },
         body: body === undefined ? undefined : JSON.stringify(body)
       });
+
       const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result.error || `Request failed (${response.status})`);
+
+      if (!response.ok) {
+        throw new Error(result.error || `Request failed (${response.status})`);
+      }
+
       return result;
     }
 
     function setStatus(message, kind = "") {
-      const target = !user ? authStatus : activeView === "save" ? saveStatus : status;
+      const target = !user
+        ? authStatus
+        : activeView === "account" || activeView === "save"
+          ? saveStatus
+          : status;
+
       target.textContent = message;
       target.className = `status ${kind}`;
     }
 
     async function copyText(text, onDone, onFail) {
-      try { await navigator.clipboard.writeText(text); onDone(); } catch { onFail(); }
+      try {
+        await navigator.clipboard.writeText(text);
+        onDone();
+      } catch {
+        onFail();
+      }
     }
 
     function showAuthTab(tab) {
@@ -462,33 +542,94 @@
       authStatus.textContent = "";
     }
 
+    function showView(view) {
+      activeView = view;
+
+      $("#configure-view").hidden = view !== "configure";
+      $("#save-view").hidden = view !== "save";
+      $("#account-view").hidden = view !== "account";
+
+      const navItems = {
+        configure: "configure-tab",
+        save: "save-tab",
+        account: "account-nav"
+      };
+
+      Object.entries(navItems).forEach(([name, id]) => {
+        const button = document.getElementById(id);
+        const active = name === view;
+
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-current", active ? "page" : "false");
+      });
+
+      const pageContent = {
+        configure: {
+          title: "Choose your plugins",
+          description: "Select plugin sources and choose the providers you want to use."
+        },
+        save: {
+          title: "Review & install",
+          description: "Check your selection, save your setup, and add it to Nuvio."
+        },
+        account: {
+          title: "Account settings",
+          description: "Manage your account and configuration backups."
+        }
+      };
+
+      $("#page-title").textContent = pageContent[view].title;
+      $("#page-description").textContent = pageContent[view].description;
+
+      if (view === "save") {
+        renderReview();
+
+        if (pluginUrl) {
+          refreshManifestPreview().catch((error) => {
+            setStatus(error.message, "error");
+          });
+        }
+      }
+    }
+
     function setUser(next) {
       user = next;
       state = new Map();
+
       const authed = Boolean(next);
+
       $("#auth-view").hidden = authed;
       $("#app-view").hidden = !authed;
       $("#session-bar").hidden = !authed;
       $("#server-state").hidden = authed;
+
       if (!authed) {
         for (const input of document.querySelectorAll("#auth-view input, #delete-password")) {
           input.value = "";
           if (input.type === "checkbox") input.checked = false;
         }
+
         pendingUser = null;
         $("#new-account").hidden = true;
         $("#auth-tabs").hidden = false;
         $("#continue").disabled = true;
+        pluginUrl = "";
+        manifestPath = "";
         showAuthTab("login");
         return;
       }
+
       $("#session-id").textContent = `${next.id.slice(0, 8)}…`;
       $("#account-uuid").textContent = next.id;
+
       manifestPath = next.installPath;
       pluginUrl = `${location.origin}${manifestPath}`;
+
       pluginUrlButton.textContent = pluginUrl;
       $("#open-manifest").href = manifestPath;
-      setActiveView("configure");
+      copyUrlButton.disabled = false;
+
+      showView("configure");
       loadProfilesList().then(() => restoreSelection());
     }
 
@@ -496,49 +637,121 @@
       setUser(nextUser);
     }
 
-    function setActiveView(view) {
-      activeView = view;
-      const configureView = view === "configure";
-      $("#configure-view").hidden = !configureView;
-      $("#save-view").hidden = configureView;
-      $("#configure-tab").setAttribute("aria-selected", String(configureView));
-      $("#save-tab").setAttribute("aria-selected", String(!configureView));
-      if (!configureView) refreshManifestPreview().catch((error) => setStatus(error.message, "error"));
-    }
-
     async function refreshManifestPreview() {
+      if (!manifestPath) return;
+
       const response = await fetch(manifestPath, { cache: "no-store" });
-      if (!response.ok) throw new Error("Could not load the Nuvio manifest preview");
+
+      if (!response.ok) {
+        throw new Error("Could not load the Nuvio manifest preview");
+      }
+
       const manifest = await response.json();
       manifestPreview.textContent = JSON.stringify(manifest, null, 2);
+
       const pluginCount = manifest.scrapers?.length || 0;
-      outputState.textContent = pluginCount === 1 ? "1 plugin included" : `${pluginCount} plugins included`;
+
+      outputState.textContent = pluginCount === 1
+        ? "1 plugin included"
+        : `${pluginCount} plugins included`;
+
       outputState.classList.toggle("ready", pluginCount > 0);
     }
 
     function selectionCount() {
-      return [...state.values()].reduce((sum, source) => sum + source.selected.size, 0);
+      return [...state.values()].reduce(
+        (sum, source) => sum + source.selected.size,
+        0
+      );
     }
 
     function updateCounts() {
       const count = selectionCount();
+
       const label = count === 1 ? "1 plugin selected" : `${count} plugins selected`;
+
       $("#source-count").textContent = String(state.size);
       $("#selection-count").textContent = label;
-      $("#save-selection-count").textContent = label;
-      applyButton.disabled = count === 0;
+      $("#review-count").textContent = label;
+
+      applyButton.disabled = count === 0 || isSaving;
       goSaveButton.disabled = count === 0;
+
+      renderReview();
+    }
+
+    function renderReview() {
+      const container = $("#review-selection");
+      if (!container) return;
+
+      container.replaceChildren();
+
+      const selected = [];
+
+      for (const source of state.values()) {
+        for (const provider of source.providers) {
+          if (source.selected.has(provider.id)) {
+            selected.push({
+              name: provider.name,
+              id: provider.id,
+              repository: source.repository,
+              types: provider.types
+            });
+          }
+        }
+      }
+
+      if (selected.length === 0) {
+        const empty = document.createElement("p");
+        empty.className = "view-intro";
+        empty.textContent = "No plugins selected yet. Go back and choose some plugins.";
+        container.append(empty);
+        return;
+      }
+
+      const list = document.createElement("div");
+      list.className = "review-list";
+
+      for (const plugin of selected) {
+        const row = document.createElement("div");
+        row.className = "review-row";
+
+        const details = document.createElement("div");
+        const name = document.createElement("strong");
+        name.textContent = plugin.name;
+
+        const id = document.createElement("p");
+        id.className = "provider-id";
+        id.textContent = plugin.id;
+
+        details.append(name, id);
+
+        const type = document.createElement("span");
+        type.className = "type-tag";
+        type.textContent = plugin.types.length
+          ? plugin.types.join(" · ")
+          : "plugin";
+
+        row.append(details, type);
+        list.append(row);
+      }
+
+      container.append(list);
     }
 
     function render() {
       const query = searchInput.value.trim().toLowerCase();
       catalog.replaceChildren();
+
       if (state.size === 0) {
         catalog.className = "catalog-empty";
+
         const heading = document.createElement("strong");
-        heading.textContent = "No source inspected yet";
+        heading.textContent = "Loading your plugin sources...";
+
         const message = document.createElement("p");
-        message.textContent = "Enter a repository or choose one of the suggested sources to browse its provider list.";
+        message.textContent = "Your suggested sources will appear here automatically.";
+
         catalog.append(heading, message);
         updateCounts();
         return;
@@ -546,39 +759,64 @@
 
       catalog.className = "catalog-content";
       let visible = 0;
+
       for (const [key, source] of state) {
-        const providers = source.providers.filter((provider) => `${provider.name} ${provider.id} ${provider.description}`.toLowerCase().includes(query));
+        const providers = source.providers.filter((provider) =>
+          `${provider.name} ${provider.id} ${provider.description}`
+            .toLowerCase()
+            .includes(query)
+        );
+
         if (providers.length === 0) continue;
         visible += providers.length;
 
         const group = document.createElement("section");
         group.className = "source-group";
+
         const titleRow = document.createElement("div");
         titleRow.className = "source-title";
+
         const titleWrap = document.createElement("div");
         const title = document.createElement("h3");
-        title.textContent = new URL(source.repository).pathname.split("/").filter(Boolean).slice(-1)[0] || source.repository;
+
+        title.textContent =
+          new URL(source.repository).pathname.split("/").filter(Boolean).slice(-1)[0]
+          || source.repository;
+
         const meta = document.createElement("p");
         meta.className = "source-meta";
         meta.textContent = `${source.ref} · ${source.commit.slice(0, 8)}`;
+
         titleWrap.append(title, meta);
 
         const actions = document.createElement("div");
         actions.className = "source-actions";
+
         const chooseAll = document.createElement("button");
         chooseAll.className = "button button-small";
         chooseAll.type = "button";
         chooseAll.textContent = "Select enabled";
+
         chooseAll.addEventListener("click", () => {
-          for (const provider of source.providers) if (provider.enabled && provider.types.length) source.selected.add(provider.id);
+          for (const provider of source.providers) {
+            if (provider.enabled && provider.types.length) {
+              source.selected.add(provider.id);
+            }
+          }
           render();
         });
+
         const remove = document.createElement("button");
         remove.className = "button button-small";
         remove.type = "button";
         remove.textContent = "Remove";
         remove.setAttribute("aria-label", `Remove ${source.repository}`);
-        remove.addEventListener("click", () => { state.delete(key); render(); });
+
+        remove.addEventListener("click", () => {
+          state.delete(key);
+          render();
+        });
+
         actions.append(chooseAll, remove);
         titleRow.append(titleWrap, actions);
         group.append(titleRow);
@@ -586,95 +824,178 @@
         for (const provider of providers) {
           const row = document.createElement("label");
           row.className = "provider-row";
+
           const checkbox = document.createElement("input");
           checkbox.type = "checkbox";
           checkbox.checked = source.selected.has(provider.id);
           checkbox.disabled = !provider.enabled || provider.types.length === 0;
+
           checkbox.addEventListener("change", () => {
             if (checkbox.checked) source.selected.add(provider.id);
             else source.selected.delete(provider.id);
             updateCounts();
           });
+
           const detail = document.createElement("span");
+
           const name = document.createElement("span");
           name.className = "provider-name";
           name.append(document.createTextNode(provider.name));
+
           const id = document.createElement("span");
           id.className = "provider-id";
           id.textContent = provider.id;
           name.append(id);
+
           const description = document.createElement("p");
           description.className = "provider-description";
           description.textContent = provider.description || "No description provided.";
+
           detail.append(name, description);
+
           const tag = document.createElement("span");
-          tag.className = `type-tag${provider.enabled && provider.types.length ? "" : " disabled"}`;
-          tag.textContent = provider.types.length ? provider.types.join(" · ") : "unsupported";
+          tag.className = `type-tag${
+            provider.enabled && provider.types.length ? "" : " disabled"
+          }`;
+
+          tag.textContent = provider.types.length
+            ? provider.types.join(" · ")
+            : "unsupported";
+
           row.append(checkbox, detail, tag);
           group.append(row);
         }
+
         catalog.append(group);
       }
 
       if (!visible) {
         catalog.className = "catalog-empty";
+
         const message = document.createElement("p");
-        message.textContent = "No providers match this filter.";
+        message.textContent = query
+          ? "No plugins match this search."
+          : "No available plugins found.";
+
         catalog.append(message);
       }
+
       updateCounts();
     }
 
-    async function inspect(repository, ref) {
-      discoverButton.disabled = true;
-      discoverButton.classList.add("loading");
-      setStatus("Checking GitHub manifest…");
+    async function inspect(repository, ref, options = {}) {
+      if (!repository) {
+        setStatus("Enter a GitHub repository URL.", "error");
+        return null;
+      }
+
+      const showStatus = options.showStatus !== false;
+
+      if (showStatus) {
+        discoverButton.disabled = true;
+        discoverButton.classList.add("loading");
+        setStatus("Checking GitHub manifest…");
+      }
+
       try {
         const source = await api("/api/discover", { repository, ref });
         const key = `${source.repository}@${source.ref}`;
         const prior = state.get(key);
-        state.set(key, { ...source, selected: prior?.selected || new Set() });
-        render();
-        setStatus(`Found ${source.providers.length} providers at commit ${source.commit.slice(0, 8)}.`, "success");
+
+        const loaded = {
+          ...source,
+          selected: prior?.selected || new Set()
+        };
+
+        state.set(key, loaded);
+
+        if (options.render !== false) render();
+
+        if (showStatus) {
+          setStatus(
+            `Found ${source.providers.length} providers at commit ${source.commit.slice(0, 8)}.`,
+            "success"
+          );
+        }
+
+        return loaded;
       } catch (error) {
-        setStatus(error.message, "error");
+        if (showStatus) setStatus(error.message, "error");
+        throw error;
       } finally {
-        discoverButton.disabled = false;
-        discoverButton.classList.remove("loading");
+        if (showStatus) {
+          discoverButton.disabled = false;
+          discoverButton.classList.remove("loading");
+        }
       }
     }
 
     function suggestedSources() {
-      return [...document.querySelectorAll(".quick-source")].map((button) => ({ repository: button.dataset.repo, ref: "main" }));
+      return [...document.querySelectorAll(".quick-source")].map((button) => ({
+        repository: button.dataset.repo,
+        ref: "main"
+      }));
     }
 
     async function restoreSelection() {
       discoverButton.disabled = true;
-      setStatus("Loading plugin sources…");
+      setStatus("Loading your plugin sources…");
+
       try {
         const saved = await api("/api/config");
+        const savedSources = saved.sources || [];
         const wanted = new Map();
-        for (const source of [...suggestedSources(), ...saved.sources]) {
+
+        for (const source of [...suggestedSources(), ...savedSources]) {
           wanted.set(`${source.repository}@${source.ref}`, source);
         }
+
+        const requestedSources = [...wanted.values()];
+
         const results = await Promise.allSettled(
-          [...wanted.values()].map((source) => api("/api/discover", { repository: source.repository, ref: source.ref }))
+          requestedSources.map((source) =>
+            api("/api/discover", {
+              repository: source.repository,
+              ref: source.ref
+            })
+          )
         );
+
         const failed = [];
+
         results.forEach((result, index) => {
-          const requested = [...wanted.values()][index];
+          const requested = requestedSources[index];
+
           if (result.status === "rejected") {
-            failed.push(`${requested.repository.split("/").slice(-1)[0]}: ${result.reason.message}`);
+            failed.push(
+              `${requested.repository.split("/").slice(-1)[0]}: ${result.reason.message}`
+            );
             return;
           }
+
           const source = result.value;
           const key = `${source.repository}@${source.ref}`;
-          const savedSelection = saved.sources.find((item) => `${item.repository}@${item.ref}` === key);
-          state.set(key, { ...source, selected: new Set(savedSelection ? savedSelection.providerIds : []) });
+
+          const savedSelection = savedSources.find(
+            (item) => `${item.repository}@${item.ref}` === key
+          );
+
+          state.set(key, {
+            ...source,
+            selected: new Set(savedSelection?.providerIds || [])
+          });
         });
+
         render();
-        if (failed.length) setStatus(`Couldn't load: ${failed.join("; ")}`, "error");
-        else setStatus(`Loaded ${state.size} plugin sources.`, "success");
+
+        if (failed.length) {
+          setStatus(`Some sources couldn't load: ${failed.join("; ")}`, "error");
+        } else {
+          setStatus(
+            `Loaded ${state.size} plugin sources. Choose the plugins you want.`,
+            "success"
+          );
+        }
       } catch (error) {
         setStatus(error.message, "error");
       } finally {
@@ -682,50 +1003,78 @@
       }
     }
 
-    // Profiles Management
+    // Profiles
     async function loadProfilesList() {
       try {
         const res = await api("/api/profiles");
-        profiles = res.sources ? [] : (res.profiles || []);
+        profiles = Array.isArray(res.profiles) ? res.profiles : [];
+
         const select = $("#profile-select");
-        select.innerHTML = "";
+        select.replaceChildren();
+
         if (profiles.length === 0) {
           const opt = document.createElement("option");
           opt.value = "";
-          opt.textContent = "Default Profile";
+          opt.textContent = "No saved profiles";
           select.appendChild(opt);
         } else {
-          profiles.forEach(p => {
+          profiles.forEach((profile) => {
             const opt = document.createElement("option");
-            opt.value = p.id;
-            opt.textContent = p.name;
+            opt.value = profile.id;
+            opt.textContent = profile.name;
             select.appendChild(opt);
           });
         }
-      } catch (e) {
-        console.error(e);
+
+        $("#delete-profile").disabled = profiles.length === 0;
+      } catch (error) {
+        console.error("Could not load profiles:", error);
       }
     }
 
-    $("#profile-select").addEventListener("change", async (e) => {
-      const profileId = e.target.value;
-      const found = profiles.find(p => p.id === profileId);
+    $("#profile-select").addEventListener("change", async (event) => {
+      const profileId = event.target.value;
+      const found = profiles.find((profile) => profile.id === profileId);
       if (!found) return;
-      
-      setStatus("Switching profile...");
-      state = new Map();
-      for (const src of found.sources) {
-        await inspect(src.repository, src.ref);
-        const loaded = state.get(`${src.repository}@${src.ref}`);
-        if (loaded) loaded.selected = new Set(src.providerIds);
+
+      setStatus("Switching profile…");
+
+      const nextState = new Map();
+      const failed = [];
+
+      for (const sourceInfo of found.sources || []) {
+        try {
+          const source = await api("/api/discover", {
+            repository: sourceInfo.repository,
+            ref: sourceInfo.ref
+          });
+
+          const key = `${source.repository}@${source.ref}`;
+
+          nextState.set(key, {
+            ...source,
+            selected: new Set(sourceInfo.providerIds || [])
+          });
+        } catch (error) {
+          failed.push(error.message);
+        }
       }
+
+      state = nextState;
       render();
-      setStatus("Profile loaded successfully.", "success");
+      showView("configure");
+
+      if (failed.length) {
+        setStatus(`Some profile sources couldn't load: ${failed.join("; ")}`, "error");
+      } else {
+        setStatus(`Profile "${found.name}" loaded successfully.`, "success");
+      }
     });
 
     $("#save-new-profile").addEventListener("click", async () => {
       const name = prompt("Enter profile name:", "My Custom Profile");
-      if (!name) return;
+      if (!name?.trim()) return;
+
       const sources = [...state.values()].map((source) => ({
         repository: source.repository,
         ref: source.ref,
@@ -733,8 +1082,12 @@
         providerIds: [...source.selected]
       })).filter((source) => source.providerIds.length);
 
+      if (!sources.length) {
+        return setStatus("Select at least one plugin before saving a profile.", "error");
+      }
+
       try {
-        await api("/api/profiles", { name, sources });
+        await api("/api/profiles", { name: name.trim(), sources });
         await loadProfilesList();
         setStatus("Profile saved successfully.", "success");
       } catch (error) {
@@ -744,8 +1097,10 @@
 
     $("#delete-profile").addEventListener("click", async () => {
       const profileId = $("#profile-select").value;
+
       if (!profileId) return alert("Select a profile to delete.");
       if (!confirm("Are you sure you want to delete this profile?")) return;
+
       try {
         await api(`/api/profiles/${profileId}`, undefined, "DELETE");
         await loadProfilesList();
@@ -755,13 +1110,19 @@
       }
     });
 
+    // Authentication
     $("#login-tab").addEventListener("click", () => showAuthTab("login"));
     $("#register-tab").addEventListener("click", () => showAuthTab("register"));
 
     $("#login-form").addEventListener("submit", async (event) => {
       event.preventDefault();
+
       try {
-        const result = await api("/api/login", { uuid: $("#login-uuid").value.trim(), password: $("#login-password").value });
+        const result = await api("/api/login", {
+          uuid: $("#login-uuid").value.trim(),
+          password: $("#login-password").value
+        });
+
         await enter(result.user);
       } catch (error) {
         setStatus(error.message, "error");
@@ -770,11 +1131,20 @@
 
     $("#register-form").addEventListener("submit", async (event) => {
       event.preventDefault();
+
       const password = $("#register-password").value;
-      if (password.length < 8) return setStatus("Password must be at least 8 characters.", "error");
-      if (password !== $("#register-confirm").value) return setStatus("Passwords do not match.", "error");
+
+      if (password.length < 8) {
+        return setStatus("Password must be at least 8 characters.", "error");
+      }
+
+      if (password !== $("#register-confirm").value) {
+        return setStatus("Passwords do not match.", "error");
+      }
+
       try {
         const result = await api("/api/register", { password });
+
         pendingUser = result.user;
         $("#new-uuid").textContent = pendingUser.id;
         $("#register-form").hidden = true;
@@ -786,28 +1156,56 @@
       }
     });
 
-    $("#copy-new-uuid").addEventListener("click", () => copyText(
-      pendingUser.id,
-      () => setStatus("UUID copied.", "success"),
-      () => setStatus("Clipboard access is unavailable.", "error")
-    ));
-    $("#saved-ack").addEventListener("change", (event) => { $("#continue").disabled = !event.target.checked; });
-    $("#continue").addEventListener("click", () => { if (pendingUser) enter(pendingUser); });
+    $("#copy-new-uuid").addEventListener("click", () => {
+      if (!pendingUser) return;
 
-    $("#logout").addEventListener("click", async () => {
-      try { await api("/api/logout", {}); } finally { setUser(null); }
+      copyText(
+        pendingUser.id,
+        () => setStatus("UUID copied.", "success"),
+        () => setStatus("Clipboard access is unavailable.", "error")
+      );
     });
 
-    $("#copy-uuid").addEventListener("click", () => copyText(
-      user.id,
-      () => setStatus("UUID copied.", "success"),
-      () => setStatus("Clipboard access is unavailable.", "error")
-    ));
+    $("#saved-ack").addEventListener("change", (event) => {
+      $("#continue").disabled = !event.target.checked;
+    });
+
+    $("#continue").addEventListener("click", () => {
+      if (pendingUser) enter(pendingUser);
+    });
+
+    $("#logout").addEventListener("click", async () => {
+      try {
+        await api("/api/logout", {});
+      } finally {
+        setUser(null);
+      }
+    });
+
+    // Account settings
+    $("#account-menu").addEventListener("click", () => showView("account"));
+    $("#account-nav").addEventListener("click", () => showView("account"));
+    $("#back-from-account").addEventListener("click", () => showView("configure"));
+
+    $("#copy-uuid").addEventListener("click", () => {
+      if (!user) return;
+
+      copyText(
+        user.id,
+        () => setStatus("UUID copied.", "success"),
+        () => setStatus("Clipboard access is unavailable.", "error")
+      );
+    });
 
     $("#delete-account").addEventListener("click", async () => {
       const password = $("#delete-password").value;
-      if (!password) return setStatus("Enter your password to delete your account.", "error");
+
+      if (!password) {
+        return setStatus("Enter your password to delete your account.", "error");
+      }
+
       if (!confirm("Permanently delete this account and its saved selection?")) return;
+
       try {
         await api("/api/account", { password }, "DELETE");
         setUser(null);
@@ -817,59 +1215,127 @@
       }
     });
 
+    // Discover custom sources
     discoverButton.addEventListener("click", () => {
-      inspect($("#repository").value.trim(), $("#ref").value.trim() || "main");
+      inspect(
+        $("#repository").value.trim(),
+        $("#ref").value.trim() || "main"
+      );
     });
 
-    document.querySelectorAll(".quick-source").forEach((button) => button.addEventListener("click", () => {
-      $("#repository").value = button.dataset.repo;
-      $("#ref").value = "main";
-      inspect(button.dataset.repo, "main");
-    }));
+    document.querySelectorAll(".quick-source").forEach((button) => {
+      button.addEventListener("click", () => {
+        $("#repository").value = button.dataset.repo;
+        $("#ref").value = "main";
+        inspect(button.dataset.repo, "main");
+      });
+    });
 
+    // Navigation
     searchInput.addEventListener("input", render);
-    $("#configure-tab").addEventListener("click", () => setActiveView("configure"));
-    $("#save-tab").addEventListener("click", () => setActiveView("save"));
-    goSaveButton.addEventListener("click", () => setActiveView("save"));
 
-    const copyPluginUrl = () => copyText(
-      pluginUrl,
-      () => { copyFeedback.textContent = "Copied. Paste this link into Nuvio's plugin source settings."; },
-      () => { copyFeedback.textContent = "Clipboard access is unavailable."; }
-    );
+    $("#configure-tab").addEventListener("click", () => showView("configure"));
+
+    $("#save-tab").addEventListener("click", () => {
+      if (selectionCount() === 0) return;
+      showView("save");
+    });
+
+    $("#go-save").addEventListener("click", () => {
+      if (selectionCount() === 0) return;
+      showView("save");
+    });
+
+    $("#back-to-plugins").addEventListener("click", () => showView("configure"));
+    $("#edit-selection").addEventListener("click", () => showView("configure"));
+
+    // Copy install URL
+    const copyPluginUrl = () => {
+      if (!pluginUrl) return;
+
+      copyText(
+        pluginUrl,
+        () => {
+          copyFeedback.textContent =
+            "Copied! Paste this link into Nuvio's plugin source settings.";
+        },
+        () => {
+          copyFeedback.textContent = "Clipboard access is unavailable.";
+        }
+      );
+    };
+
     pluginUrlButton.addEventListener("click", copyPluginUrl);
     copyUrlButton.addEventListener("click", copyPluginUrl);
 
+    // Save selection
     applyButton.addEventListener("click", async () => {
+      if (isSaving || selectionCount() === 0) return;
+
+      isSaving = true;
       applyButton.disabled = true;
-      setStatus("Fetching the selected plugin files and building your link…");
+      applyButton.textContent = "Saving…";
+
+      setStatus("Fetching selected plugin files and building your link…");
+
       const sources = [...state.values()].map((source) => ({
         repository: source.repository,
         ref: source.ref,
         commit: source.commit,
         providerIds: [...source.selected]
       })).filter((source) => source.providerIds.length);
+
       try {
         const result = await api("/api/apply", { sources });
+
         await refreshManifestPreview();
-        setStatus(`Saved ${result.plugins} selected plugins.`, "success");
-        $(".output-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+
+        setStatus(
+          `Successfully saved ${result.plugins} selected plugins.`,
+          "success"
+        );
+
+        outputState.textContent = `${result.plugins} plugins included`;
+        outputState.classList.add("ready");
+
+        copyFeedback.textContent =
+          "Your setup is saved. Copy your URL and add it to Nuvio.";
+
+        $(".output-panel").scrollIntoView({
+          behavior: "smooth",
+          block: "start"
+        });
       } catch (error) {
         setStatus(error.message, "error");
       } finally {
+        isSaving = false;
+        applyButton.textContent = "Save Plugin Setup";
         applyButton.disabled = selectionCount() === 0;
       }
     });
 
+    // Export backup
     $("#export-config").addEventListener("click", async () => {
       try {
         const saved = await api("/api/config");
-        const backup = { format: "aioplugins-profile", version: 1, sources: saved.sources };
-        const blobUrl = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" }));
+
+        const backup = {
+          format: "aioplugins-profile",
+          version: 1,
+          sources: saved.sources || []
+        };
+
+        const blobUrl = URL.createObjectURL(
+          new Blob([JSON.stringify(backup, null, 2)], {
+            type: "application/json"
+          })
+        );
+
         const link = document.createElement("a");
         link.href = blobUrl;
         link.download = `aioplugins-${user.id.slice(0, 8)}.json`;
         link.click();
+
         URL.revokeObjectURL(blobUrl);
         setStatus("Backup exported.", "success");
       } catch (error) {
@@ -877,27 +1343,51 @@
       }
     });
 
-    $("#import-config").addEventListener("click", () => $("#import-config-file").click());
+    // Import backup
+    $("#import-config").addEventListener("click", () => {
+      $("#import-config-file").click();
+    });
 
     $("#import-config-file").addEventListener("change", async (event) => {
       const file = event.target.files?.[0];
       if (!file) return;
+
       try {
         const backup = JSON.parse(await file.text());
-        if (backup.format !== "aioplugins-profile" || backup.version !== 1 || !Array.isArray(backup.sources)) {
-          throw new Error("This file is not an AIOPlugins backup");
+
+        if (
+          backup.format !== "aioplugins-profile" ||
+          backup.version !== 1 ||
+          !Array.isArray(backup.sources)
+        ) {
+          throw new Error("This file is not a valid AIOPlugins backup.");
         }
+
         setStatus("Restoring plugins…");
         await api("/api/apply", { sources: backup.sources });
-        state = new Map();
-        for (const source of backup.sources) {
-          await inspect(source.repository, source.ref);
-          const loaded = state.get(`${source.repository}@${source.ref}`);
-          if (loaded) loaded.selected = new Set(source.providerIds);
+
+        const restoredState = new Map();
+
+        for (const sourceInfo of backup.sources) {
+          const source = await api("/api/discover", {
+            repository: sourceInfo.repository,
+            ref: sourceInfo.ref
+          });
+
+          const key = `${source.repository}@${source.ref}`;
+
+          restoredState.set(key, {
+            ...source,
+            selected: new Set(sourceInfo.providerIds || [])
+          });
         }
+
+        state = restoredState;
         render();
         await refreshManifestPreview();
-        setStatus("Backup restored.", "success");
+
+        setStatus("Backup restored successfully.", "success");
+        showView("configure");
       } catch (error) {
         setStatus(error.message, "error");
       } finally {
@@ -905,18 +1395,39 @@
       }
     });
 
+    // Initial session check
     async function initialize() {
       try {
         const { user: current } = await api("/api/session");
-        if (current) await enter(current);
-        else setUser(null);
+
+        if (current) {
+          await enter(current);
+        } else {
+          setUser(null);
+        }
       } catch (error) {
         setUser(null);
         setStatus(error.message, "error");
       }
     }
 
+    loadAppVersion();
     initialize();
   </script>
+
+  <footer class="app-footer">
+    <span>
+      © <span id="copyright-year"></span> AIOPlugins
+    </span>
+
+    <a
+      href="https://github.com/zKevinly/AIOPlugins"
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      View on GitHub
+      <span aria-hidden="true">↗</span>
+    </a>
+  </footer>
 </body>
 </html>

@@ -7,7 +7,8 @@ compatibility_flags = ["nodejs_compat"]
 [[d1_databases]]
 binding = "DB"
 database_name = "db_aioplugins"
-database_id = "eb1b8e00-395a-412c-af6e-a0e8f427746c"
+# Update database_id with your local database ID after running: npx wrangler d1 create db_aioplugins
+# database_id = "<your-local-db-id>"
 migrations_dir = "migrations"
 
 [assets]

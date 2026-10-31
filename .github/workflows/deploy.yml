@@ -17,10 +17,10 @@ jobs:
       contents: read
 
     steps:
-      - name: Checkout release
+      - name: Checkout source
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.sha }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -30,6 +30,18 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Generate app version
+        run: |
+          node --input-type=module -e '
+            import { writeFileSync } from "node:fs";
+            writeFileSync(
+              "public/version.json",
+              JSON.stringify({ version: process.env.APP_VERSION }) + "\n"
+            );
+          '
+        env:
+          APP_VERSION: ${{ github.event_name == 'release' && github.event.release.tag_name || format('main-{0}', github.sha) }}
 
       - name: Apply D1 migrations
         run: npx wrangler d1 migrations apply db_aioplugins --remote
