@@ -7,12 +7,10 @@ type MediaType = "movie" | "series";
 const MAX_PROVIDER_BYTES = 8 * 1024 * 1024;
 const MAX_JSON_BYTES = 2 * 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 15_000;
-
-// Store smaller chunks to stay safely below D1's per-row size limit.
 const CACHE_CHUNK_BYTES = 512 * 1024;
 
-const GITHUB_API = "https://api.github.com";
 const GITHUB_RAW = "https://raw.githubusercontent.com";
+const GITHUB_WEB = "https://github.com";
 
 interface ProviderEntry {
   id?: unknown;
@@ -252,32 +250,33 @@ async function readLimitedResponse(
 
 async function githubFetch(
   urlValue: string,
-  allowedHost: string,
-  env: Env
+  allowedHost: string
 ): Promise<Response> {
   const url = new URL(urlValue);
 
+  const allowedHosts = [
+    "github.com",
+    "raw.githubusercontent.com"
+  ];
+
   if (
     url.protocol !== "https:" ||
+    !allowedHosts.includes(allowedHost) ||
     url.hostname !== allowedHost ||
     url.port ||
     url.username ||
     url.password
   ) {
-    throw new Error("Blocked request to an unapproved host");
+    throw new Error("Blocked request to an unapproved GitHub host");
   }
 
   const headers: Record<string, string> = {
     "user-agent": "aioplugins",
-    accept: "application/vnd.github+json"
+    accept:
+      allowedHost === "github.com"
+        ? "application/atom+xml"
+        : "*/*"
   };
-
-  if (
-    allowedHost === "api.github.com" &&
-    env.GITHUB_TOKEN
-  ) {
-    headers.authorization = `Bearer ${env.GITHUB_TOKEN}`;
-  }
 
   const response = await fetch(url, {
     method: "GET",
@@ -286,8 +285,6 @@ async function githubFetch(
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
   });
 
-  // Cloudflare Workers do not support redirect: "error".
-  // Reject redirects explicitly to avoid following unapproved URLs.
   if (response.status >= 300 && response.status < 400) {
     throw new Error("GitHub returned an unexpected redirect");
   }
@@ -295,16 +292,57 @@ async function githubFetch(
   return response;
 }
 
-async function fetchJson(
-  url: string,
-  env: Env
-): Promise<unknown> {
+async function fetchAtomCommit(
+  repository: GitHubRepository,
+  ref: string
+): Promise<string> {
+  const encodedRef = ref
+    .split("/")
+    .map(encodeURIComponent)
+    .join("/");
+
+  const url =
+    `${GITHUB_WEB}/${repository.owner}/${repository.repo}` +
+    `/commits/${encodedRef}.atom`;
+
+  const response = await githubFetch(url, "github.com");
+
+  if (!response.ok) {
+    throw new Error(
+      `GitHub commit feed request failed (${response.status})`
+    );
+  }
+
+  const atom = await readLimitedResponse(
+    response,
+    MAX_JSON_BYTES,
+    "GitHub commit feed is larger than 2 MB"
+  );
+
+  // GitHub Atom entries contain commit IDs in their entry IDs.
+  // Prefer the first commit because Atom feeds are newest-first.
+  const patterns = [
+    /Grit::Commit\/([a-f0-9]{40})/i,
+    /\/commit\/([a-f0-9]{40})(?:\.atom)?/i
+  ];
+
+  for (const pattern of patterns) {
+    const match = atom.match(pattern);
+
+    if (match?.[1]) {
+      return validateCommit(match[1]);
+    }
+  }
+
+  throw new Error(
+    "Could not find a commit SHA in the GitHub commit feed. Check that the repository and branch exist."
+  );
+}
+
+async function fetchJson(url: string): Promise<unknown> {
   const parsed = new URL(url);
 
-  if (
-    parsed.hostname !== "api.github.com" &&
-    parsed.hostname !== "raw.githubusercontent.com"
-  ) {
+  if (parsed.hostname !== "raw.githubusercontent.com") {
     throw new Error(
       "Blocked request to an unapproved GitHub host"
     );
@@ -312,13 +350,12 @@ async function fetchJson(
 
   const response = await githubFetch(
     url,
-    parsed.hostname,
-    env
+    "raw.githubusercontent.com"
   );
 
   if (!response.ok) {
     throw new Error(
-      `GitHub request failed (${response.status})`
+      `GitHub manifest request failed (${response.status})`
     );
   }
 
@@ -335,14 +372,10 @@ async function fetchJson(
   }
 }
 
-async function fetchText(
-  url: string,
-  env: Env
-): Promise<string> {
+async function fetchText(url: string): Promise<string> {
   const response = await githubFetch(
     url,
-    "raw.githubusercontent.com",
-    env
+    "raw.githubusercontent.com"
   );
 
   if (!response.ok) {
@@ -362,35 +395,19 @@ async function fetchText(
 
 async function loadSource(
   repositoryValue: string,
-  refValue = "main",
-  env: Env
+  refValue = "main"
 ) {
   const repository = parseRepository(repositoryValue);
   const ref = validateRef(refValue);
 
-  const commitUrl =
-    `${GITHUB_API}/repos/${repository.owner}/${repository.repo}` +
-    `/commits/${encodeURIComponent(ref)}`;
-
-  const commitData = await fetchJson(commitUrl, env);
-
-  if (
-    !commitData ||
-    typeof commitData !== "object" ||
-    typeof (commitData as { sha?: unknown }).sha !== "string"
-  ) {
-    throw new Error("GitHub did not return a commit for this ref");
-  }
-
-  const commit = validateCommit(
-    (commitData as { sha: string }).sha
-  );
+  // Resolve the branch or tag without using api.github.com.
+  const commit = await fetchAtomCommit(repository, ref);
 
   const manifestUrl =
     `${GITHUB_RAW}/${repository.owner}/${repository.repo}` +
     `/${commit}/manifest.json`;
 
-  const manifest = await fetchJson(manifestUrl, env);
+  const manifest = await fetchJson(manifestUrl);
 
   return {
     ...repository,
@@ -404,9 +421,9 @@ async function loadSource(
 export async function inspectGitHubSource(
   repository: string,
   ref = "main",
-  env: Env
+  _env: Env
 ) {
-  const source = await loadSource(repository, ref, env);
+  const source = await loadSource(repository, ref);
 
   return {
     repository: source.url,
@@ -741,8 +758,7 @@ export async function fetchAndCacheSources(
   for (const selection of selections) {
     const source = await loadSource(
       selection.repository,
-      selection.ref,
-      env
+      selection.ref
     );
 
     if (
@@ -794,8 +810,7 @@ export async function fetchAndCacheSources(
         .join("/");
 
       const code = await fetchText(
-        `${GITHUB_RAW}/${source.owner}/${source.repo}/${source.commit}/${urlPath}`,
-        env
+        `${GITHUB_RAW}/${source.owner}/${source.repo}/${source.commit}/${urlPath}`
       );
 
       await saveCachedContent(
