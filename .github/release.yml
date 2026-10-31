@@ -1,0 +1,90 @@
+name: Release
+
+# Every push to main creates a patch release (v0.1.0 -> v0.1.1 -> ...).
+# For a minor or major release: Actions tab -> Release -> Run workflow,
+# run it from main and pick the bump.
+#
+# Version numbers come from git tags, not from package.json.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+        default: minor
+
+permissions:
+  contents: write
+
+# One release at a time so version numbers never collide.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Create GitHub release
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Run tests
+        run: npm test
+
+      - name: Work out next version
+        id: version
+        env:
+          BUMP: ${{ inputs.bump || 'patch' }}
+        run: |
+          # Latest stable tag such as v1.2.3 (pre-release tags are ignored).
+          LAST="$(git tag --list 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)"
+
+          if [ -z "$LAST" ]; then
+            # First release: use the version already in package.json.
+            NEXT="v$(node -p "require('./package.json').version")"
+          else
+            IFS=. read -r MAJOR MINOR PATCH <<< "${LAST#v}"
+            case "$BUMP" in
+              major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+              minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+              *)     PATCH=$((PATCH + 1)) ;;
+            esac
+            NEXT="v${MAJOR}.${MINOR}.${PATCH}"
+          fi
+
+          echo "Previous: ${LAST:-none}  ->  Next: $NEXT ($BUMP)"
+          echo "tag=$NEXT" >> "$GITHUB_OUTPUT"
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          gh release create "$TAG" \
+            --target "$GITHUB_SHA" \
+            --title "$TAG" \
+            --generate-notes
