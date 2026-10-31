@@ -245,7 +245,8 @@ async function readLimitedResponse(
   }
 
   return new TextDecoder("utf-8", {
-    fatal: false
+    fatal: false,
+    ignoreBOM: false
   }).decode(result);
 }
 
@@ -278,12 +279,20 @@ async function githubFetch(
     headers.authorization = `Bearer ${env.GITHUB_TOKEN}`;
   }
 
-  return fetch(url, {
+  const response = await fetch(url, {
     method: "GET",
     headers,
-    redirect: "error",
+    redirect: "manual",
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
   });
+
+  // Cloudflare Workers do not support redirect: "error".
+  // Reject redirects explicitly to avoid following unapproved URLs.
+  if (response.status >= 300 && response.status < 400) {
+    throw new Error("GitHub returned an unexpected redirect");
+  }
+
+  return response;
 }
 
 async function fetchJson(
@@ -480,6 +489,7 @@ async function saveCachedContent(
 ): Promise<void> {
   const db = getDb(env);
   const bytes = new TextEncoder().encode(content);
+
   const statements = [
     db.prepare(
       "DELETE FROM provider_cache WHERE cache_key = ?"
@@ -536,6 +546,7 @@ async function getCachedContent(
   if (rows.length === 0) return null;
 
   const chunks = rows.map(row => base64ToBytes(row.content));
+
   const totalLength = chunks.reduce(
     (total, chunk) => total + chunk.length,
     0
