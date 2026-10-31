@@ -84,6 +84,21 @@ Type-check with `npm run typecheck`.
 
 Plugin files and manifests are cached in D1 (in 512 KB chunks), so there is no local filesystem state and no persistent disk to configure.
 
+## Releases
+
+Releases are automated with [release-please](https://github.com/googleapis/release-please) and follow [Conventional Commits](https://www.conventionalcommits.org/). Write commit messages like this:
+
+| Commit message | Effect |
+| --- | --- |
+| `fix: handle empty manifest` | patch release (0.1.0 to 0.1.1) |
+| `feat: add profile export` | minor release (0.1.0 to 0.2.0) |
+| `feat!: change install URL format` (or a `BREAKING CHANGE:` footer) | major release (0.x: minor) |
+| `chore:`, `docs:`, `test:`, `refactor:` | no release on their own |
+
+After pushes to `main`, release-please opens or updates a "release" pull request that bumps the version and writes `CHANGELOG.md`. Merging that pull request creates the `vX.Y.Z` tag and the GitHub Release. To deploy a release: `git fetch --tags && git checkout vX.Y.Z && npm run deploy`.
+
+To force a version, add `Release-As: 1.0.0` as a footer on a commit.
+
 ## Security notes
 
 - Passwords are hashed with scrypt and a per-user salt. Sessions are stored as SHA-256 hashes and expire after 30 days; the session cookie is `HttpOnly`, `Secure`, and `SameSite=Strict`.
