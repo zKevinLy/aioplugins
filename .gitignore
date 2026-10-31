@@ -6,3 +6,4 @@ dist/
 .nuvio-provider-selection.json.tmp
 data/
 coverage/
+.wrangler/
