@@ -1,6 +1,6 @@
 {
   "name": "aioplugins",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "license": "GPL-3.0-only",
   "private": false,
   "description": "Create personalized Nuvio plugin repositories from selected GitHub sources.",

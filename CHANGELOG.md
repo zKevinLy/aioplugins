@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/zKevinLy/aioplugins/compare/v0.2.0...v0.3.0) (2026-10-31)
+
+
+### Features
+
+* decouple Cloudflare behind platform adapters 2 ([94cb467](https://github.com/zKevinLy/aioplugins/commit/94cb4672e175523d2e69b2316c5765a214bf9b85))
+
 ## [0.2.0](https://github.com/zKevinLy/aioplugins/compare/v0.1.0...v0.2.0) (2026-10-31)
 
 
