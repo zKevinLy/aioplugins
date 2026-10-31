@@ -1,0 +1,15 @@
+
+name = "aioplugins"
+main = "src/index.ts"
+compatibility_date = "2026-10-30"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "db_aioplugins"
+database_id = "eb1b8e00-395a-412c-af6e-a0e8f427746c"
+migrations_dir = "migrations"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"

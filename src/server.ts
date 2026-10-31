@@ -1,14 +1,7 @@
 
-import {
-  createServer,
-  type IncomingMessage,
-  type OutgoingHttpHeaders,
-  type Server,
-  type ServerResponse
-} from "node:http";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { randomUUID } from "node:crypto";
+
+import type { Env } from "./lib/db.js";
 
 import {
   fetchAndCacheSources,
@@ -34,10 +27,6 @@ import {
   type User
 } from "./users.js";
 
-export interface PluginBuilderConfig {
-  providerStorageRoot?: string;
-}
-
 const SESSION_COOKIE = "aio_session";
 const MAX_REQUEST_BYTES = 1024 * 1024;
 const RATE_LIMIT_MAX_KEYS = 10_000;
@@ -53,62 +42,84 @@ interface RateLimitEntry {
 
 const rateLimits = new Map<string, RateLimitEntry>();
 
-function securityHeaders(): OutgoingHttpHeaders {
-  return {
+// ---------- response helpers ----------
+
+function securityHeaders(): Headers {
+  return new Headers({
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY",
     "referrer-policy": "strict-origin-when-cross-origin",
     "permissions-policy": "camera=(), microphone=(), geolocation=()"
-  };
+  });
 }
 
 function sendJson(
-  response: ServerResponse,
   status: number,
   body: unknown,
-  headers: OutgoingHttpHeaders = {}
-): void {
-  response.writeHead(status, {
-    ...securityHeaders(),
-    "content-type": "application/json; charset=utf-8",
-    "cache-control": "no-store",
-    ...headers
-  });
+  extraHeaders?: HeadersInit
+): Response {
+  const headers = securityHeaders();
 
-  response.end(JSON.stringify(body));
+  headers.set("content-type", "application/json; charset=utf-8");
+  headers.set("cache-control", "no-store");
+
+  if (extraHeaders) {
+    new Headers(extraHeaders).forEach((value, key) => {
+      headers.set(key, value);
+    });
+  }
+
+  return new Response(JSON.stringify(body), {
+    status,
+    headers
+  });
 }
 
-function sendHtml(response: ServerResponse, body: string): void {
-  response.writeHead(200, {
-    ...securityHeaders(),
-    "content-type": "text/html; charset=utf-8",
-    "cache-control": "no-store"
-  });
+function sendText(
+  status: number,
+  body: string,
+  contentType: string,
+  extraHeaders?: HeadersInit
+): Response {
+  const headers = securityHeaders();
 
-  response.end(body);
+  headers.set("content-type", contentType);
+  headers.set("cache-control", "no-store");
+
+  if (extraHeaders) {
+    new Headers(extraHeaders).forEach((value, key) => {
+      headers.set(key, value);
+    });
+  }
+
+  return new Response(body, {
+    status,
+    headers
+  });
 }
 
-function clientAddress(request: IncomingMessage): string {
-  const forwarded = request.headers["cf-connecting-ip"];
+// ---------- request helpers ----------
+
+function clientAddress(request: Request): string {
+  const forwarded = request.headers.get("cf-connecting-ip");
 
   if (
-    typeof forwarded === "string" &&
+    forwarded &&
     forwarded.length <= 64 &&
     /^[0-9a-fA-F:.]+$/.test(forwarded)
   ) {
     return forwarded;
   }
 
-  return request.socket.remoteAddress || "unknown";
+  return "unknown";
 }
 
 function enforceRateLimit(
-  request: IncomingMessage,
-  response: ServerResponse,
+  request: Request,
   bucket: string,
   maximum: number,
   windowMs: number
-): boolean {
+): Response | null {
   const now = Date.now();
   const key = `${bucket}:${clientAddress(request)}`;
 
@@ -131,14 +142,11 @@ function enforceRateLimit(
 
     rateLimits.set(key, entry);
 
-    sendJson(
-      response,
+    return sendJson(
       429,
       { error: "Too many requests. Please try again later." },
       { "retry-after": String(retryAfter) }
     );
-
-    return false;
   }
 
   rateLimits.set(key, entry);
@@ -159,41 +167,39 @@ function enforceRateLimit(
     }
   }
 
-  return true;
+  return null;
 }
 
 async function readJsonBody(
-  request: IncomingMessage
+  request: Request
 ): Promise<Record<string, unknown>> {
-  if (
-    !request.headers["content-type"]
-      ?.toLowerCase()
-      .includes("application/json")
-  ) {
+  const contentType = request.headers.get("content-type") || "";
+
+  if (!contentType.toLowerCase().includes("application/json")) {
     throw new HttpError(400, "Expected application/json");
   }
 
-  const chunks: Buffer[] = [];
-  let size = 0;
+  const contentLength = Number(
+    request.headers.get("content-length") || 0
+  );
 
-  for await (const chunk of request) {
-    const buffer = Buffer.isBuffer(chunk)
-      ? chunk
-      : Buffer.from(chunk);
+  if (
+    Number.isFinite(contentLength) &&
+    contentLength > MAX_REQUEST_BYTES
+  ) {
+    throw new HttpError(413, "Request body is too large");
+  }
 
-    size += buffer.length;
+  const text = await request.text();
 
-    if (size > MAX_REQUEST_BYTES) {
-      throw new HttpError(413, "Request body is too large");
-    }
-
-    chunks.push(buffer);
+  if (new TextEncoder().encode(text).byteLength > MAX_REQUEST_BYTES) {
+    throw new HttpError(413, "Request body is too large");
   }
 
   let parsed: unknown;
 
   try {
-    parsed = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    parsed = JSON.parse(text);
   } catch {
     throw new HttpError(400, "Invalid JSON");
   }
@@ -209,10 +215,10 @@ async function readJsonBody(
   return parsed as Record<string, unknown>;
 }
 
-function readSessionToken(
-  request: IncomingMessage
-): string | undefined {
-  for (const part of (request.headers.cookie || "").split(";")) {
+function readSessionToken(request: Request): string | undefined {
+  const cookie = request.headers.get("cookie") || "";
+
+  for (const part of cookie.split(";")) {
     const [name, ...rest] = part.trim().split("=");
 
     if (name === SESSION_COOKIE) {
@@ -227,11 +233,10 @@ function sessionCookie(
   token: string,
   maxAgeSeconds: number
 ): string {
-  const secure =
-    process.env.NODE_ENV === "production" ? "; Secure" : "";
-
-  return `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAgeSeconds}${secure}`;
+  return `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAgeSeconds}; Secure`;
 }
+
+// ---------- account helpers ----------
 
 function publicUser(user: User) {
   return {
@@ -240,16 +245,14 @@ function publicUser(user: User) {
   };
 }
 
-function startSession(
-  response: ServerResponse,
+async function startSession(
   user: User,
-  root: string,
+  env: Env,
   status = 200
-): void {
-  const { token, maxAgeSeconds } = createSession(user.id, root);
+): Promise<Response> {
+  const { token, maxAgeSeconds } = await createSession(user.id, env);
 
-  sendJson(
-    response,
+  return sendJson(
     status,
     { user: publicUser(user) },
     {
@@ -258,92 +261,81 @@ function startSession(
   );
 }
 
+// ---------- API routes ----------
+
 async function handleApi(
-  request: IncomingMessage,
-  response: ServerResponse,
+  request: Request,
   url: URL,
-  root: string
-): Promise<void> {
+  env: Env
+): Promise<Response> {
   const { pathname } = url;
   const method = request.method;
   const sessionToken = readSessionToken(request);
 
   if (pathname === "/api/session" && method === "GET") {
-    const user = userFromSession(sessionToken, root);
+    const user = await userFromSession(sessionToken, env);
 
-    sendJson(response, 200, {
+    return sendJson(200, {
       user: user ? publicUser(user) : null
     });
-
-    return;
   }
 
   if (pathname === "/api/register" && method === "POST") {
-    if (
-      !enforceRateLimit(
-        request,
-        response,
-        "register",
-        5,
-        60 * 60 * 1000
-      )
-    ) {
-      return;
-    }
+    const limited = enforceRateLimit(
+      request,
+      "register",
+      5,
+      60 * 60 * 1000
+    );
+
+    if (limited) return limited;
 
     const body = await readJsonBody(request);
-    const user = await registerUser(body.password, root);
+    const user = await registerUser(body.password, env);
 
-    startSession(response, user, root, 201);
-    return;
+    return startSession(user, env, 201);
   }
 
   if (pathname === "/api/login" && method === "POST") {
-    if (
-      !enforceRateLimit(
-        request,
-        response,
-        "login",
-        10,
-        15 * 60 * 1000
-      )
-    ) {
-      return;
-    }
+    const limited = enforceRateLimit(
+      request,
+      "login",
+      10,
+      15 * 60 * 1000
+    );
+
+    if (limited) return limited;
 
     const body = await readJsonBody(request);
+
     const user = await loginUser(
       body.uuid,
       body.password,
-      root,
+      env,
       clientAddress(request)
     );
 
-    startSession(response, user, root);
-    return;
+    return startSession(user, env);
   }
 
   if (pathname === "/api/logout" && method === "POST") {
-    destroySession(sessionToken, root);
+    await destroySession(sessionToken, env);
 
-    sendJson(
-      response,
+    return sendJson(
       200,
       { user: null },
       { "set-cookie": sessionCookie("", 0) }
     );
-
-    return;
   }
 
-  const user = userFromSession(sessionToken, root);
+  const user = await userFromSession(sessionToken, env);
 
   if (!user) {
     throw new HttpError(401, "Please log in");
   }
 
   if (pathname === "/api/config" && method === "GET") {
-    const sources = getSources(user.id, root).map(
+    const sources = (await getSources(user.id, env)).map(
       ({ repository, ref, providerIds }) => ({
         repository,
         ref,
@@ -351,22 +343,18 @@ async function handleApi(
       })
     );
 
-    sendJson(response, 200, { sources });
-    return;
+    return sendJson(200, { sources });
   }
 
   if (pathname === "/api/discover" && method === "POST") {
-    if (
-      !enforceRateLimit(
-        request,
-        response,
-        "discover",
-        20,
-        10 * 60 * 1000
-      )
-    ) {
-      return;
-    }
+    const limited = enforceRateLimit(
+      request,
+      "discover",
+      20,
+      10 * 60 * 1000
+    );
+
+    if (limited) return limited;
 
     const body = await readJsonBody(request);
 
@@ -379,59 +367,50 @@ async function handleApi(
 
     const result = await inspectGitHubSource(
       body.repository,
-      ref
+      ref,
+      env
     );
 
-    sendJson(response, 200, result);
-    return;
+    return sendJson(200, result);
   }
 
   if (pathname === "/api/apply" && method === "POST") {
-    if (
-      !enforceRateLimit(
-        request,
-        response,
-        "apply",
-        10,
-        10 * 60 * 1000
-      )
-    ) {
-      return;
-    }
+    const limited = enforceRateLimit(
+      request,
+      "apply",
+      10,
+      10 * 60 * 1000
+    );
+
+    if (limited) return limited;
 
     const body = await readJsonBody(request);
 
     const { sources, plugins } = await fetchAndCacheSources(
       body.sources,
-      root
+      env
     );
 
-    saveSources(user.id, sources, root);
+    await saveSources(user.id, sources, env);
 
-    sendJson(response, 200, { plugins });
-    return;
+    return sendJson(200, { plugins });
   }
 
   if (pathname === "/api/profiles" && method === "GET") {
-    sendJson(response, 200, {
-      profiles: getProfiles(user.id, root)
+    return sendJson(200, {
+      profiles: await getProfiles(user.id, env)
     });
-
-    return;
   }
 
   if (pathname === "/api/profiles" && method === "POST") {
-    if (
-      !enforceRateLimit(
-        request,
-        response,
-        "profiles",
-        10,
-        10 * 60 * 1000
-      )
-    ) {
-      return;
-    }
+    const limited = enforceRateLimit(
+      request,
+      "profiles",
+      10,
+      10 * 60 * 1000
+    );
+
+    if (limited) return limited;
 
     const body = await readJsonBody(request);
 
@@ -447,14 +426,13 @@ async function handleApi(
 
     const { sources, plugins } = await fetchAndCacheSources(
       body.sources,
-      root
+      env
     );
 
-    saveProfile(user.id, profileId, name, sources, root);
-    saveSources(user.id, sources, root);
+    await saveProfile(user.id, profileId, name, sources, env);
+    await saveSources(user.id, sources, env);
 
-    sendJson(response, 200, { profileId, plugins });
-    return;
+    return sendJson(200, { profileId, plugins });
   }
 
   if (
@@ -464,95 +442,91 @@ async function handleApi(
     const profileId = pathname.split("/")[3];
 
     if (profileId) {
-      deleteProfile(user.id, profileId, root);
+      await deleteProfile(user.id, profileId, env);
     }
 
-    sendJson(response, 200, { success: true });
-    return;
+    return sendJson(200, { success: true });
   }
 
   if (pathname === "/api/account" && method === "DELETE") {
     const body = await readJsonBody(request);
 
-    await deleteUser(user.id, body.password, root);
+    await deleteUser(user.id, body.password, env);
 
-    sendJson(
-      response,
+    return sendJson(
       200,
       { user: null },
       { "set-cookie": sessionCookie("", 0) }
     );
-
-    return;
   }
 
-  sendJson(response, 404, { error: "Not found" });
+  return sendJson(404, { error: "Not found" });
 }
 
-async function handleRequest(
-  request: IncomingMessage,
-  response: ServerResponse,
-  config: PluginBuilderConfig
-): Promise<void> {
+// ---------- Worker request handler ----------
+
+export async function handleRequest(
+  request: Request,
+  env: Env
+): Promise<Response> {
   let url: URL;
 
   try {
-    url = new URL(
-      request.url || "/",
-      "http://localhost"
-    );
+    url = new URL(request.url);
   } catch {
-    sendJson(response, 400, { error: "Invalid request URL" });
-    return;
+    return sendJson(400, { error: "Invalid request URL" });
   }
 
-  const root =
-    config.providerStorageRoot ?? process.cwd();
-
   if (url.pathname === "/" && request.method === "GET") {
-    sendHtml(
-      response,
-      readFileSync(
-        resolve(process.cwd(), "public/index.html"),
-        "utf8"
-      )
+    const assetUrl = new URL("/index.html", url.origin);
+
+    const assetResponse = await env.ASSETS.fetch(
+      new Request(assetUrl.toString(), request)
     );
 
-    return;
+    const headers = new Headers(assetResponse.headers);
+
+    for (const [key, value] of securityHeaders()) {
+      headers.set(key, value);
+    }
+
+    headers.set("cache-control", "no-store");
+
+    return new Response(assetResponse.body, {
+      status: assetResponse.status,
+      statusText: assetResponse.statusText,
+      headers
+    });
   }
 
   if (url.pathname.startsWith("/api/")) {
     try {
-      await handleApi(request, response, url, root);
+      return await handleApi(request, url, env);
     } catch (error) {
       if (error instanceof HttpError) {
-        sendJson(response, error.status, {
+        return sendJson(error.status, {
           error: error.message
         });
-      } else {
-        sendJson(response, 500, {
-          error: "An internal server error occurred"
-        });
       }
-    }
 
-    return;
+      console.error("API request failed:", error);
+
+      return sendJson(500, {
+        error: "An internal server error occurred"
+      });
+    }
   }
 
   if (request.method !== "GET") {
-    sendJson(response, 405, {
+    return sendJson(405, {
       error: "Method not allowed"
     });
-
-    return;
   }
 
   if (url.pathname === "/health") {
-    sendJson(response, 200, {
+    return sendJson(200, {
       status: "ok"
     });
-
-    return;
   }
 
   const manifestMatch = url.pathname.match(
@@ -560,35 +534,39 @@ async function handleRequest(
   );
 
   if (manifestMatch) {
-    const user = userFromInstallLink(
-      manifestMatch[1]!,
-      manifestMatch[2]!,
-      root
-    );
-
-    if (!user) {
-      sendJson(
-        response,
-        404,
-        { error: "Not found" },
-        PUBLIC_CORS
+    try {
+      const user = await userFromInstallLink(
+        manifestMatch[1]!,
+        manifestMatch[2]!,
+        env
       );
 
-      return;
-    }
+      if (!user) {
+        return sendJson(
+          404,
+          { error: "Not found" },
+          PUBLIC_CORS
+        );
+      }
 
-    sendJson(
-      response,
-      200,
-      getPluginRepositoryManifest(
-        root,
+      const sources = await getSources(user.id, env);
+
+      const manifest = await getPluginRepositoryManifest(
+        env,
         user.id,
-        getSources(user.id, root)
-      ),
-      PUBLIC_CORS
-    );
+        sources
+      );
 
-    return;
+      return sendJson(200, manifest, PUBLIC_CORS);
+    } catch (error) {
+      console.error("Manifest request failed:", error);
+
+      return sendJson(
+        500,
+        { error: "Unable to load manifest" },
+        PUBLIC_CORS
+      );
+    }
   }
 
   const pluginMatch = url.pathname.match(
@@ -596,78 +574,66 @@ async function handleRequest(
   );
 
   if (pluginMatch) {
-    const user = userFromInstallLink(
-      pluginMatch[1]!,
-      pluginMatch[2]!,
-      root
-    );
-
-    let filename: string;
-
     try {
-      filename = decodeURIComponent(pluginMatch[3]!);
-    } catch {
-      sendJson(
-        response,
-        400,
-        { error: "Malformed filename" },
-        PUBLIC_CORS
+      const user = await userFromInstallLink(
+        pluginMatch[1]!,
+        pluginMatch[2]!,
+        env
       );
 
-      return;
-    }
+      let filename: string;
 
-    const source = user
-      ? getCachedPluginFile(
-          root,
-          getSources(user.id, root),
-          `providers/${filename}`
-        )
-      : null;
+      try {
+        filename = decodeURIComponent(pluginMatch[3]!);
+      } catch {
+        return sendJson(
+          400,
+          { error: "Malformed filename" },
+          PUBLIC_CORS
+        );
+      }
 
-    if (source === null) {
-      sendJson(
-        response,
-        404,
-        { error: "Not found" },
+      const sources = user
+        ? await getSources(user.id, env)
+        : [];
+
+      const source = user
+        ? await getCachedPluginFile(
+            env,
+            sources,
+            `providers/${filename}`
+          )
+        : null;
+
+      if (source === null) {
+        return sendJson(
+          404,
+          { error: "Not found" },
+          PUBLIC_CORS
+        );
+      }
+
+      return sendText(
+        200,
+        source,
+        "application/javascript; charset=utf-8",
+        {
+          ...PUBLIC_CORS,
+          "cache-control": "public, max-age=300"
+        }
+      );
+    } catch (error) {
+      console.error("Plugin request failed:", error);
+
+      return sendJson(
+        500,
+        { error: "Unable to load plugin" },
         PUBLIC_CORS
       );
-
-      return;
     }
-
-    response.writeHead(200, {
-      ...securityHeaders(),
-      ...PUBLIC_CORS,
-      "content-type": "application/javascript; charset=utf-8",
-      "cache-control": "no-store"
-    });
-
-    response.end(source);
-    return;
   }
 
-  sendJson(response, 404, {
+  return sendJson(404, {
     error: "Not found"
-  });
-}
-
-export function createPluginBuilderServer(
-  config: PluginBuilderConfig = {}
-): Server {
-  return createServer((request, response) => {
-    void handleRequest(
-      request,
-      response,
-      config
-    ).catch(() => {
-      if (!response.headersSent) {
-        sendJson(response, 500, {
-          error: "An internal server error occurred"
-        });
-      } else {
-        response.destroy();
-      }
-    });
   });
 }

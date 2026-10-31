@@ -1,23 +1,15 @@
 
 import { createHash } from "node:crypto";
-import {
-  mkdirSync,
-  readFileSync,
-  writeFileSync
-} from "node:fs";
-import {
-  dirname,
-  join,
-  relative,
-  resolve,
-  sep
-} from "node:path";
+import { getDb, type Env } from "../lib/db.js";
 
 type MediaType = "movie" | "series";
 
 const MAX_PROVIDER_BYTES = 8 * 1024 * 1024;
 const MAX_JSON_BYTES = 2 * 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 15_000;
+
+// Store smaller chunks to stay safely below D1's per-row size limit.
+const CACHE_CHUNK_BYTES = 512 * 1024;
 
 const GITHUB_API = "https://api.github.com";
 const GITHUB_RAW = "https://raw.githubusercontent.com";
@@ -35,7 +27,7 @@ interface ProviderEntry {
 interface CachedPluginFile {
   entry: ProviderEntry;
   filename: string;
-  path: string;
+  cacheKey: string;
 }
 
 export interface SourceSelection {
@@ -54,6 +46,13 @@ interface GitHubRepository {
   repo: string;
   url: string;
 }
+
+interface CacheChunkRow {
+  chunk_index: number;
+  content: string;
+}
+
+// ---------- validation ----------
 
 function parseRepository(value: string): GitHubRepository {
   let url: URL;
@@ -83,7 +82,9 @@ function parseRepository(value: string): GitHubRepository {
   const parts = pathname.split("/").filter(Boolean);
 
   if (parts.length !== 2) {
-    throw new Error("Enter a GitHub repository URL, not a file or organization URL");
+    throw new Error(
+      "Enter a GitHub repository URL, not a file or organization URL"
+    );
   }
 
   const [owner, repo] = parts;
@@ -116,7 +117,7 @@ function validateRef(value: string): string {
     ref.includes("..") ||
     ref.includes("@{") ||
     ref.split("/").some(
-      (part) =>
+      part =>
         !part ||
         part.startsWith(".") ||
         part.endsWith(".") ||
@@ -150,33 +151,19 @@ function safeProviderPath(value: unknown): string {
     normalized.includes("\0") ||
     /^[A-Za-z]:/.test(normalized) ||
     segments.some(
-      (segment) =>
+      segment =>
         !segment ||
         segment === "." ||
         segment === ".."
     ) ||
     !normalized.endsWith(".js")
   ) {
-    throw new Error(`Unsafe provider filename in manifest: ${value}`);
+    throw new Error(
+      `Unsafe provider filename in manifest: ${value}`
+    );
   }
 
   return segments.join("/");
-}
-
-function safeCachePath(cacheDir: string, filename: string): string {
-  const target = resolve(cacheDir, ...filename.split("/"));
-  const rel = relative(cacheDir, target);
-
-  if (
-    !rel ||
-    rel === ".." ||
-    rel.startsWith(`..${sep}`) ||
-    resolve(target) === resolve(cacheDir)
-  ) {
-    throw new Error("Unsafe cache file path");
-  }
-
-  return target;
 }
 
 function manifestEntries(value: unknown): ProviderEntry[] {
@@ -192,7 +179,11 @@ function manifestEntries(value: unknown): ProviderEntry[] {
 
   return entries.filter(
     (entry): entry is ProviderEntry =>
-      Boolean(entry && typeof entry === "object" && !Array.isArray(entry))
+      Boolean(
+        entry &&
+        typeof entry === "object" &&
+        !Array.isArray(entry)
+      )
   );
 }
 
@@ -201,6 +192,17 @@ function stringValue(value: unknown): string | undefined {
     ? value.trim()
     : undefined;
 }
+
+function safeIdSlug(id: string): string {
+  return (
+    id
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "plugin"
+  );
+}
+
+// ---------- GitHub requests ----------
 
 async function readLimitedResponse(
   response: Response,
@@ -242,12 +244,15 @@ async function readLimitedResponse(
     offset += chunk.byteLength;
   }
 
-  return new TextDecoder("utf-8", { fatal: false }).decode(result);
+  return new TextDecoder("utf-8", {
+    fatal: false
+  }).decode(result);
 }
 
 async function githubFetch(
   urlValue: string,
-  allowedHost: string
+  allowedHost: string,
+  env: Env
 ): Promise<Response> {
   const url = new URL(urlValue);
 
@@ -261,15 +266,16 @@ async function githubFetch(
     throw new Error("Blocked request to an unapproved host");
   }
 
-  const token = process.env.GITHUB_TOKEN;
-
   const headers: Record<string, string> = {
-    "user-agent": "aioplugins-local",
+    "user-agent": "aioplugins",
     accept: "application/vnd.github+json"
   };
 
-  if (allowedHost === "api.github.com" && token) {
-    headers.authorization = `Bearer ${token}`;
+  if (
+    allowedHost === "api.github.com" &&
+    env.GITHUB_TOKEN
+  ) {
+    headers.authorization = `Bearer ${env.GITHUB_TOKEN}`;
   }
 
   return fetch(url, {
@@ -280,20 +286,31 @@ async function githubFetch(
   });
 }
 
-async function fetchJson(url: string): Promise<unknown> {
+async function fetchJson(
+  url: string,
+  env: Env
+): Promise<unknown> {
   const parsed = new URL(url);
 
   if (
     parsed.hostname !== "api.github.com" &&
     parsed.hostname !== "raw.githubusercontent.com"
   ) {
-    throw new Error("Blocked request to an unapproved GitHub host");
+    throw new Error(
+      "Blocked request to an unapproved GitHub host"
+    );
   }
 
-  const response = await githubFetch(url, parsed.hostname);
+  const response = await githubFetch(
+    url,
+    parsed.hostname,
+    env
+  );
 
   if (!response.ok) {
-    throw new Error(`GitHub request failed (${response.status})`);
+    throw new Error(
+      `GitHub request failed (${response.status})`
+    );
   }
 
   const text = await readLimitedResponse(
@@ -309,11 +326,20 @@ async function fetchJson(url: string): Promise<unknown> {
   }
 }
 
-async function fetchText(url: string): Promise<string> {
-  const response = await githubFetch(url, "raw.githubusercontent.com");
+async function fetchText(
+  url: string,
+  env: Env
+): Promise<string> {
+  const response = await githubFetch(
+    url,
+    "raw.githubusercontent.com",
+    env
+  );
 
   if (!response.ok) {
-    throw new Error(`GitHub file request failed (${response.status})`);
+    throw new Error(
+      `GitHub file request failed (${response.status})`
+    );
   }
 
   return readLimitedResponse(
@@ -323,7 +349,13 @@ async function fetchText(url: string): Promise<string> {
   );
 }
 
-async function loadSource(repositoryValue: string, refValue = "main") {
+// ---------- source discovery ----------
+
+async function loadSource(
+  repositoryValue: string,
+  refValue = "main",
+  env: Env
+) {
   const repository = parseRepository(repositoryValue);
   const ref = validateRef(refValue);
 
@@ -331,7 +363,7 @@ async function loadSource(repositoryValue: string, refValue = "main") {
     `${GITHUB_API}/repos/${repository.owner}/${repository.repo}` +
     `/commits/${encodeURIComponent(ref)}`;
 
-  const commitData = await fetchJson(commitUrl);
+  const commitData = await fetchJson(commitUrl, env);
 
   if (
     !commitData ||
@@ -349,7 +381,7 @@ async function loadSource(repositoryValue: string, refValue = "main") {
     `${GITHUB_RAW}/${repository.owner}/${repository.repo}` +
     `/${commit}/manifest.json`;
 
-  const manifest = await fetchJson(manifestUrl);
+  const manifest = await fetchJson(manifestUrl, env);
 
   return {
     ...repository,
@@ -362,16 +394,17 @@ async function loadSource(repositoryValue: string, refValue = "main") {
 
 export async function inspectGitHubSource(
   repository: string,
-  ref = "main"
+  ref = "main",
+  env: Env
 ) {
-  const source = await loadSource(repository, ref);
+  const source = await loadSource(repository, ref, env);
 
   return {
     repository: source.url,
     ref: source.ref,
     commit: source.commit,
     providers: source.entries
-      .map((entry) => ({
+      .map(entry => ({
         id: stringValue(entry.id),
         name:
           stringValue(entry.name) ||
@@ -391,52 +424,175 @@ export async function inspectGitHubSource(
           : [],
         logo: stringValue(entry.logo)
       }))
-      .filter((entry) => Boolean(entry.id))
+      .filter(entry => Boolean(entry.id))
   };
 }
 
-function cacheRoot(storageRoot: string): string {
-  return resolve(storageRoot, "data", "cache");
+// ---------- D1 cache ----------
+
+function cacheKey(
+  owner: string,
+  repo: string,
+  commit: string,
+  filename: string
+): string {
+  return `github:${owner}/${repo}/${commit}/${filename}`;
 }
 
-function safeIdSlug(id: string): string {
-  return (
-    id
-      .toLowerCase()
-      .replace(/[^a-z0-9_-]+/g, "-")
-      .replace(/^-+|-+$/g, "") || "plugin"
+function manifestCacheKey(
+  owner: string,
+  repo: string,
+  commit: string
+): string {
+  return cacheKey(owner, repo, commit, "manifest.json");
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    const slice = bytes.subarray(
+      offset,
+      Math.min(offset + 0x8000, bytes.length)
+    );
+
+    binary += String.fromCharCode(...slice);
+  }
+
+  return btoa(binary);
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+
+  return bytes;
+}
+
+async function saveCachedContent(
+  env: Env,
+  key: string,
+  content: string
+): Promise<void> {
+  const db = getDb(env);
+  const bytes = new TextEncoder().encode(content);
+  const statements = [
+    db.prepare(
+      "DELETE FROM provider_cache WHERE cache_key = ?"
+    ).bind(key)
+  ];
+
+  let chunkIndex = 0;
+
+  for (
+    let offset = 0;
+    offset < bytes.length || (offset === 0 && bytes.length === 0);
+    offset += CACHE_CHUNK_BYTES
+  ) {
+    const chunk = bytes.subarray(
+      offset,
+      Math.min(offset + CACHE_CHUNK_BYTES, bytes.length)
+    );
+
+    statements.push(
+      db.prepare(
+        `INSERT INTO provider_cache
+         (cache_key, chunk_index, content, updated_at)
+         VALUES (?, ?, ?, ?)`
+      ).bind(
+        key,
+        chunkIndex++,
+        bytesToBase64(chunk),
+        Date.now()
+      )
+    );
+
+    if (bytes.length === 0) break;
+  }
+
+  await db.batch(statements);
+}
+
+async function getCachedContent(
+  env: Env,
+  key: string
+): Promise<string | null> {
+  const result = await getDb(env)
+    .prepare(
+      `SELECT chunk_index, content
+       FROM provider_cache
+       WHERE cache_key = ?
+       ORDER BY chunk_index ASC`
+    )
+    .bind(key)
+    .all<CacheChunkRow>();
+
+  const rows = result.results ?? [];
+
+  if (rows.length === 0) return null;
+
+  const chunks = rows.map(row => base64ToBytes(row.content));
+  const totalLength = chunks.reduce(
+    (total, chunk) => total + chunk.length,
+    0
   );
+
+  const combined = new Uint8Array(totalLength);
+  let offset = 0;
+
+  for (const chunk of chunks) {
+    combined.set(chunk, offset);
+    offset += chunk.length;
+  }
+
+  return new TextDecoder().decode(combined);
 }
 
-export function getCachedPluginFiles(
-  storageRoot: string,
+// ---------- cached plugin lookup ----------
+
+async function getCachedPluginFiles(
+  env: Env,
   sources: SavedSourceSelection[]
-): CachedPluginFile[] {
-  return sources.flatMap((selection) => {
+): Promise<CachedPluginFile[]> {
+  const result: CachedPluginFile[] = [];
+
+  for (const selection of sources) {
     const { owner, repo } = parseRepository(selection.repository);
     const commit = validateCommit(selection.commit);
 
-    const cacheDir = join(
-      cacheRoot(storageRoot),
-      owner,
-      repo,
-      commit
+    const manifest = await getCachedContent(
+      env,
+      manifestCacheKey(owner, repo, commit)
     );
 
-    const manifestPath = safeCachePath(cacheDir, "manifest.json");
+    if (manifest === null) {
+      throw new Error(
+        `Cached provider manifest is missing for ${selection.repository}`
+      );
+    }
 
-    const manifest = JSON.parse(
-      readFileSync(manifestPath, "utf8")
-    ) as unknown;
+    let parsedManifest: unknown;
 
-    const selected = manifestEntries(manifest).filter(
-      (entry) =>
+    try {
+      parsedManifest = JSON.parse(manifest);
+    } catch {
+      throw new Error(
+        `Cached provider manifest is invalid for ${selection.repository}`
+      );
+    }
+
+    const selected = manifestEntries(parsedManifest).filter(
+      entry =>
         typeof entry.id === "string" &&
         selection.providerIds.includes(entry.id) &&
         entry.enabled !== false
     );
 
-    return selected.map((entry) => {
+    for (const entry of selected) {
       const id = String(entry.id);
       const originalFilename = safeProviderPath(entry.filename);
 
@@ -445,28 +601,35 @@ export function getCachedPluginFiles(
         .digest("hex")
         .slice(0, 10);
 
-      return {
+      result.push({
         entry,
         filename:
           `providers/${owner}-${repo}-${safeIdSlug(id)}-${suffix}.js`,
-        path: safeCachePath(cacheDir, originalFilename)
-      };
-    });
-  });
+        cacheKey: cacheKey(
+          owner,
+          repo,
+          commit,
+          originalFilename
+        )
+      });
+    }
+  }
+
+  return result;
 }
 
-export function getPluginRepositoryManifest(
-  storageRoot: string,
+export async function getPluginRepositoryManifest(
+  env: Env,
   userId: string,
   sources: SavedSourceSelection[]
 ) {
-  const scrapers = getCachedPluginFiles(storageRoot, sources).map(
-    ({ entry, filename }) => ({
-      ...entry,
-      enabled: true,
-      filename
-    })
-  );
+  const plugins = await getCachedPluginFiles(env, sources);
+
+  const scrapers = plugins.map(({ entry, filename }) => ({
+    ...entry,
+    enabled: true,
+    filename
+  }));
 
   return {
     name: `AIOPlugins - ${userId.slice(0, 8)}`,
@@ -475,29 +638,42 @@ export function getPluginRepositoryManifest(
   };
 }
 
-export function getCachedPluginFile(
-  storageRoot: string,
+export async function getCachedPluginFile(
+  env: Env,
   sources: SavedSourceSelection[],
   filename: string
-): string | null {
-  const plugin = getCachedPluginFiles(storageRoot, sources).find(
-    (entry) => entry.filename === filename
+): Promise<string | null> {
+  const plugins = await getCachedPluginFiles(env, sources);
+
+  const plugin = plugins.find(
+    entry => entry.filename === filename
   );
 
-  return plugin ? readFileSync(plugin.path, "utf8") : null;
+  if (!plugin) return null;
+
+  return getCachedContent(env, plugin.cacheKey);
 }
+
+// ---------- fetch and cache selected providers ----------
 
 export async function fetchAndCacheSources(
   value: unknown,
-  storageRoot: string
-): Promise<{ sources: SavedSourceSelection[]; plugins: number }> {
+  env: Env
+): Promise<{
+  sources: SavedSourceSelection[];
+  plugins: number;
+}> {
   if (!Array.isArray(value)) {
     throw new Error("Selections must be a list");
   }
 
   const selections = value
     .map((item): SourceSelection => {
-      if (!item || typeof item !== "object" || Array.isArray(item)) {
+      if (
+        !item ||
+        typeof item !== "object" ||
+        Array.isArray(item)
+      ) {
         throw new Error("Invalid source selection");
       }
 
@@ -507,7 +683,7 @@ export async function fetchAndCacheSources(
         typeof candidate.repository !== "string" ||
         !Array.isArray(candidate.providerIds) ||
         !candidate.providerIds.every(
-          (id) =>
+          id =>
             typeof id === "string" &&
             id.length > 0 &&
             id.length <= 200
@@ -532,7 +708,7 @@ export async function fetchAndCacheSources(
           : {})
       };
     })
-    .filter((selection) => selection.providerIds.length > 0);
+    .filter(selection => selection.providerIds.length > 0);
 
   // The first selection wins when provider IDs are duplicated.
   for (let i = 0; i < selections.length; i++) {
@@ -542,7 +718,7 @@ export async function fetchAndCacheSources(
       for (let j = i + 1; j < selections.length; j++) {
         selections[j]!.providerIds =
           selections[j]!.providerIds.filter(
-            (existingId) => existingId !== id
+            existingId => existingId !== id
           );
       }
     }
@@ -554,7 +730,8 @@ export async function fetchAndCacheSources(
   for (const selection of selections) {
     const source = await loadSource(
       selection.repository,
-      selection.ref
+      selection.ref,
+      env
     );
 
     if (
@@ -567,7 +744,7 @@ export async function fetchAndCacheSources(
     }
 
     const selectedEntries = source.entries.filter(
-      (entry) =>
+      entry =>
         typeof entry.id === "string" &&
         selection.providerIds.includes(entry.id)
     );
@@ -580,17 +757,14 @@ export async function fetchAndCacheSources(
       );
     }
 
-    const cacheDir = join(
-      cacheRoot(storageRoot),
-      source.owner,
-      source.repo,
-      source.commit
-    );
-
-    mkdirSync(cacheDir, { recursive: true });
-
-    writeFileSync(
-      safeCachePath(cacheDir, "manifest.json"),
+    // Cache the manifest in D1.
+    await saveCachedContent(
+      env,
+      manifestCacheKey(
+        source.owner,
+        source.repo,
+        source.commit
+      ),
       JSON.stringify(source.manifest, null, 2)
     );
 
@@ -609,13 +783,20 @@ export async function fetchAndCacheSources(
         .join("/");
 
       const code = await fetchText(
-        `${GITHUB_RAW}/${source.owner}/${source.repo}/${source.commit}/${urlPath}`
+        `${GITHUB_RAW}/${source.owner}/${source.repo}/${source.commit}/${urlPath}`,
+        env
       );
 
-      const filePath = safeCachePath(cacheDir, filename);
-
-      mkdirSync(dirname(filePath), { recursive: true });
-      writeFileSync(filePath, code);
+      await saveCachedContent(
+        env,
+        cacheKey(
+          source.owner,
+          source.repo,
+          source.commit,
+          filename
+        ),
+        code
+      );
     }
 
     saved.push({
@@ -627,5 +808,8 @@ export async function fetchAndCacheSources(
     plugins += selectedEntries.length;
   }
 
-  return { sources: saved, plugins };
+  return {
+    sources: saved,
+    plugins
+  };
 }
