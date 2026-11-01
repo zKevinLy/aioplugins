@@ -12,7 +12,7 @@ const MAX_PROVIDER_BYTES = 8 * 1024 * 1024;
 const MAX_JSON_BYTES = 2 * 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 15_000;
 const CACHE_CHUNK_BYTES = 512 * 1024;
-const STREAM_MIDDLEWARE_VERSION = "11";
+const STREAM_MIDDLEWARE_VERSION = "12";
 
 const GITHUB_RAW = "https://raw.githubusercontent.com";
 const GITHUB_WEB = "https://github.com";
