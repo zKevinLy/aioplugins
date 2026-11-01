@@ -11,6 +11,8 @@ type MediaType = "movie" | "series";
 const MAX_PROVIDER_BYTES = 8 * 1024 * 1024;
 const MAX_JSON_BYTES = 2 * 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 15_000;
+const GITHUB_MAX_ATTEMPTS = 2;
+const GITHUB_RETRY_DELAY_MS = 250;
 const CACHE_CHUNK_BYTES = 512 * 1024;
 const STREAM_MIDDLEWARE_VERSION = "15";
 
@@ -283,18 +285,47 @@ async function githubFetch(
         : "*/*"
   };
 
-  const response = await fetch(url, {
-    method: "GET",
-    headers,
-    redirect: "manual",
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
-  });
+  for (let attempt = 1; attempt <= GITHUB_MAX_ATTEMPTS; attempt++) {
+    let response: Response;
 
-  if (response.status >= 300 && response.status < 400) {
-    throw new Error("GitHub returned an unexpected redirect");
+    try {
+      response = await fetch(url, {
+        method: "GET",
+        headers,
+        redirect: "manual",
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+      });
+    } catch (error) {
+      if (attempt === GITHUB_MAX_ATTEMPTS) throw error;
+
+      await new Promise(resolve =>
+        setTimeout(resolve, GITHUB_RETRY_DELAY_MS)
+      );
+      continue;
+    }
+
+    if (
+      attempt < GITHUB_MAX_ATTEMPTS &&
+      (response.status === 429 || response.status >= 500)
+    ) {
+      const retryAfter = Number(response.headers.get("retry-after"));
+      const delay = Number.isFinite(retryAfter) && retryAfter >= 0
+        ? Math.min(retryAfter * 1000, 2_000)
+        : GITHUB_RETRY_DELAY_MS;
+
+      await response.body?.cancel();
+      await new Promise(resolve => setTimeout(resolve, delay));
+      continue;
+    }
+
+    if (response.status >= 300 && response.status < 400) {
+      throw new Error("GitHub returned an unexpected redirect");
+    }
+
+    return response;
   }
 
-  return response;
+  throw new Error("GitHub request exhausted retry attempts");
 }
 
 async function fetchAtomCommit(

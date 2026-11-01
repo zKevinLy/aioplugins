@@ -103,6 +103,7 @@ let db;
 let platform;
 let originalFetch;
 let cookieJar = "";
+let temporaryAtomFailures = 0;
 
 async function testFetch(target, options = {}) {
   const headers = new Headers(options.headers || {});
@@ -128,6 +129,11 @@ before(() => {
     const url = new URL(input);
 
     if (url.hostname === "github.com" && url.pathname.endsWith(".atom")) {
+      if (temporaryAtomFailures > 0) {
+        temporaryAtomFailures--;
+        return new Response("Temporarily unavailable", { status: 503 });
+      }
+
       return new Response(
         `<feed><entry><id>tag:github.com,2008:Grit::Commit/${commit}</id></entry></feed>`
       );
@@ -327,6 +333,23 @@ test("builds a combined Nuvio manifest and serves selected files without executi
 
   const health = await testFetch("/health").then((response) => response.json());
   assert.deepEqual(health, { status: "ok" });
+});
+
+test("retries transient GitHub failures during source discovery", async () => {
+  temporaryAtomFailures = 1;
+
+  const response = await testFetch("/api/discover", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      repository: "https://github.com/example/plugins",
+      ref: "main"
+    })
+  });
+
+  assert.equal(response.status, 200);
+  const discovered = await response.json();
+  assert.equal(discovered.commit, commit);
 });
 
 test("validates hardcoded media search against cached plugin code with latency tracking", async () => {
