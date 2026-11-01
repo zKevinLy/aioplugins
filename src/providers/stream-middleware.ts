@@ -400,8 +400,7 @@ export function wrapPluginStreams(
           : {}),
         name,
         description,
-        title: description,
-        size: description
+        title: description
       };
       const sourceStream = { ...normalized };
       return {

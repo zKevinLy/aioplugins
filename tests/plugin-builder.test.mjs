@@ -593,7 +593,7 @@ test("renders nested language conditional branches in wrapped providers", async 
 
 test("formats the stream name and description separately", async () => {
   const module = { exports: {} };
-  const source = `module.exports = { getStreams: async () => [{ name: "4KHDHub - HubCloud 1080p", title: "Doctor.X.Mafia.S01E01.1080p.WEB-DL.mkv" }] };`;
+  const source = `module.exports = { getStreams: async () => [{ name: "4KHDHub - HubCloud 1080p", title: "Doctor.X.Mafia.S01E01.1080p.WEB-DL.mkv", description: "Original WEB-DL", size: 1234 }] };`;
   new Function("module", "exports", wrapPluginStreams(source, {
     ...DEFAULT_STREAM_MIDDLEWARE,
     nameFormat: "{stream.resolution}",
@@ -605,6 +605,8 @@ test("formats the stream name and description separately", async () => {
   assert.equal(stream.name, "1080p");
   assert.equal(stream.description, "Doctor X Mafia · 1080p");
   assert.equal(stream.title, stream.description);
+  assert.equal(stream.size, 1234);
+  assert.equal(stream.fileSize, 1234);
 });
 
 test("applies title filters to provider metadata rather than formatted output", async () => {
