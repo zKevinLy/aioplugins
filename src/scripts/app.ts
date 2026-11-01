@@ -1053,9 +1053,14 @@ function parseProfileBackup(value: unknown): ProfileBackup {
       }
     });
 
-    $("#save-new-profile").addEventListener("click", async () => {
-      const name = prompt("Enter profile name:", "My Custom Profile");
-      if (!name?.trim()) return;
+    $("#save-profile-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const profileNameInput = $<HTMLInputElement>("#profile-name");
+      const name = profileNameInput.value.trim();
+      if (!name) {
+        profileNameInput.focus();
+        return;
+      }
 
       const sources = [...state.values()].map((source) => ({
         repository: source.repository,
@@ -1071,6 +1076,7 @@ function parseProfileBackup(value: unknown): ProfileBackup {
       try {
         await api<unknown>("/api/profiles", { name: name.trim(), sources });
         await loadProfilesList();
+        profileNameInput.value = "";
         setStatus("Profile saved successfully.", "success");
       } catch (error) {
         setStatus(errorMessage(error), "error");

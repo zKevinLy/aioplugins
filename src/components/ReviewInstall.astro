@@ -106,9 +106,15 @@
                   </div>
                 </div>
 
-                <button id="save-new-profile" class="button button-small" type="button">
-                  Save current selection as a profile
-                </button>
+                <form id="save-profile-form">
+                  <div class="field">
+                    <label for="profile-name">Save current selection as a profile</label>
+                    <input id="profile-name" type="text" placeholder="Profile name" required />
+                  </div>
+                  <button id="save-new-profile" class="button button-small" type="submit">
+                    Save profile
+                  </button>
+                </form>
               </div>
             </details>
 
