@@ -322,9 +322,10 @@ test("wraps plugin streams with metadata formatting, filtering, and sorting", as
   new Function("module", "exports", wrapped)(module, module.exports);
 
   const streams = await module.exports.getStreams({ title: "Sample" });
-  assert.deepEqual(streams.map(stream => stream.title), [
+  assert.deepEqual(streams.map(stream => stream.name), [
     "1080p | Sample 1080p"
   ]);
+  assert.equal(streams[0].title, "Sample 1080p");
 });
 
 test("formats available metadata and omits empty optional blocks", async () => {
@@ -339,8 +340,9 @@ test("formats available metadata and omits empty optional blocks", async () => {
   );
 
   const streams = await module.exports.getStreams({ title: "Feature" });
-  assert.equal(streams[0].title, "🔥4K UHD · Feature · 📦 1.5 GB · 🎧 AAC | DTS");
-  assert.equal(streams[1].title, "Unlabeled source");
+  assert.equal(streams[0].name, "🔥4K UHD · Feature · 📦 1.5 GB · 🎧 AAC | DTS");
+  assert.equal(streams[0].title, "Feature");
+  assert.equal(streams[1].name, "Unlabeled source");
 });
 
 test("filters, sorts, and formats across shared metadata fields", async () => {
@@ -366,7 +368,7 @@ test("filters, sorts, and formats across shared metadata fields", async () => {
   );
 
   const streams = await module.exports.getStreams({ title: "Test" });
-  assert.deepEqual(streams.map((stream) => stream.title), [
+  assert.deepEqual(streams.map((stream) => stream.name), [
     "English | Beta | AAC",
     "English | Gamma | DTS"
   ]);

@@ -306,7 +306,7 @@ export function wrapPluginStreams(
     const streams = result.filter(stream => stream && typeof stream === "object").filter(stream =>
       config.filters.every(filter => filterMatches(stream, filter))
     ).map((stream, index) => ({
-      stream: { ...stream, title: formatTitle(stream) || stringify(getValue(stream, "title")) },
+      stream: { ...stream, name: formatTitle(stream) || stringify(getValue(stream, "title")) },
       index
     }));
 
