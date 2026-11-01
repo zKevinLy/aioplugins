@@ -22,14 +22,12 @@ import {
   deleteUser,
   destroySession,
   getProfiles,
-  getSources,
-  getStreamMiddlewareSettings,
+  getUserConfig,
   loginUser,
   registerUser,
-  saveProfile,
-  saveStreamMiddlewareSettings,
+  saveProfileAndSources,
+  saveUserConfig,
   deleteProfile,
-  saveSources,
   userFromInstallLink,
   userFromSession,
   type User
@@ -348,7 +346,8 @@ async function handleApi(
   }
 
   if (pathname === "/api/config" && method === "GET") {
-    const sources = (await getSources(user.id, db)).map(
+    const { sources, middleware } = await getUserConfig(user.id, db);
+    const selectedSources = sources.map(
       ({ repository, ref, providerIds }) => ({
         repository,
         ref,
@@ -357,8 +356,8 @@ async function handleApi(
     );
 
     return sendJson(200, {
-      sources,
-      middleware: await getStreamMiddlewareSettings(user.id, db),
+      sources: selectedSources,
+      middleware,
       fields: STREAM_FIELD_CATALOG
     });
   }
@@ -447,8 +446,7 @@ async function handleApi(
 
     const { sources, plugins } = await resolveSelectedSources(body.sources);
 
-    await saveSources(user.id, sources, db);
-    await saveStreamMiddlewareSettings(user.id, body.middleware, db);
+    await saveUserConfig(user.id, sources, body.middleware, db);
 
     return sendJson(200, { plugins });
   }
@@ -483,8 +481,7 @@ async function handleApi(
 
     const { sources, plugins } = await resolveSelectedSources(body.sources);
 
-    await saveProfile(user.id, profileId, name, sources, db);
-    await saveSources(user.id, sources, db);
+    await saveProfileAndSources(user.id, profileId, name, sources, db);
 
     return sendJson(200, { profileId, plugins });
   }
@@ -603,8 +600,7 @@ export async function handleRequest(
         );
       }
 
-      const sources = await getSources(user.id, platform.db);
-      const middleware = await getStreamMiddlewareSettings(user.id, platform.db);
+      const { sources, middleware } = await getUserConfig(user.id, platform.db);
       const manifest = await getPluginRepositoryManifest(
         user.id,
         sources,
@@ -647,18 +643,15 @@ export async function handleRequest(
         );
       }
 
-      const sources = user
-        ? await getSources(user.id, platform.db)
-        : [];
-      const middleware = user
-        ? await getStreamMiddlewareSettings(user.id, platform.db)
-        : undefined;
+      const config = user
+        ? await getUserConfig(user.id, platform.db)
+        : null;
 
-      const source = user
+      const source = config
         ? await getRemotePluginFile(
-            sources,
+            config.sources,
             `providers/${filename}`,
-            middleware
+            config.middleware
           )
         : null;
 

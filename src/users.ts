@@ -342,15 +342,18 @@ export async function getProfiles(
   });
 }
 
-export async function saveProfile(
+export async function saveProfileAndSources(
   userId: string,
   profileId: string,
   name: string,
   sources: SavedSourceSelection[],
   db: Database
 ): Promise<void> {
-  await db.run(
-    `INSERT INTO profiles
+  const now = Date.now();
+
+  await db.batch([
+    {
+      sql: `INSERT INTO profiles
        (id, user_id, name, sources, updated_at)
        VALUES (?, ?, ?, ?, ?)
        ON CONFLICT(user_id, id)
@@ -358,14 +361,18 @@ export async function saveProfile(
          name = excluded.name,
          sources = excluded.sources,
          updated_at = excluded.updated_at`,
-    [
-      profileId,
-      userId,
-      name,
-      JSON.stringify(sources),
-      Date.now()
-    ]
-  );
+      params: [profileId, userId, name, JSON.stringify(sources), now]
+    },
+    {
+      sql: `INSERT INTO user_config (user_id, sources, updated_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT(user_id)
+       DO UPDATE SET
+         sources = excluded.sources,
+         updated_at = excluded.updated_at`,
+      params: [userId, JSON.stringify(sources), now]
+    }
+  ]);
 }
 
 export async function deleteProfile(
@@ -490,60 +497,58 @@ export async function getSources(
   }
 }
 
-export async function saveSources(
-  userId: string,
-  sources: SavedSourceSelection[],
-  db: Database
-): Promise<void> {
-  await db.run(
-    `INSERT INTO user_config
-       (user_id, sources, updated_at)
-       VALUES (?, ?, ?)
-       ON CONFLICT(user_id)
-       DO UPDATE SET
-         sources = excluded.sources,
-         updated_at = excluded.updated_at`,
-    [
-      userId,
-      JSON.stringify(sources),
-      Date.now()
-    ]
-  );
-}
-
-export async function getStreamMiddlewareSettings(
+export async function getUserConfig(
   userId: string,
   db: Database
-): Promise<StreamMiddlewareSettings> {
-  const row = await db.first<{ settings: string }>(
-    "SELECT settings FROM user_config WHERE user_id = ?",
+): Promise<{
+  sources: SavedSourceSelection[];
+  middleware: StreamMiddlewareSettings;
+}> {
+  const row = await db.first<{ sources: string; settings: string }>(
+    "SELECT sources, settings FROM user_config WHERE user_id = ?",
     [userId]
   );
 
+  let sources: SavedSourceSelection[] = [];
+
   try {
-    return normalizeStreamMiddlewareSettings(
+    const value: unknown = JSON.parse(row?.sources ?? "[]");
+    if (Array.isArray(value)) sources = value as SavedSourceSelection[];
+  } catch {
+    sources = [];
+  }
+
+  let middleware = DEFAULT_STREAM_MIDDLEWARE;
+
+  try {
+    middleware = normalizeStreamMiddlewareSettings(
       JSON.parse(row?.settings ?? "{}")
     );
   } catch {
-    return DEFAULT_STREAM_MIDDLEWARE;
+    middleware = DEFAULT_STREAM_MIDDLEWARE;
   }
+
+  return { sources, middleware };
 }
 
-export async function saveStreamMiddlewareSettings(
+export async function saveUserConfig(
   userId: string,
+  sources: SavedSourceSelection[],
   settings: unknown,
   db: Database
 ): Promise<void> {
   await db.run(
     `INSERT INTO user_config
-       (user_id, settings, updated_at)
-       VALUES (?, ?, ?)
+       (user_id, sources, settings, updated_at)
+       VALUES (?, ?, ?, ?)
        ON CONFLICT(user_id)
        DO UPDATE SET
+         sources = excluded.sources,
          settings = excluded.settings,
          updated_at = excluded.updated_at`,
     [
       userId,
+      JSON.stringify(sources),
       JSON.stringify(normalizeStreamMiddlewareSettings(settings)),
       Date.now()
     ]
