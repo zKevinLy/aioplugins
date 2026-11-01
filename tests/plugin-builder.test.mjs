@@ -319,7 +319,7 @@ test("wraps frozen provider stream objects without mutating them", async () => {
   assert.equal(streams[0].name, "🚀 FHD · Sample");
 });
 
-test("keeps provider streams when formatter metadata is circular", async () => {
+test("formats provider streams with circular metadata", async () => {
   const module = { exports: {} };
   const source = `const stream = { title: "Sample 1080p", url: "https://example.com/stream.m3u8" }; stream.extra = { parent: stream }; module.exports = { getStreams: async () => [stream] };`;
   new Function("module", "exports", wrapPluginStreams(source, DEFAULT_STREAM_MIDDLEWARE))(
@@ -330,7 +330,8 @@ test("keeps provider streams when formatter metadata is circular", async () => {
   const streams = await module.exports.getStreams({});
 
   assert.equal(streams.length, 1);
-  assert.equal(streams[0].name, "Sample 1080p");
+  assert.equal(streams[0].title, "Sample");
+  assert.equal(streams[0].name, "🚀 FHD · Sample");
 });
 
 test("wraps plugin streams with metadata formatting, filtering, and sorting", async () => {

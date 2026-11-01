@@ -155,6 +155,20 @@ export function renderAioStreamsFormat(
   stream = extractFilenameMetadata(stream);
   Object.assign(originalStream, stream);
   stream = originalStream;
+  const safeJson = (value: unknown, space?: number): string => {
+    const seen = new WeakSet<object>();
+    try {
+      return JSON.stringify(value, (_key, item: unknown) => {
+        if (item && typeof item === "object") {
+          if (seen.has(item)) return "[Circular]";
+          seen.add(item);
+        }
+        return item;
+      }, space) ?? "";
+    } catch {
+      return "";
+    }
+  };
   const service = stream.service && typeof stream.service === "object"
     ? stream.service as Record<string, unknown>
     : {};
@@ -170,8 +184,8 @@ export function renderAioStreamsFormat(
     config: {},
     track: {},
     debug: {
-      json: JSON.stringify(stream),
-      jsonf: JSON.stringify(stream, null, 2)
+      json: safeJson(stream),
+      jsonf: safeJson(stream, 2)
     },
     tools: { newLine: "\n", removeLine: REMOVE_LINE }
   };
