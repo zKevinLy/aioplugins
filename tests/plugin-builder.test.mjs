@@ -231,6 +231,20 @@ test("builds a combined Nuvio manifest and serves selected files without executi
   assert.ok(config.fields.some((field) => field.key === "audioTags"));
   assert.ok(config.fields.some((field) => field.key === "service.shortName"));
 
+  const previewResponse = await testFetch("/api/formatter/preview", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      format: "{metadata.title} ({stream.year}) · {stream.resolution}",
+      stream: { filename: "Movie.Title.2023.2160p.BluRay.HEVC.mkv" },
+      metadata: { title: "Movie Title" }
+    })
+  });
+  assert.equal(previewResponse.status, 200);
+  const preview = await previewResponse.json();
+  assert.equal(preview.title, "Movie Title (2023) · 2160p");
+  assert.equal(preview.parsed.quality, "BluRay");
+
   assert.equal(globalThis.fixturePluginExecuted, undefined);
 
   // The install link is a bearer credential: it must work without a session.
@@ -314,7 +328,7 @@ test("wraps frozen provider stream objects without mutating them", async () => {
   const streams = await module.exports.getStreams({});
 
   assert.equal(streams.length, 1);
-  assert.equal(streams[0].title, "Sample");
+  assert.equal(streams[0].title, "🚀 FHD · Sample");
   assert.equal(streams[0].resolution, "1080p");
   assert.equal(streams[0].name, "🚀 FHD · Sample");
 });
@@ -330,7 +344,7 @@ test("formats provider streams with circular metadata", async () => {
   const streams = await module.exports.getStreams({});
 
   assert.equal(streams.length, 1);
-  assert.equal(streams[0].title, "Sample");
+  assert.equal(streams[0].title, "🚀 FHD · Sample");
   assert.equal(streams[0].name, "🚀 FHD · Sample");
 });
 
@@ -371,7 +385,7 @@ test("wraps plugin streams with metadata formatting, filtering, and sorting", as
   assert.deepEqual(streams.map(stream => stream.name), [
     "1080p | Sample"
   ]);
-  assert.equal(streams[0].title, "Sample");
+  assert.equal(streams[0].title, "1080p | Sample");
   assert.equal(streams[0].filename, "Sample 1080p");
 });
 
@@ -388,7 +402,7 @@ test("formats available metadata and omits empty optional blocks", async () => {
 
   const streams = await module.exports.getStreams({ title: "Feature" });
   assert.equal(streams[0].name, "🔥4K UHD · Feature · 📦 1.5 GB · 🎧 AAC | DTS");
-  assert.equal(streams[0].title, "Feature");
+  assert.equal(streams[0].title, "🔥4K UHD · Feature · 📦 1.5 GB · 🎧 AAC | DTS");
   assert.equal(streams[1].name, "Unlabeled source");
 });
 
@@ -498,6 +512,32 @@ test("renders nested language conditional branches in wrapped providers", async 
   assert.equal(stream.name, "🗣️ 🇬🇧 🇰🇷 🌐2 ");
 });
 
+test("formats the displayed stream title and preserves the provider name", async () => {
+  const module = { exports: {} };
+  const source = `module.exports = { getStreams: async () => [{ name: "4KHDHub - HubCloud 1080p", title: "Doctor.X.Mafia.S01E01.1080p.WEB-DL.mkv" }] };`;
+  new Function("module", "exports", wrapPluginStreams(source, {
+    ...DEFAULT_STREAM_MIDDLEWARE,
+    format: "{stream.title} · {stream.resolution}"
+  }))(module, module.exports);
+
+  const [stream] = await module.exports.getStreams({});
+
+  assert.equal(stream.title, "Doctor X Mafia · 1080p");
+  assert.equal(stream.name, "4KHDHub - HubCloud 1080p");
+});
+
+test("applies title filters to provider metadata rather than formatted output", async () => {
+  const module = { exports: {} };
+  const source = `module.exports = { getStreams: async () => [{ title: "Sample.CAM.1080p.mkv" }] };`;
+  new Function("module", "exports", wrapPluginStreams(source, {
+    ...DEFAULT_STREAM_MIDDLEWARE,
+    filters: [{ field: "title", operator: "notContains", value: "CAM" }],
+    format: "{stream.resolution}"
+  }))(module, module.exports);
+
+  assert.deepEqual(await module.exports.getStreams({}), []);
+});
+
 test("provides the selected plugin name as the addon formatter scope", async () => {
   const module = { exports: {} };
   const source = `module.exports = { getStreams: async () => [{ title: "Sample" }] };`;
@@ -567,10 +607,10 @@ test("extracts shared media fields from provider filenames before formatting", a
     format: "{stream.title} · {stream.formattedSeasons} {stream.formattedEpisodes} · {stream.resolution} · {stream.quality} · {stream.network} · {stream.encode}"
   }))(module, module.exports);
   const [wrapped] = await module.exports.getStreams({});
-  assert.equal(wrapped.title, "Doctor X Mafia in White");
+  assert.equal(wrapped.title, "Doctor X Mafia in White · S01 E06 · 1080p · WEB-DL · Netflix · AVC");
   assert.equal(wrapped.network, "Netflix");
   assert.equal(wrapped.size, 2240000000);
-  assert.equal(wrapped.name, "Doctor X Mafia in White · S01 E06 · 1080p · WEB-DL · Netflix · AVC");
+  assert.equal(wrapped.name, "4KHDHub - PixelDrain 1080p");
 });
 
 test("keeps partial provider metadata useful without inventing fields", () => {

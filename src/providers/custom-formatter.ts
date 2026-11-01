@@ -3,7 +3,8 @@ type FormatterContext = Record<string, unknown>;
 export function renderAioStreamsFormat(
   template: string,
   stream: Record<string, unknown>,
-  addonName = ""
+  addonName = "",
+  previewData: { metadata?: Record<string, unknown> } = {}
 ): string {
   const REMOVE_LINE = "\u0000AIOSTREAMS_REMOVE_LINE\u0000";
   const extractFilenameMetadata = (
@@ -182,7 +183,7 @@ export function renderAioStreamsFormat(
     addon: {
       name: addonName || stream.addonName || stream.provider || stream.indexer || ""
     },
-    metadata: {},
+    metadata: previewData.metadata ?? {},
     user: {},
     config: {},
     track: {},

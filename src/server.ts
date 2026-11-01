@@ -10,6 +10,7 @@ import {
   getPluginRepositoryManifest,
   inspectGitHubSource
 } from "./providers/remote.js";
+import { renderAioStreamsFormat } from "./providers/custom-formatter.js";
 import { STREAM_FIELD_CATALOG } from "./providers/stream-middleware.js";
 
 import {
@@ -357,6 +358,35 @@ async function handleApi(
       middleware: await getStreamMiddlewareSettings(user.id, db),
       fields: STREAM_FIELD_CATALOG
     });
+  }
+
+  if (pathname === "/api/formatter/preview" && method === "POST") {
+    const body = await readJsonBody(request);
+    if (typeof body.format !== "string" || body.format.length > 3000) {
+      throw new HttpError(400, "Formatter template must be 3000 characters or fewer");
+    }
+    if (!body.stream || typeof body.stream !== "object" || Array.isArray(body.stream)) {
+      throw new HttpError(400, "Stream sample must be a JSON object");
+    }
+    if (body.metadata !== undefined &&
+      (!body.metadata || typeof body.metadata !== "object" || Array.isArray(body.metadata))) {
+      throw new HttpError(400, "Metadata sample must be a JSON object");
+    }
+
+    const stream = { ...(body.stream as Record<string, unknown>) };
+    const metadata = (body.metadata || {}) as Record<string, unknown>;
+    const title = renderAioStreamsFormat(body.format, stream, "AIOPlugins", { metadata });
+    const parsedFields = [
+      "title", "filename", "year", "resolution", "quality", "encode", "network",
+      "visualTags", "audioTags", "audioChannels", "languages", "subtitles",
+      "seasons", "episodes", "formattedSeasons", "formattedEpisodes", "releaseGroup",
+      "editions", "size", "container", "extension"
+    ];
+    const parsed = Object.fromEntries(parsedFields
+      .filter(field => Object.prototype.hasOwnProperty.call(stream, field))
+      .map(field => [field, stream[field]]));
+
+    return sendJson(200, { title, parsed });
   }
 
   if (pathname === "/api/discover" && method === "POST") {

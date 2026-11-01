@@ -324,29 +324,33 @@ export function wrapPluginStreams(
 
     const streams = result.filter(stream => stream && typeof stream === "object").map((stream, index) => {
       const normalized = { ...stream };
-      let name = stringify(normalized.name ?? normalized.title ?? "");
+      let title = stringify(normalized.title ?? normalized.name ?? "");
       try {
-        name = renderAioStreamsFormat(config.format, normalized, addonName);
+        title = renderAioStreamsFormat(config.format, normalized, addonName);
       } catch {
-        name = formatFallback(normalized) || name;
+        title = formatFallback(normalized) || title;
       }
+      const formatted = { ...normalized, title };
+      if (!normalized.name) formatted.name = title;
+      const sourceStream = { ...normalized };
       return {
-        stream: { ...normalized, name },
+        stream: formatted,
+        source: sourceStream,
         index
       };
     }).filter(item =>
-      config.filters.every(filter => filterMatches(item.stream, filter))
+      config.filters.every(filter => filterMatches(item.source, filter))
     );
 
     streams.sort((left, right) => {
       if (!config.sortField) return left.index - right.index;
-      const leftValue = getValue(left.stream, config.sortField);
-      const rightValue = getValue(right.stream, config.sortField);
+      const leftValue = getValue(left.source, config.sortField);
+      const rightValue = getValue(right.source, config.sortField);
       if (!hasValue(leftValue)) return hasValue(rightValue) ? 1 : left.index - right.index;
       if (!hasValue(rightValue)) return -1;
       const direction = config.sortDirection === "asc" ? 1 : -1;
       const comparison = fieldTypes[config.sortField] === "number"
-        ? numericValue(left.stream, config.sortField) - numericValue(right.stream, config.sortField)
+        ? numericValue(left.source, config.sortField) - numericValue(right.source, config.sortField)
         : fieldTypes[config.sortField] === "boolean"
           ? Number(leftValue === true || leftValue === 1 || String(leftValue).toLowerCase() === "true") - Number(rightValue === true || rightValue === 1 || String(rightValue).toLowerCase() === "true")
           : stringify(leftValue).localeCompare(stringify(rightValue), undefined, { numeric: true, sensitivity: "base" });
