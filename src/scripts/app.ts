@@ -246,6 +246,24 @@ function parseProfileBackup(value: unknown): ProfileBackup {
       return result as T;
     }
 
+    async function withTransientRetry<T>(operation: () => Promise<T>): Promise<T> {
+      const delays = [500, 1000, 2000];
+
+      for (let attempt = 0; ; attempt++) {
+        try {
+          return await operation();
+        } catch (error) {
+          const retryable = error instanceof TypeError ||
+            (error instanceof Error && /Request failed \((?:429|5\d\d)\)/.test(error.message));
+          const delay = delays[attempt];
+
+          if (!retryable || delay === undefined) throw error;
+
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+      }
+    }
+
     function setStatus(message: string, kind = "") {
       const target = !user
         ? authStatus
@@ -918,7 +936,7 @@ function parseProfileBackup(value: unknown): ProfileBackup {
       setStatus("Loading your plugin sources…");
 
       try {
-        const saved = await api<ConfigResponse>("/api/config");
+        const saved = await withTransientRetry(() => api<ConfigResponse>("/api/config"));
         streamFields = saved.fields;
         populateFieldSelect($<HTMLSelectElement>("#stream-sort-field"), true);
         populateFieldSelect($<HTMLSelectElement>("#format-field"));
@@ -934,10 +952,10 @@ function parseProfileBackup(value: unknown): ProfileBackup {
 
         const results = await Promise.allSettled(
           requestedSources.map((source) =>
-            api<DiscoverResponse>("/api/discover", {
+            withTransientRetry(() => api<DiscoverResponse>("/api/discover", {
               repository: source.repository,
               ref: source.ref
-            })
+            }))
           )
         );
 
@@ -987,7 +1005,7 @@ function parseProfileBackup(value: unknown): ProfileBackup {
     // Profiles
     async function loadProfilesList() {
       try {
-        const res = await api<ProfilesResponse>("/api/profiles");
+        const res = await withTransientRetry(() => api<ProfilesResponse>("/api/profiles"));
         profiles = res.profiles;
 
         const select = $<HTMLSelectElement>("#profile-select");
@@ -1439,7 +1457,7 @@ function parseProfileBackup(value: unknown): ProfileBackup {
     // Initial session check
     async function initialize() {
       try {
-        const { user: current } = await api<SessionResponse>("/api/session");
+        const { user: current } = await withTransientRetry(() => api<SessionResponse>("/api/session"));
 
         if (current) {
           await enter(current);
