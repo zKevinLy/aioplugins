@@ -4,7 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import { after, before, test } from "node:test";
 import { handleRequest } from "../dist/server.js";
 import { renderAioStreamsFormat } from "../dist/providers/custom-formatter.js";
-import { DEFAULT_STREAM_MIDDLEWARE, wrapPluginStreams } from "../dist/providers/stream-middleware.js";
+import { DEFAULT_STREAM_MIDDLEWARE, normalizeStreamMiddlewareSettings, wrapPluginStreams } from "../dist/providers/stream-middleware.js";
 
 const commit = "b".repeat(40);
 const sourceManifest = {
@@ -324,9 +324,10 @@ test("wraps plugin streams with metadata formatting, filtering, and sorting", as
 
   const streams = await module.exports.getStreams({ title: "Sample" });
   assert.deepEqual(streams.map(stream => stream.name), [
-    "1080p | Sample 1080p"
+    "1080p | Sample"
   ]);
-  assert.equal(streams[0].title, "Sample 1080p");
+  assert.equal(streams[0].title, "Sample");
+  assert.equal(streams[0].filename, "Sample 1080p");
 });
 
 test("formats available metadata and omits empty optional blocks", async () => {
@@ -463,6 +464,64 @@ test("supports AIOStreams array, track, language, date, and duration modifiers",
     renderAioStreamsFormat("{stream.languages::^EN[\"ends\"||\"no\"]}", { languages: ["DE", "EN"] }),
     "ends"
   );
+});
+
+test("extracts shared media fields from provider filenames before formatting", async () => {
+  const stream = {
+    name: "4KHDHub - PixelDrain 1080p",
+    title: "Doctor.X.Mafia.in.White.S01E06.1080p.NF.WEB-DL.English.AAC2.0-Korean.AAC2.0.H.264-4kHdHub.Com.mkv",
+    size: "2.24 GB"
+  };
+
+  const label = renderAioStreamsFormat(
+    "{stream.title} · {stream.formattedSeasons} {stream.formattedEpisodes} · {stream.resolution} · {stream.quality} · {stream.network} · {stream.encode} · {stream.audioTags::join(', ')} · {stream.languages::join(', ')} · {stream.size::sbytes}",
+    stream
+  );
+
+  assert.equal(stream.title, "Doctor X Mafia in White");
+  assert.equal(stream.filename, "Doctor.X.Mafia.in.White.S01E06.1080p.NF.WEB-DL.English.AAC2.0-Korean.AAC2.0.H.264-4kHdHub.Com.mkv");
+  assert.equal(stream.size, 2240000000);
+  assert.match(label, /Doctor X Mafia in White · S01 E06 · 1080p · WEB-DL · Netflix · AVC/);
+  assert.match(label, /AAC · English, Korean · 2.2 GB/);
+
+  const module = { exports: {} };
+  const source = `module.exports = { getStreams: async () => [${JSON.stringify(stream)}] };`;
+  new Function("module", "exports", wrapPluginStreams(source, {
+    ...DEFAULT_STREAM_MIDDLEWARE,
+    filters: [
+      { field: "languages", operator: "contains", value: "Korean" },
+      { field: "releaseGroup", operator: "equals", value: "4kHdHub.Com" }
+    ],
+    format: "{stream.title} · {stream.formattedSeasons} {stream.formattedEpisodes} · {stream.resolution} · {stream.quality} · {stream.network} · {stream.encode}"
+  }))(module, module.exports);
+  const [wrapped] = await module.exports.getStreams({});
+  assert.equal(wrapped.title, "Doctor X Mafia in White");
+  assert.equal(wrapped.network, "Netflix");
+  assert.equal(wrapped.size, 2240000000);
+  assert.equal(wrapped.name, "Doctor X Mafia in White · S01 E06 · 1080p · WEB-DL · Netflix · AVC");
+});
+
+test("keeps partial provider metadata useful without inventing fields", () => {
+  const legacyFormat = DEFAULT_STREAM_MIDDLEWARE.format.replace(
+    "{? · {stream.formattedSeasons}?}{? · {stream.formattedEpisodes}?}",
+    ""
+  );
+  assert.equal(
+    normalizeStreamMiddlewareSettings({ format: legacyFormat }).format,
+    DEFAULT_STREAM_MIDDLEWARE.format
+  );
+
+  const stream = {
+    name: "ReAnime",
+    title: "Doctor X: Mafia in White - Episode 6 (DUB)"
+  };
+
+  const label = renderAioStreamsFormat(DEFAULT_STREAM_MIDDLEWARE.format, stream);
+
+  assert.equal(stream.title, "Doctor X: Mafia in White");
+  assert.equal(stream.formattedEpisodes, "E06");
+  assert.equal(stream.resolution, undefined);
+  assert.equal(label, "Doctor X: Mafia in White · E06");
 });
 
 test("keeps named profiles and sources manageable", async () => {

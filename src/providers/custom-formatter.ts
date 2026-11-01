@@ -5,6 +5,156 @@ export function renderAioStreamsFormat(
   stream: Record<string, unknown>
 ): string {
   const REMOVE_LINE = "\u0000AIOSTREAMS_REMOVE_LINE\u0000";
+  const extractFilenameMetadata = (
+    original: Record<string, unknown>
+  ): Record<string, unknown> => {
+    const candidates = [original.filename, original.fileName, original.title, original.name]
+      .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+      .map(value => value.trim());
+    const markerPattern = /\bS\d{1,2}(?:[ ._-]*E\d{1,3})?\b|\b(?:episode|ep)\s*0*\d{1,3}\b|\bE0*\d{1,3}\b|\b(?:2160p?|1440p?|1080[pi]?|720[pi]?|576p?|480[pi]?|360p?|240p?|144p?|4k|uhd|qhd|fhd|hdtv|web[ ._-]?(?:dl|rip)|blu[ ._-]?ray|brrip|bdrip|dvdrip|hdrip|remux|h\.?264|h\.?265|x264|x265|hevc|avc|av1|aac|eac3|ddp|ac3|dts|truehd|flac|opus|hdr10\+?|dolby[ ._-]?vision|\b(?:19|20)\d{2})\b/i;
+    const score = (value: string): number =>
+      (/[.](?:mkv|mp4|avi|mov|m4v|webm|ts|m2ts)$/i.test(value) ? 100 : 0) +
+      (value.match(/\b(?:S\d{1,2}E\d{1,3}|2160p?|1440p?|1080p?|720p?|WEB[ ._-]?DL|WEBRip|BluRay|HDR|H\.?26[45]|x26[45])\b/gi)?.length ?? 0) * 20 +
+      Math.min(value.length, 1000) / 1000;
+    const raw = candidates.sort((left, right) => score(right) - score(left))[0] ?? "";
+    const sizeMatch = raw.match(/(?:^|\s)(\d+(?:\.\d+)?)\s*(B|KB|MB|GB|TB)\s*$/i);
+    const unitFactors: Record<string, number> = {
+      B: 1, KB: 1e3, MB: 1e6, GB: 1e9, TB: 1e12
+    };
+    const streamSize = typeof original.size === "string"
+      ? original.size
+      : typeof original.fileSize === "string" ? original.fileSize : "";
+    const streamSizeMatch = streamSize.match(/(\d+(?:\.\d+)?)\s*(B|KB|MB|GB|TB)\b/i);
+    const parsedSize = sizeMatch
+      ? Number(sizeMatch[1]) * unitFactors[sizeMatch[2]!.toUpperCase()]!
+      : streamSizeMatch
+        ? Number(streamSizeMatch[1]) * unitFactors[streamSizeMatch[2]!.toUpperCase()]!
+        : undefined;
+    const releaseText = raw
+      .replace(/\s*\d+(?:\.\d+)?\s*(?:B|KB|MB|GB|TB)\s*$/i, "")
+      .replace(/\.(mkv|mp4|avi|mov|m4v|webm|ts|m2ts)$/i, "");
+    const marker = markerPattern.exec(releaseText);
+    const titlePart = marker ? releaseText.slice(0, marker.index) : releaseText;
+    const cleanTitle = titlePart
+      .replace(/[._]+/g, " ")
+      .replace(/\s+/g, " ")
+      .replace(/^[\s.\-]+|[\s.\-]+$/g, "");
+    const parsedTitle = cleanTitle || releaseText
+      .replace(/[._]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    const resolutionMatch = releaseText.match(/(?:2160|1440|1080|720|576|480|360|240|144)[pi]?|\b(?:4k|uhd|qhd|fhd)\b/i);
+    const resolutionText = resolutionMatch?.[0].toLowerCase();
+    const resolution = resolutionText
+      ? /4k|uhd/.test(resolutionText) ? "2160p"
+        : /qhd/.test(resolutionText) ? "1440p"
+          : /fhd/.test(resolutionText) ? "1080p"
+            : `${resolutionText.replace(/[pi]$/, "")}p`
+      : undefined;
+    const yearMatch = releaseText.match(/\b((?:19|20)\d{2})\b/);
+    const episodeMatch = releaseText.match(/\bS(\d{1,2})(?:[ ._-]*E(\d{1,3}))?/i);
+    const seasonOnlyMatch = releaseText.match(/\bSeason\s*0*(\d{1,2})\b/i);
+    const episodeOnlyMatch = releaseText.match(/\b(?:Episode|Ep)\s*0*(\d{1,3})\b/i)
+      ?? releaseText.match(/\bE0*(\d{1,3})\b/i);
+    const season = episodeMatch ? Number(episodeMatch[1])
+      : seasonOnlyMatch ? Number(seasonOnlyMatch[1]) : undefined;
+    const episode = episodeMatch?.[2] ? Number(episodeMatch[2])
+      : episodeOnlyMatch ? Number(episodeOnlyMatch[1]) : undefined;
+    const seasonCode = season === undefined ? undefined : `S${String(season).padStart(2, "0")}`;
+    const episodeCode = episode === undefined ? undefined : `E${String(episode).padStart(2, "0")}`;
+    const quality = /\bWEB[ ._-]?DL\b/i.test(releaseText) ? "WEB-DL"
+      : /\bWEB[ ._-]?RIP\b/i.test(releaseText) ? "WEBRip"
+        : /\bBlu[ ._-]?Ray\b/i.test(releaseText) ? "BluRay"
+          : /\b(?:BDRip|BRRip|HDTV|DVDRip|HDRip|Remux)\b/i.exec(releaseText)?.[0];
+    const encode = /\b(?:H\.?265|X265|HEVC)\b/i.test(releaseText) ? "HEVC"
+      : /\b(?:H\.?264|X264|AVC)\b/i.test(releaseText) ? "AVC"
+        : /\bAV1\b/i.test(releaseText) ? "AV1" : undefined;
+    const visualTags = [
+      /\bHDR10(?:\+|PLUS)?(?![\w])/i.test(releaseText) ? "HDR10+" : /\bHDR\b/i.test(releaseText) ? "HDR" : "",
+      /\b(?:DV|DoVi|Dolby[ ._-]?Vision)\b/i.test(releaseText) ? "DV" : ""
+    ].filter(Boolean);
+    const networkMap: Array<[RegExp, string]> = [
+      [/\b(?:NF|Netflix)\b/i, "Netflix"], [/\b(?:AMZN|Amazon)\b/i, "Amazon"],
+      [/\b(?:DSNP|Disney\+?)\b/i, "Disney+"], [/\b(?:ATVP|AppleTV\+?)\b/i, "Apple TV+"],
+      [/\b(?:HMAX|HBO)\b/i, "HBO"], [/\bHULU\b/i, "Hulu"],
+      [/\bPCOK\b/i, "Peacock"], [/\bPMTP\b/i, "Paramount+"],
+      [/\bCRAV\b/i, "Crave"]
+    ];
+    const network = networkMap.find(([pattern]) => pattern.test(releaseText))?.[1];
+    const audioRules: Array<[RegExp, string]> = [
+      [/\bDTS[ ._-]?HD[ ._-]?MA\b/i, "DTS-HD MA"], [/\bDTS[ ._-]?X\b/i, "DTS:X"],
+      [/\bTrue[ ._-]?HD\b/i, "TrueHD"], [/\bAtmos\b/i, "Atmos"],
+      [/\b(?:EAC3|DDP|DD\+)\b/i, "EAC3"], [/\b(?:AC3|DD)\b/i, "AC3"],
+      [/\bDTS\b/i, "DTS"], [/\bAAC(?:[ ._-]*\d(?:\.\d+)?)?/i, "AAC"],
+      [/\bFLAC\b/i, "FLAC"], [/\bOpus\b/i, "Opus"], [/\bMP3\b/i, "MP3"]
+    ];
+    const audioTags = [...new Set(audioRules
+      .filter(([pattern]) => pattern.test(releaseText))
+      .map(([, tag]) => tag))];
+    const audioChannels = [...new Set(
+      [...releaseText.matchAll(/\b(1\.0|2\.0|5\.1|7\.1|5\.0|7\.0|2\.1|6\.1|7\.2)\b/g)]
+        .map(match => match[1]!)
+    )];
+    const languageNames = [
+      "Arabic", "Chinese", "Dutch", "English", "French", "German", "Hindi",
+      "Italian", "Japanese", "Korean", "Portuguese", "Russian", "Spanish",
+      "Tamil", "Telugu", "Thai", "Turkish", "Ukrainian", "Vietnamese"
+    ];
+    const languageSource = marker ? releaseText.slice(marker.index) : "";
+    const languages = languageNames.filter(language =>
+      new RegExp(`\\b${language}\\b`, "i").test(languageSource)
+    );
+    const groupIndex = releaseText.lastIndexOf("-");
+    const releaseGroup = groupIndex >= 0 ? releaseText.slice(groupIndex + 1) : "";
+    const extensionMatch = raw.match(/\.([a-z0-9]{2,5})(?:\s|$)/i);
+    const editions = [
+      [/\bDirector(?:'|\.)?s?[ ._-]+Cut\b/i, "Director's Cut"],
+      [/\bExtended\b/i, "Extended"], [/\bTheatrical\b/i, "Theatrical"],
+      [/\bUnrated\b/i, "Unrated"], [/\bRemastered\b/i, "Remastered"],
+      [/\bCriterion\b/i, "Criterion"]
+    ].filter(([pattern]) => (pattern as RegExp).test(releaseText)).map(([, edition]) => edition as string);
+    const dateMatch = releaseText.match(/\b((?:19|20)\d{2})[ ._-](\d{2})[ ._-](\d{2})\b/);
+    const seasonEpisode = [seasonCode, episodeCode].filter(Boolean);
+    const extracted: Record<string, unknown> = {
+      ...(parsedTitle ? { title: parsedTitle } : {}),
+      filename: original.filename ?? original.fileName ?? (raw || undefined),
+      ...(yearMatch ? { year: Number(yearMatch[1]) } : {}),
+      ...(resolution ? { resolution } : {}),
+      ...(quality && (!original.quality || /^(?:\d{3,4}p|4k|uhd|qhd|fhd)$/i.test(String(original.quality))) ? { quality } : {}),
+      ...(encode ? { encode } : {}),
+      ...(network ? { network } : {}),
+      ...(visualTags.length ? { visualTags } : {}),
+      ...(audioTags.length ? { audioTags } : {}),
+      ...(audioChannels.length ? { audioChannels } : {}),
+      ...(languages.length ? { languages } : {}),
+      ...(season !== undefined ? { seasons: [season], formattedSeasons: seasonCode, seasonPack: episode === undefined } : {}),
+      ...(episode !== undefined ? { episodes: [episode], formattedEpisodes: episodeCode, seasonEpisode } : {}),
+      ...(releaseGroup ? { releaseGroup } : {}),
+      ...(editions.length ? { editions } : {}),
+      ...(extensionMatch ? { extension: `.${extensionMatch[1]!.toLowerCase()}`, container: extensionMatch[1]!.toLowerCase() } : {}),
+      ...(parsedSize !== undefined && typeof original.size !== "number" ? { size: parsedSize } : {}),
+      ...(dateMatch ? { date: `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}` } : {}),
+      ...( /\bPROPER\b/i.test(releaseText) ? { proper: true } : {}),
+      ...( /\bREPACK\d*\b/i.test(releaseText) ? { repack: true } : {}),
+      ...( /\bRE-GRADE(?:D)?\b/i.test(releaseText) ? { regraded: true } : {}),
+      ...( /\bUNCENSORED\b/i.test(releaseText) ? { uncensored: true } : {}),
+      ...( /\bUNRATED\b/i.test(releaseText) ? { unrated: true } : {}),
+      ...( /\bUPSCALED\b/i.test(releaseText) ? { upscaled: true } : {}),
+      ...(releaseText.match(/\b(?:DUB|DUBBED)\b/i) ? { dubbed: true } : {}),
+      ...(releaseText.match(/\b(?:SUB|SUBBED)\b/i) ? { subbed: true } : {})
+    };
+    return {
+      ...extracted,
+      ...original,
+      ...(quality && (!original.quality || /^(?:\d{3,4}p|4k|uhd|qhd|fhd)$/i.test(String(original.quality))) ? { quality } : {}),
+      ...(parsedSize !== undefined && typeof original.size !== "number" ? { size: parsedSize } : {}),
+      ...(parsedTitle ? { title: parsedTitle } : {})
+    };
+  };
+  const originalStream = stream;
+  stream = extractFilenameMetadata(stream);
+  Object.assign(originalStream, stream);
+  stream = originalStream;
   const service = stream.service && typeof stream.service === "object"
     ? stream.service as Record<string, unknown>
     : {};

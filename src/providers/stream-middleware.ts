@@ -10,9 +10,15 @@ export interface StreamFieldDefinition {
 
 export const STREAM_FIELD_CATALOG: StreamFieldDefinition[] = [
   { key: "title", label: "Title", type: "text" },
+  { key: "filename", label: "Filename", type: "text" },
+  { key: "date", label: "Release date", type: "text" },
   { key: "resolution", label: "Resolution", type: "number" },
   { key: "quality", label: "Quality", type: "text" },
   { key: "year", label: "Year", type: "number" },
+  { key: "seasons", label: "Seasons", type: "list" },
+  { key: "episodes", label: "Episodes", type: "list" },
+  { key: "seasonEpisode", label: "Season and episode", type: "list" },
+  { key: "seasonPack", label: "Season pack", type: "boolean" },
   { key: "formattedSeasons", label: "Seasons", type: "text" },
   { key: "formattedEpisodes", label: "Episodes", type: "text" },
   { key: "seadexBest", label: "Best release", type: "boolean" },
@@ -23,16 +29,28 @@ export const STREAM_FIELD_CATALOG: StreamFieldDefinition[] = [
   { key: "encode", label: "Encode", type: "text" },
   { key: "duration", label: "Duration", type: "number" },
   { key: "editions", label: "Editions", type: "list" },
+  { key: "proper", label: "Proper", type: "boolean" },
+  { key: "repack", label: "Repack", type: "boolean" },
+  { key: "regraded", label: "Regraded", type: "boolean" },
+  { key: "uncensored", label: "Uncensored", type: "boolean" },
+  { key: "unrated", label: "Unrated", type: "boolean" },
+  { key: "upscaled", label: "Upscaled", type: "boolean" },
   { key: "audioTags", label: "Audio tags", type: "list" },
   { key: "audioChannels", label: "Audio channels", type: "list" },
+  { key: "audioTracks", label: "Audio tracks", type: "list" },
   { key: "languages", label: "Languages", type: "list" },
   { key: "subtitles", label: "Subtitles", type: "list" },
+  { key: "subtitleTracks", label: "Subtitle tracks", type: "list" },
+  { key: "dubbed", label: "Dubbed", type: "boolean" },
+  { key: "subbed", label: "Subbed", type: "boolean" },
   { key: "size", label: "File size", type: "number" },
   { key: "folderSize", label: "Folder size", type: "number" },
   { key: "bitrate", label: "Bitrate", type: "number" },
   { key: "seeders", label: "Seeders", type: "number" },
   { key: "age", label: "Age", type: "text" },
   { key: "releaseGroup", label: "Release group", type: "text" },
+  { key: "container", label: "Container", type: "text" },
+  { key: "extension", label: "Extension", type: "text" },
   { key: "indexer", label: "Indexer", type: "text" },
   { key: "network", label: "Network", type: "text" },
   { key: "cached", label: "Cached", type: "boolean" },
@@ -78,8 +96,13 @@ export const DEFAULT_STREAM_MIDDLEWARE: StreamMiddlewareSettings = {
   filters: [],
   sortField: "",
   sortDirection: "desc",
-  format: "{?{stream.resolution::replace('2160p', '🔥4K UHD')::replace('1440p', '✨ QHD')::replace('1080p', '🚀 FHD')::replace('720p', '💿 HD')::replace('576p', '💩 Low Quality')::replace('480p', '💩 Low Quality')::replace('360p', '💩 Low Quality')::replace('240p', '💩 Low Quality')::replace('144p', '💩 Low Quality')} · ?}{stream.title}{? · 📦 {stream.size::sbytes}?}{? · 🎧 {stream.audioTags::join(' | ')}?}"
+  format: "{?{stream.resolution::replace('2160p', '🔥4K UHD')::replace('1440p', '✨ QHD')::replace('1080p', '🚀 FHD')::replace('720p', '💿 HD')::replace('576p', '💩 Low Quality')::replace('480p', '💩 Low Quality')::replace('360p', '💩 Low Quality')::replace('240p', '💩 Low Quality')::replace('144p', '💩 Low Quality')} · ?}{stream.title}{? · {stream.formattedSeasons}?}{? · {stream.formattedEpisodes}?}{? · 📦 {stream.size::sbytes}?}{? · 🎧 {stream.audioTags::join(' | ')}?}"
 };
+
+const LEGACY_DEFAULT_STREAM_FORMAT = DEFAULT_STREAM_MIDDLEWARE.format.replace(
+  "{? · {stream.formattedSeasons}?}{? · {stream.formattedEpisodes}?}",
+  ""
+);
 
 const MAX_FORMAT_LENGTH = 3000;
 const MAX_FILTERS = 30;
@@ -157,8 +180,11 @@ export function normalizeStreamMiddlewareSettings(
   const sortDirection = candidate.sortDirection === "asc" || candidate.sortDirection === "desc"
     ? candidate.sortDirection
     : candidate.sortBy === "title" ? "asc" : DEFAULT_STREAM_MIDDLEWARE.sortDirection;
-  const format = typeof candidate.format === "string" && candidate.format.trim()
-    ? candidate.format.slice(0, MAX_FORMAT_LENGTH)
+  const requestedFormat = typeof candidate.format === "string"
+    ? candidate.format.trim()
+    : "";
+  const format = requestedFormat && requestedFormat !== LEGACY_DEFAULT_STREAM_FORMAT
+    ? requestedFormat.slice(0, MAX_FORMAT_LENGTH)
     : DEFAULT_STREAM_MIDDLEWARE.format;
 
   return {
@@ -256,12 +282,15 @@ export function wrapPluginStreams(
       return true;
     };
 
-    const streams = result.filter(stream => stream && typeof stream === "object").filter(stream =>
-      config.filters.every(filter => filterMatches(stream, filter))
-    ).map((stream, index) => ({
-      stream: { ...stream, name: renderAioStreamsFormat(config.format, stream) },
-      index
-    }));
+    const streams = result.filter(stream => stream && typeof stream === "object").map((stream, index) => {
+      const name = renderAioStreamsFormat(config.format, stream);
+      return {
+        stream: { ...stream, name },
+        index
+      };
+    }).filter(item =>
+      config.filters.every(filter => filterMatches(item.stream, filter))
+    );
 
     streams.sort((left, right) => {
       if (!config.sortField) return left.index - right.index;
