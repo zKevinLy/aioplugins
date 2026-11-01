@@ -1,4 +1,5 @@
 import { renderAioStreamsFormat } from "./custom-formatter.js";
+import { DEFAULT_STREAM_FORMAT } from "../lib/default-stream-format.js";
 
 export type StreamFieldType = "text" | "number" | "boolean" | "list";
 
@@ -96,10 +97,11 @@ export const DEFAULT_STREAM_MIDDLEWARE: StreamMiddlewareSettings = {
   filters: [],
   sortField: "",
   sortDirection: "desc",
-  format: "{?{stream.resolution::replace('2160p', '🔥4K UHD')::replace('1440p', '✨ QHD')::replace('1080p', '🚀 FHD')::replace('720p', '💿 HD')::replace('576p', '💩 Low Quality')::replace('480p', '💩 Low Quality')::replace('360p', '💩 Low Quality')::replace('240p', '💩 Low Quality')::replace('144p', '💩 Low Quality')} · ?}{stream.title}{? · {stream.formattedSeasons}?}{? · {stream.formattedEpisodes}?}{? · 📦 {stream.size::sbytes}?}{? · 🎧 {stream.audioTags::join(' | ')}?}"
+  format: DEFAULT_STREAM_FORMAT
 };
 
-const LEGACY_DEFAULT_STREAM_FORMAT = DEFAULT_STREAM_MIDDLEWARE.format.replace(
+const PREVIOUS_DEFAULT_STREAM_FORMAT = "{?{stream.resolution::replace('2160p', '🔥4K UHD')::replace('1440p', '✨ QHD')::replace('1080p', '🚀 FHD')::replace('720p', '💿 HD')::replace('576p', '💩 Low Quality')::replace('480p', '💩 Low Quality')::replace('360p', '💩 Low Quality')::replace('240p', '💩 Low Quality')::replace('144p', '💩 Low Quality')} · ?}{stream.title}{? · {stream.formattedSeasons}?}{? · {stream.formattedEpisodes}?}{? · 📦 {stream.size::sbytes}?}{? · 🎧 {stream.audioTags::join(' | ')}?}";
+const LEGACY_DEFAULT_STREAM_FORMAT = PREVIOUS_DEFAULT_STREAM_FORMAT.replace(
   "{? · {stream.formattedSeasons}?}{? · {stream.formattedEpisodes}?}",
   ""
 );
@@ -183,7 +185,9 @@ export function normalizeStreamMiddlewareSettings(
   const requestedFormat = typeof candidate.format === "string"
     ? candidate.format.trim()
     : "";
-  const format = requestedFormat && requestedFormat !== LEGACY_DEFAULT_STREAM_FORMAT
+  const isPreviousDefault = requestedFormat === PREVIOUS_DEFAULT_STREAM_FORMAT ||
+    requestedFormat === LEGACY_DEFAULT_STREAM_FORMAT;
+  const format = requestedFormat && !isPreviousDefault
     ? requestedFormat.slice(0, MAX_FORMAT_LENGTH)
     : DEFAULT_STREAM_MIDDLEWARE.format;
 

@@ -31,10 +31,13 @@ Accounts carry per-person GUID/password configuration links. Nuvio still owns pl
 
 ## Architecture
 
-The application is separated from its hosting platform. Cloudflare is currently the only hosting adapter.
+The UI is a static Astro site. Astro builds the page and its browser module into `dist/site`; the Cloudflare Worker serves those assets and owns the API. Cloudflare is currently the only hosting adapter.
 
 ```
 src/
+├── pages/index.astro         Main page composed from view components
+├── components/               Plugin setup, middleware, review, and account views
+├── scripts/app.js            Browser interactions and API calls
 ├── index.ts                  Wrangler entry point (re-exports the Cloudflare worker)
 ├── server.ts                 Routing, sessions, rate limiting: handleRequest(request, platform)
 ├── users.ts                  Accounts, sessions, profiles, per-user source config
@@ -49,7 +52,9 @@ src/
     └── env.ts                Binding types: DB, ASSETS, GITHUB_TOKEN
 ```
 
-Everything outside `src/adapters/` is platform-independent and compiles without Cloudflare types. To host somewhere else, implement `Database` and `Platform` for the new environment and add an entry file that calls `handleRequest(request, platform)`; `server.ts`, `users.ts`, and `providers/remote.ts` do not change.
+Astro is only the UI/build layer; it does not replace the Worker backend. Everything outside `src/adapters/` is platform-independent and compiles without Cloudflare types. To host somewhere else, implement `Database` and `Platform` for the new environment and add an entry file that calls `handleRequest(request, platform)`; `server.ts`, `users.ts`, and `providers/remote.ts` do not change.
+
+Rust is possible, but it would be a separate backend implementation, not an Astro feature. On Cloudflare it would need to run as a WebAssembly Worker or as a separately hosted service; either option would require rebuilding the current D1, session, and routing integration. The current backend is mostly database and network I/O, so Rust is unlikely to simplify it or improve performance meaningfully. The `Database` and `Platform` contracts leave room for a Rust-backed service later if a measured workload or deployment requirement justifies that extra boundary.
 
 The application's SQL is written for SQLite with `?` placeholders. An adapter for another engine may need to translate placeholders (for example `?` to `$1`) and use 64-bit integer columns, because timestamps are stored as `Date.now()` values.
 
@@ -62,14 +67,14 @@ npm install
 npm run dev
 ```
 
-`npm run dev` runs `wrangler dev`, which serves the Worker locally with a local D1 database and the static assets. Open the URL Wrangler prints (port 8787 by default).
+`npm run dev` builds the Astro site and runs `wrangler dev`, which serves the Worker locally with a local D1 database and the generated static assets. Open the URL Wrangler prints (port 8787 by default). Run `npm run build:site` after UI changes while the dev server is already running. `npm run build` builds both the Astro site and TypeScript Worker; `npm test` does that build before running the test suite.
 
 The Worker expects these bindings in your Wrangler configuration:
 
 | Binding | Type | Purpose |
 | --- | --- | --- |
 | `DB` | D1 database | Accounts, sessions, profiles, source selections, provider cache |
-| `ASSETS` | Static assets | The front end; `/` serves `index.html` |
+| `ASSETS` | Static assets | Astro output in `dist/site`; `/` serves the generated `index.html` and the Worker forwards bundled assets |
 
 It also needs the `nodejs_compat` compatibility flag because it uses `node:crypto`. `GITHUB_TOKEN` is declared as an optional binding but is not currently used.
 

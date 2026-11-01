@@ -1,0 +1,111 @@
+          <!-- STEP 1: Choose plugins -->
+          <section id="configure-view" class="view">
+            <div class="workspace">
+
+              <!-- Sources -->
+              <section class="panel" aria-labelledby="source-heading">
+                <div class="panel-head">
+                  <div>
+                    <h2 id="source-heading">Plugin sources</h2>
+                    <p class="panel-subtitle">Choose a source or add your own GitHub repository.</p>
+                  </div>
+                  <span class="source-summary">
+                    <span id="source-count">0</span> loaded
+                  </span>
+                </div>
+
+                <div class="panel-body">
+                  <div class="quick-source-section">
+                    <label>Suggested sources</label>
+                    <div class="quick-sources" aria-label="Suggested sources">
+                      <div class="quick-source-item">
+                        <button class="quick-source"
+                          data-repo="https://github.com/yoruix/nuvio-providers"
+                          type="button">Yoru providers</button>
+                        <a class="quick-source-link" href="https://github.com/yoruix/nuvio-providers"
+                          target="_blank" rel="noopener noreferrer"
+                          aria-label="View Yoru providers source on GitHub" title="View source on GitHub">
+                          <span aria-hidden="true">↗</span>
+                        </a>
+                      </div>
+
+                      <div class="quick-source-item">
+                        <button class="quick-source"
+                          data-repo="https://github.com/NuvioPlugin/All-in-One-Nuvio"
+                          type="button">All-in-One</button>
+                        <a class="quick-source-link" href="https://github.com/NuvioPlugin/All-in-One-Nuvio"
+                          target="_blank" rel="noopener noreferrer"
+                          aria-label="View All-in-One source on GitHub" title="View source on GitHub">
+                          <span aria-hidden="true">↗</span>
+                        </a>
+                      </div>
+                    </div>
+                    <p class="field-hint">These sources load automatically when you log in.</p>
+                  </div>
+
+                  <details class="custom-source">
+                    <summary>Add a custom GitHub source</summary>
+
+                    <div class="custom-source-fields">
+                      <div class="field">
+                        <label for="repository">GitHub repository URL</label>
+                        <input id="repository" type="url"
+                          placeholder="https://github.com/username/repository"
+                          autocomplete="url" spellcheck="false">
+                      </div>
+
+                      <div class="field-row">
+                        <div class="field">
+                          <label for="ref">Branch or tag</label>
+                          <input id="ref" type="text" value="main" spellcheck="false">
+                        </div>
+
+                        <div class="field">
+                          <label aria-hidden="true">&nbsp;</label>
+                          <button id="discover" class="button button-primary button-wide" type="button">
+                            Add source
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </details>
+
+                  <p class="trust-note">
+                    <strong>Review sources before installing.</strong>
+                    Selected plugin files are fetched from the inspected commit and cached.
+                    Nuvio runs the plugin code after installation.
+                  </p>
+
+                  <p id="status" class="status" role="status" aria-live="polite"></p>
+                </div>
+              </section>
+
+              <!-- Plugin catalog -->
+              <section class="panel" aria-labelledby="catalog-heading">
+                <div class="panel-head">
+                  <div>
+                    <h2 id="catalog-heading">Available plugins</h2>
+                    <p class="panel-subtitle">Select the providers you want to include.</p>
+                  </div>
+
+                  <div class="catalog-tools">
+                    <input id="search" class="search" type="search"
+                      placeholder="Search plugins" aria-label="Search plugins">
+                  </div>
+                </div>
+
+                <div id="catalog" class="catalog-empty">
+                  <strong>Loading your plugin sources...</strong>
+                  <p>Your suggested sources will appear here automatically.</p>
+                </div>
+
+                <div class="actionbar">
+                  <span id="selection-count" class="selection-count">No plugins selected</span>
+                  <button id="go-save" class="button button-primary" type="button" disabled>
+                    Continue to review →
+                  </button>
+                </div>
+              </section>
+
+            </div>
+          </section>

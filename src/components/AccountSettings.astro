@@ -1,0 +1,53 @@
+          <!-- Account settings -->
+          <section id="account-view" class="view" hidden>
+            <div class="step-heading">
+              <div>
+                <h2>Account settings</h2>
+                <p class="view-intro">Manage your account and configuration backups.</p>
+              </div>
+
+              <button id="back-from-account" class="button button-small" type="button">
+                Back to plugins
+              </button>
+            </div>
+
+            <section class="panel save-card">
+              <div class="panel-head"><h2>Your account</h2></div>
+              <div class="panel-body">
+                <div class="uuid-row">
+                  <span class="uuid-row-label">UUID</span>
+                  <code id="account-uuid"></code>
+                  <button id="copy-uuid" class="button button-small" type="button">Copy UUID</button>
+                </div>
+                <p class="field-hint">Keep your UUID and password somewhere safe.</p>
+              </div>
+            </section>
+
+            <section class="panel save-card">
+              <div class="panel-head"><h2>Configuration backup</h2></div>
+              <div class="panel-body">
+                <p class="view-intro">Export your plugin selections or restore them from a previous backup.</p>
+                <div class="source-actions">
+                  <button id="export-config" class="button button-small" type="button">Export backup</button>
+                  <button id="import-config" class="button button-small" type="button">Import backup</button>
+                  <input id="import-config-file" type="file" accept="application/json,.json" hidden>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel save-card">
+              <div class="panel-head"><h2>Delete account</h2></div>
+              <div class="panel-body">
+                <p class="view-intro">
+                  Permanently removes your account and saved selection. This cannot be undone.
+                </p>
+                <div class="delete-controls">
+                  <input id="delete-password" type="password" autocomplete="current-password"
+                    placeholder="Confirm your password" aria-label="Confirm password to delete account">
+                  <button id="delete-account" class="button button-small button-danger" type="button">
+                    Delete account
+                  </button>
+                </div>
+              </div>
+            </section>
+          </section>

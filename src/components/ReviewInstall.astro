@@ -1,0 +1,125 @@
+          <!-- STEP 2: Review and install -->
+          <section id="save-view" class="view" hidden>
+            <div class="step-heading">
+              <div>
+                <h2>Review your plugin setup</h2>
+                <p class="view-intro">Your selected plugins will be included in your private Nuvio repository.</p>
+              </div>
+
+              <button id="back-to-plugins" class="button button-small" type="button">
+                ← Back to plugins
+              </button>
+            </div>
+
+            <section class="panel save-card" aria-labelledby="review-heading">
+              <div class="panel-head">
+                <div>
+                  <h2 id="review-heading">Your selection</h2>
+                  <p class="panel-subtitle">Check your plugins before saving.</p>
+                </div>
+                <span id="review-count" class="source-summary">0 plugins</span>
+              </div>
+
+              <div id="review-selection" class="review-selection">
+                <p class="view-intro">No plugins selected yet.</p>
+              </div>
+
+              <div class="panel-body review-footer">
+                <button id="edit-selection" class="button button-small" type="button">
+                  Edit selection
+                </button>
+              </div>
+            </section>
+
+            <section class="panel save-card" aria-labelledby="save-heading">
+              <div class="panel-head">
+                <div>
+                  <h2 id="save-heading">Save your setup</h2>
+                  <p class="panel-subtitle">Generate your personal Nuvio plugin repository.</p>
+                </div>
+              </div>
+
+              <div class="panel-body">
+                <p id="save-status" class="status" role="status" aria-live="polite"></p>
+                <button id="apply" class="button button-primary button-wide" type="button" disabled>
+                  Save Plugin Setup
+                </button>
+              </div>
+            </section>
+
+            <section class="panel output-panel" aria-labelledby="output-heading">
+              <div class="panel-head output-head">
+                <div>
+                  <h2 id="output-heading">Install in Nuvio</h2>
+                  <p class="panel-subtitle">Your personal plugin repository link.</p>
+                </div>
+                <span id="output-state" class="output-state">Not saved yet</span>
+              </div>
+
+              <div class="output-body">
+                <div>
+                  <p class="output-label">Your private plugin repository URL</p>
+
+                  <div class="copy-row">
+                    <button id="plugin-url" class="addon-url" type="button"
+                      title="Copy plugin repository URL">
+                      Save your setup to generate a link.
+                    </button>
+
+                    <button id="copy-plugin-url" class="button" type="button" disabled>
+                      Copy URL
+                    </button>
+                  </div>
+
+                  <p id="copy-feedback" class="output-hint" aria-live="polite">
+                    After saving, copy this link and paste it into Nuvio's plugin source settings.
+                    Treat it like a password: anyone with it can load your plugin list.
+                  </p>
+                </div>
+
+                <div class="install-instructions">
+                  <h3>How to install</h3>
+                  <ol>
+                    <li>Save your plugin setup above.</li>
+                    <li>Copy your private repository URL.</li>
+                    <li>Open Nuvio and go to its plugin source settings.</li>
+                    <li>Add your copied URL as a plugin source.</li>
+                  </ol>
+                </div>
+              </div>
+            </section>
+
+            <details class="panel optional-settings">
+              <summary>Profiles</summary>
+              <div class="panel-body">
+                <p class="view-intro">
+                  Save different plugin combinations and switch between them whenever you want.
+                </p>
+
+                <div class="field">
+                  <label for="profile-select">Load a saved profile</label>
+                  <div class="field-row">
+                    <select id="profile-select"></select>
+                    <button id="delete-profile" class="button button-small button-danger" type="button">
+                      Delete
+                    </button>
+                  </div>
+                </div>
+
+                <button id="save-new-profile" class="button button-small" type="button">
+                  Save current selection as a profile
+                </button>
+              </div>
+            </details>
+
+            <details class="panel optional-settings">
+              <summary>Advanced settings &amp; manifest</summary>
+              <div class="panel-body">
+                <div class="manifest-title">
+                  <h3>Generated Nuvio manifest</h3>
+                  <a id="open-manifest" href="#" target="_blank" rel="noreferrer">Open JSON</a>
+                </div>
+                <pre id="manifest-preview" class="manifest-preview">Save your setup to generate your Nuvio manifest.</pre>
+              </div>
+            </details>
+          </section>

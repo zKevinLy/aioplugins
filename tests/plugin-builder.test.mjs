@@ -50,7 +50,7 @@ const BASE_URL = "https://aioplugins.test";
 //
 // The app only depends on the Platform contract (src/lib/platform.ts),
 // so the tests run it against an in-memory SQLite database and the real
-// files from ./public instead of any Cloudflare service.
+// files from the Astro build instead of any Cloudflare service.
 
 function createSqliteDatabase() {
   const sqlite = new DatabaseSync(":memory:");
@@ -151,11 +151,22 @@ before(() => {
     db,
     assets: {
       fetch: async (request) => {
-        assert.equal(new URL(request.url).pathname, "/index.html");
-        return new Response(
-          readFileSync(new URL("../public/index.html", import.meta.url)),
-          { headers: { "content-type": "text/html; charset=utf-8" } }
-        );
+        const pathname = new URL(request.url).pathname;
+        const filePath = pathname === "/index.html"
+          ? "../dist/site/index.html"
+          : `../dist/site${pathname}`;
+
+        try {
+          return new Response(readFileSync(new URL(filePath, import.meta.url)), {
+            headers: {
+              "content-type": pathname.endsWith(".html")
+                ? "text/html; charset=utf-8"
+                : "application/octet-stream"
+            }
+          });
+        } catch {
+          return new Response("Not found", { status: 404 });
+        }
       }
     },
     getClientIp: (request) => request.headers.get("cf-connecting-ip")
@@ -170,6 +181,12 @@ after(() => {
 test("builds a combined Nuvio manifest and serves selected files without executing them", async () => {
   const home = await testFetch("/").then((response) => response.text());
   assert.match(home, /AIOPlugins/);
+
+  const appScriptPath = home.match(/src="([^"]+\.js)"/)?.[1];
+  assert.ok(appScriptPath, "Astro app script should be present in the page");
+  const appScript = await testFetch(appScriptPath);
+  assert.equal(appScript.status, 200);
+  assert.ok((await appScript.text()).length > 0);
 
   const registerRes = await testFetch("/api/register", {
     method: "POST",
@@ -328,9 +345,10 @@ test("wraps frozen provider stream objects without mutating them", async () => {
   const streams = await module.exports.getStreams({});
 
   assert.equal(streams.length, 1);
-  assert.equal(streams[0].title, "🚀 FHD · Sample");
+  assert.match(streams[0].title, /^🎬 Sample/);
+  assert.match(streams[0].title, /WEB-DL/);
   assert.equal(streams[0].resolution, "1080p");
-  assert.equal(streams[0].name, "🚀 FHD · Sample");
+  assert.equal(streams[0].name, streams[0].title);
 });
 
 test("formats provider streams with circular metadata", async () => {
@@ -344,8 +362,8 @@ test("formats provider streams with circular metadata", async () => {
   const streams = await module.exports.getStreams({});
 
   assert.equal(streams.length, 1);
-  assert.equal(streams[0].title, "🚀 FHD · Sample");
-  assert.equal(streams[0].name, "🚀 FHD · Sample");
+  assert.match(streams[0].title, /^🎬 Sample/);
+  assert.equal(streams[0].name, streams[0].title);
 });
 
 test("falls back to legacy token formatting when metadata access throws", async () => {
@@ -401,9 +419,11 @@ test("formats available metadata and omits empty optional blocks", async () => {
   );
 
   const streams = await module.exports.getStreams({ title: "Feature" });
-  assert.equal(streams[0].name, "🔥4K UHD · Feature · 📦 1.5 GB · 🎧 AAC | DTS");
-  assert.equal(streams[0].title, "🔥4K UHD · Feature · 📦 1.5 GB · 🎧 AAC | DTS");
-  assert.equal(streams[1].name, "Unlabeled source");
+  assert.match(streams[0].name, /🎬 Feature/);
+  assert.match(streams[0].name, /📦 1.5 GB/);
+  assert.match(streams[0].name, /🎧 AAC \| DTS/);
+  assert.equal(streams[0].title, streams[0].name);
+  assert.match(streams[1].name, /^🎬 Unlabeled Source/);
 });
 
 test("filters, sorts, and formats across shared metadata fields", async () => {
@@ -613,10 +633,43 @@ test("extracts shared media fields from provider filenames before formatting", a
   assert.equal(wrapped.name, "4KHDHub - PixelDrain 1080p");
 });
 
+test("uses the detailed formatter template by default", () => {
+  const settings = normalizeStreamMiddlewareSettings({});
+  assert.equal(settings.format, DEFAULT_STREAM_MIDDLEWARE.format);
+  assert.ok(settings.format.length < 3000);
+
+  const label = renderAioStreamsFormat(settings.format, {
+    title: "the matrix",
+    year: 1999,
+    seadexBest: true,
+    quality: "BluRay",
+    visualTags: ["HDR10"],
+    audioTags: ["Atmos"],
+    size: 1500000000,
+    seeders: 5,
+    type: "p2p",
+    cached: true,
+    service: { cached: true, shortName: "RD" },
+    message: "Verified"
+  }, "AIOPlugins");
+
+  assert.match(label, /The Matrix/);
+  assert.match(label, /🎚️ Best/);
+  assert.match(label, /🎥 BluRay/);
+  assert.match(label, /⚡Ready/);
+  assert.match(label, /🔍AIOPlugins/);
+  assert.match(label, /ℹ️ Verified/);
+});
+
 test("keeps partial provider metadata useful without inventing fields", () => {
-  const legacyFormat = DEFAULT_STREAM_MIDDLEWARE.format.replace(
+  const previousDefault = "{?{stream.resolution::replace('2160p', '🔥4K UHD')::replace('1440p', '✨ QHD')::replace('1080p', '🚀 FHD')::replace('720p', '💿 HD')::replace('576p', '💩 Low Quality')::replace('480p', '💩 Low Quality')::replace('360p', '💩 Low Quality')::replace('240p', '💩 Low Quality')::replace('144p', '💩 Low Quality')} · ?}{stream.title}{? · {stream.formattedSeasons}?}{? · {stream.formattedEpisodes}?}{? · 📦 {stream.size::sbytes}?}{? · 🎧 {stream.audioTags::join(' | ')}?}";
+  const legacyFormat = previousDefault.replace(
     "{? · {stream.formattedSeasons}?}{? · {stream.formattedEpisodes}?}",
     ""
+  );
+  assert.equal(
+    normalizeStreamMiddlewareSettings({ format: previousDefault }).format,
+    DEFAULT_STREAM_MIDDLEWARE.format
   );
   assert.equal(
     normalizeStreamMiddlewareSettings({ format: legacyFormat }).format,
@@ -633,7 +686,8 @@ test("keeps partial provider metadata useful without inventing fields", () => {
   assert.equal(stream.title, "Doctor X: Mafia in White");
   assert.equal(stream.formattedEpisodes, "E06");
   assert.equal(stream.resolution, undefined);
-  assert.equal(label, "Doctor X: Mafia in White · E06");
+  assert.match(label, /🎬 Doctor X: Mafia In White/);
+  assert.match(label, /🎞️ E06/);
 });
 
 test("keeps named profiles and sources manageable", async () => {

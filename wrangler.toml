@@ -12,5 +12,5 @@ database_name = "db_aioplugins"
 migrations_dir = "migrations"
 
 [assets]
-directory = "./public"
+directory = "./dist/site"
 binding = "ASSETS"

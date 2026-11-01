@@ -1,0 +1,212 @@
+---
+import AccountSettings from '../components/AccountSettings.astro';
+import MiddlewareSettings from '../components/MiddlewareSettings.astro';
+import PluginSetup from '../components/PluginSetup.astro';
+import ReviewInstall from '../components/ReviewInstall.astro';
+---
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>AIOPlugins</title>
+  <link rel="stylesheet" href="/index.css">
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/favicon-180.png">
+  <link rel="manifest" href="/site.webmanifest">
+  <meta name="theme-color" content="#050A1C">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <img class="brand-mark" src="/logo.png" alt="AIOPlugins logo" width="40" height="29">
+        <div>
+          <p class="eyebrow">Nuvio plugin manager</p>
+          <div class="brand-title">
+            <h1>AIOPlugins</h1>
+            <span id="app-version" class="version-badge" hidden></span>
+          </div>
+        </div>
+      </div>
+
+      <div id="server-state" class="server-state">Running on this computer</div>
+
+      <div id="session-bar" class="session-bar" hidden>
+        <code id="session-id" title="Your UUID"></code>
+        <button id="account-menu" class="button button-small" type="button">Account</button>
+        <button id="logout" class="button button-small" type="button">Log out</button>
+      </div>
+    </header>
+
+    <!-- Authentication -->
+    <section id="auth-view" class="auth" hidden>
+      <div class="panel auth-card">
+        <div id="auth-tabs" class="auth-tabs" role="tablist" aria-label="Account">
+          <button id="login-tab" class="view-tab" type="button" role="tab" aria-selected="true">Log in</button>
+          <button id="register-tab" class="view-tab" type="button" role="tab" aria-selected="false">Create account</button>
+        </div>
+
+        <form id="login-form" class="panel-body">
+          <p class="view-intro">Enter the UUID and password you saved when you created your account.</p>
+
+          <div class="field">
+            <label for="login-uuid">UUID</label>
+            <input id="login-uuid" type="text" autocomplete="username" spellcheck="false"
+              placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" required>
+          </div>
+
+          <div class="field">
+            <label for="login-password">Password</label>
+            <input id="login-password" type="password" autocomplete="current-password" required>
+          </div>
+
+          <button class="button button-primary button-wide" type="submit">Log in</button>
+        </form>
+
+        <form id="register-form" class="panel-body" hidden>
+          <p class="view-intro">We'll generate a UUID for you. You'll use it with your password to log in.</p>
+
+          <div class="field">
+            <label for="register-password">Password</label>
+            <input id="register-password" type="password" autocomplete="new-password"
+              placeholder="At least 8 characters" required>
+          </div>
+
+          <div class="field">
+            <label for="register-confirm">Confirm password</label>
+            <input id="register-confirm" type="password" autocomplete="new-password" required>
+          </div>
+
+          <button class="button button-primary button-wide" type="submit">Create account</button>
+        </form>
+
+        <div id="new-account" class="panel-body" hidden>
+          <p><strong>Your account is ready.</strong></p>
+          <p class="view-intro">Save this UUID somewhere safe. You'll need it and your password to log in.</p>
+
+          <div class="uuid-row">
+            <span class="uuid-row-label">UUID</span>
+            <code id="new-uuid"></code>
+            <button id="copy-new-uuid" class="button button-small" type="button">Copy</button>
+          </div>
+
+          <label class="check">
+            <input id="saved-ack" type="checkbox">
+            I've saved my UUID and password
+          </label>
+
+          <button id="continue" class="button button-primary button-wide" type="button" disabled>
+            Continue
+          </button>
+        </div>
+
+        <p id="auth-status" class="status" role="status" aria-live="polite"></p>
+      </div>
+    </section>
+
+    <!-- Main application -->
+    <div id="app-view" hidden>
+      <div class="app-layout">
+
+        <!-- LEFT SIDEBAR -->
+        <aside class="sidebar">
+          <div>
+            <p class="sidebar-heading">Workspace</p>
+
+            <nav class="sidebar-nav" aria-label="Main navigation">
+              <button id="configure-tab" class="nav-item active" type="button"
+                aria-current="page">
+                <span class="nav-icon" aria-hidden="true">▦</span>
+                <span class="nav-label">Plugins</span>
+                <span class="nav-tag">1</span>
+              </button>
+
+              <button id="filters-tab" class="nav-item" type="button">
+                <span class="nav-icon" aria-hidden="true">⌕</span>
+                <span class="nav-label">Filters</span>
+                <span class="nav-tag">1</span>
+              </button>
+
+              <button id="sorting-tab" class="nav-item" type="button">
+                <span class="nav-icon" aria-hidden="true">↕</span>
+                <span class="nav-label">Sorting</span>
+                <span class="nav-tag">2</span>
+              </button>
+
+              <button id="formatting-tab" class="nav-item" type="button">
+                <span class="nav-icon" aria-hidden="true">≡</span>
+                <span class="nav-label">Formatter</span>
+                <span class="nav-tag">3</span>
+              </button>
+
+              <button id="save-tab" class="nav-item" type="button" aria-current="false">
+                <span class="nav-icon" aria-hidden="true">✓</span>
+                <span class="nav-label">Review &amp; Install</span>
+                <span class="nav-tag">2</span>
+              </button>
+            </nav>
+          </div>
+
+          <div class="sidebar-divider"></div>
+
+          <div>
+            <p class="sidebar-heading">Preferences</p>
+            <nav class="sidebar-nav" aria-label="Preferences">
+              <button id="account-nav" class="nav-item" type="button">
+                <span class="nav-icon" aria-hidden="true">⚙</span>
+                <span class="nav-label">Account settings</span>
+              </button>
+            </nav>
+          </div>
+
+          <div class="sidebar-note">
+            <strong>Your setup, your way.</strong><br>
+            Choose your plugins, review your selection, and install it in Nuvio.
+          </div>
+        </aside>
+
+        <!-- MAIN CONTENT -->
+        <div class="app-main">
+
+          <section class="intro">
+            <div>
+              <h2 id="page-title">Choose your plugins</h2>
+              <p id="page-description">Select plugin sources and choose the providers you want to use.</p>
+            </div>
+          </section>
+
+          <PluginSetup />
+          <MiddlewareSettings />
+          <ReviewInstall />
+          <AccountSettings />
+
+
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="../scripts/app.js"></script>
+
+  <footer class="app-footer">
+    <span>
+      © <span id="copyright-year"></span> AIOPlugins
+    </span>
+
+    <a
+      href="https://github.com/zKevinly/AIOPlugins"
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      View on GitHub
+      <span aria-hidden="true">↗</span>
+    </a>
+  </footer>
+</body>
+</html>

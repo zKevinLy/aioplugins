@@ -681,6 +681,22 @@ export async function handleRequest(
     }
   }
 
+  const assetResponse = await platform.assets.fetch(request);
+
+  if (assetResponse.status !== 404) {
+    const headers = new Headers(assetResponse.headers);
+
+    for (const [key, value] of securityHeaders()) {
+      headers.set(key, value);
+    }
+
+    return new Response(assetResponse.body, {
+      status: assetResponse.status,
+      statusText: assetResponse.statusText,
+      headers
+    });
+  }
+
   return sendJson(404, {
     error: "Not found"
   });

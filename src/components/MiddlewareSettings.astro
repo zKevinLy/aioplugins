@@ -1,0 +1,149 @@
+          <!-- Stream middleware settings -->
+          <section id="middleware-view" class="view" hidden>
+            <div class="step-heading">
+              <div>
+                <h2>Stream middleware</h2>
+                <p class="view-intro">Shape provider results as Nuvio receives them.</p>
+              </div>
+              <button id="save-middleware" class="button button-primary" type="button" disabled>
+                Save settings
+              </button>
+            </div>
+
+            <nav class="middleware-tabs" role="tablist" aria-label="Stream middleware">
+              <button class="middleware-tab active" type="button" role="tab" data-middleware-tab="filters" aria-selected="true">Filters</button>
+              <button class="middleware-tab" type="button" role="tab" data-middleware-tab="sorting" aria-selected="false">Sorting</button>
+              <button class="middleware-tab" type="button" role="tab" data-middleware-tab="formatting" aria-selected="false">Formatter</button>
+            </nav>
+
+            <section id="middleware-filters" class="panel middleware-panel" aria-labelledby="filter-heading">
+              <div class="panel-head">
+                <div>
+                  <h2 id="filter-heading">Stream filters</h2>
+                  <p class="panel-subtitle">Remove results that do not match these limits.</p>
+                </div>
+              </div>
+              <div class="panel-body">
+                <div id="filter-rules" class="filter-rules"></div>
+                <button id="add-stream-filter" class="button button-small" type="button">Add filter</button>
+                <p class="field-hint">All rules must match. Use the same stream metadata fields available to sorting and the formatter.</p>
+              </div>
+            </section>
+
+            <section id="middleware-sorting" class="panel middleware-panel" aria-labelledby="sorting-heading" hidden>
+              <div class="panel-head">
+                <div>
+                  <h2 id="sorting-heading">Stream order</h2>
+                  <p class="panel-subtitle">Sort each provider's results before Nuvio displays them.</p>
+                </div>
+              </div>
+              <div class="panel-body">
+                <div class="sort-controls">
+                  <div class="field">
+                    <label for="stream-sort-field">Sort field</label>
+                    <select id="stream-sort-field">
+                      <option value="">Provider order</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label for="stream-sort-direction">Direction</label>
+                    <select id="stream-sort-direction">
+                      <option value="desc">Descending</option>
+                      <option value="asc">Ascending</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section id="middleware-formatting" class="panel middleware-panel" aria-labelledby="formatter-heading" hidden>
+              <div class="panel-head">
+                <div>
+                  <h2 id="formatter-heading">Stream title format</h2>
+                  <p class="panel-subtitle">Format the release details shown in Nuvio while keeping the provider label.</p>
+                </div>
+              </div>
+              <div class="panel-body">
+                <div class="formatter-layout">
+                  <div class="formatter-editor">
+                    <div class="field-row formatter-presets">
+                      <div class="field">
+                        <label for="format-preset">Starting format</label>
+                        <select id="format-preset">
+                          <option value="detailed">Detailed</option>
+                          <option value="compact">Compact</option>
+                          <option value="title">Title only</option>
+                        </select>
+                      </div>
+                      <div class="field formatter-action">
+                        <label aria-hidden="true">&nbsp;</label>
+                        <button id="apply-format-preset" class="button button-small" type="button">Use format</button>
+                      </div>
+                    </div>
+                    <div class="field-row formatter-insert">
+                      <div class="field">
+                        <label for="format-field">Insert stream field</label>
+                        <select id="format-field"></select>
+                      </div>
+                      <div class="field formatter-action">
+                        <label aria-hidden="true">&nbsp;</label>
+                        <button id="insert-format-field" class="button button-small" type="button">Insert token</button>
+                      </div>
+                    </div>
+                    <div class="field">
+                      <label for="stream-format">Template</label>
+                      <textarea id="stream-format" rows="12" spellcheck="false"></textarea>
+                      <p class="field-hint">AIOStreams formatter syntax is supported, including nested groups, conditions, and modifiers. Common release fields are inferred from provider filenames when possible; other fields need to be supplied by the provider.</p>
+                    </div>
+                  </div>
+
+                  <aside class="formatter-preview" aria-label="Formatter live preview">
+                    <div class="formatter-preview-heading">
+                      <h3>Live preview</h3>
+                      <span id="formatter-preview-state" class="formatter-preview-state">Waiting</span>
+                    </div>
+                    <div class="formatter-preview-output">
+                      <span class="formatter-preview-source">4KHDHub · 1080p</span>
+                      <p id="formatter-preview-title" aria-live="polite">Rendering preview…</p>
+                    </div>
+
+                    <details class="formatter-sample-section" open>
+                      <summary>Parsed file data</summary>
+                      <div class="field">
+                        <label for="formatter-filename">Filename</label>
+                        <input id="formatter-filename" type="text" value="Movie.Title.2023.2160p.BluRay.HEVC.DV.TrueHD.Atmos.7.1.iTA.ENG-GROUP.mkv" spellcheck="false">
+                      </div>
+                      <pre id="formatter-parsed-fields" class="formatter-parsed-fields">Waiting for parsed fields…</pre>
+                    </details>
+
+                    <details class="formatter-sample-section">
+                      <summary>Stream data</summary>
+                      <label for="formatter-stream-data">Sample values</label>
+                      <textarea id="formatter-stream-data" rows="7" spellcheck="false">&#123;
+  "type": "http",
+  "cached": true,
+  "size": 515100000,
+  "duration": 7200000,
+  "languages": ["Italian", "English"],
+  "subtitles": ["English"],
+  "seeders": 0
+&#125;</textarea>
+                    </details>
+
+                    <details class="formatter-sample-section">
+                      <summary>Metadata</summary>
+                      <label for="formatter-metadata">Sample values</label>
+                      <textarea id="formatter-metadata" rows="6" spellcheck="false">&#123;
+  "title": "Movie Title",
+  "year": 2023,
+  "type": "movie",
+  "runtime": 130
+&#125;</textarea>
+                    </details>
+                  </aside>
+                </div>
+              </div>
+            </section>
+
+            <p id="middleware-status" class="status" role="status" aria-live="polite"></p>
+          </section>
