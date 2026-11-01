@@ -12,7 +12,6 @@ import type {
 type AppView = "configure" | "middleware" | "save" | "account";
 type MiddlewareTab = "filters" | "sorting" | "formatting";
 type OperatorOption = [StreamFilterOperator, string];
-const PROVIDER_CACHE_BATCH_SIZE = 20;
 
 interface PublicUser {
   id: string;
@@ -1356,7 +1355,7 @@ function parseProfileBackup(value: unknown): ProfileBackup {
       const originalLabel = button.textContent;
       button.textContent = "Saving…";
 
-      setStatus("Fetching selected plugin files and building your link…");
+      setStatus("Verifying selected providers and saving your setup…");
 
       const sources = [...state.values()].map((source) => ({
         repository: source.repository,
@@ -1366,39 +1365,6 @@ function parseProfileBackup(value: unknown): ProfileBackup {
       })).filter((source) => source.providerIds.length);
 
       try {
-        const cacheBatches = sources.flatMap((source) => {
-          const batches = [];
-
-          for (
-            let offset = 0;
-            offset < source.providerIds.length;
-            offset += PROVIDER_CACHE_BATCH_SIZE
-          ) {
-            batches.push({
-              ...source,
-              providerIds: source.providerIds.slice(
-                offset,
-                offset + PROVIDER_CACHE_BATCH_SIZE
-              )
-            });
-          }
-
-          return batches;
-        });
-
-        if (cacheBatches.length > 1) {
-          for (let index = 0; index < cacheBatches.length; index++) {
-            setStatus(
-              `Preparing plugin files (${index + 1} of ${cacheBatches.length})…`
-            );
-            await api<ApplyResponse>("/api/cache", {
-              sources: [cacheBatches[index]]
-            });
-          }
-        }
-
-        setStatus("Saving your setup and building your link…");
-
         const result = await api<ApplyResponse>("/api/apply", {
           sources,
           middleware: readMiddlewareSettings()

@@ -5,10 +5,10 @@ import type { Database } from "./lib/db.js";
 import type { Platform } from "./lib/platform.js";
 
 import {
-  fetchAndCacheSources,
-  getCachedPluginFile,
+  getRemotePluginFile,
   getPluginRepositoryManifest,
-  inspectGitHubSource
+  inspectGitHubSource,
+  resolveSelectedSources
 } from "./providers/remote.js";
 import { renderAioStreamsFormat } from "./providers/custom-formatter.js";
 import {
@@ -445,29 +445,10 @@ async function handleApi(
 
     const body = await readJsonBody(request);
 
-    const { sources, plugins } = await fetchAndCacheSources(
-      body.sources,
-      db
-    );
+    const { sources, plugins } = await resolveSelectedSources(body.sources);
 
     await saveSources(user.id, sources, db);
     await saveStreamMiddlewareSettings(user.id, body.middleware, db);
-
-    return sendJson(200, { plugins });
-  }
-
-  if (pathname === "/api/cache" && method === "POST") {
-    const limited = enforceRateLimit(
-      clientIp,
-      "cache",
-      20,
-      10 * 60 * 1000
-    );
-
-    if (limited) return limited;
-
-    const body = await readJsonBody(request);
-    const { plugins } = await fetchAndCacheSources(body.sources, db);
 
     return sendJson(200, { plugins });
   }
@@ -500,10 +481,7 @@ async function handleApi(
         ? body.name
         : "Default Profile";
 
-    const { sources, plugins } = await fetchAndCacheSources(
-      body.sources,
-      db
-    );
+    const { sources, plugins } = await resolveSelectedSources(body.sources);
 
     await saveProfile(user.id, profileId, name, sources, db);
     await saveSources(user.id, sources, db);
@@ -628,7 +606,6 @@ export async function handleRequest(
       const sources = await getSources(user.id, platform.db);
       const middleware = await getStreamMiddlewareSettings(user.id, platform.db);
       const manifest = await getPluginRepositoryManifest(
-        platform.db,
         user.id,
         sources,
         middleware
@@ -678,8 +655,7 @@ export async function handleRequest(
         : undefined;
 
       const source = user
-        ? await getCachedPluginFile(
-            platform.db,
+        ? await getRemotePluginFile(
             sources,
             `providers/${filename}`,
             middleware

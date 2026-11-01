@@ -1,6 +1,5 @@
 
 import { createHash } from "node:crypto";
-import type { Database, SqlStatement } from "../lib/db.js";
 import {
   normalizeStreamMiddlewareSettings,
   wrapPluginStreams
@@ -13,7 +12,6 @@ const MAX_JSON_BYTES = 2 * 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 15_000;
 const GITHUB_MAX_ATTEMPTS = 2;
 const GITHUB_RETRY_DELAY_MS = 250;
-const CACHE_CHUNK_BYTES = 512 * 1024;
 const STREAM_MIDDLEWARE_VERSION = "15";
 
 const GITHUB_RAW = "https://raw.githubusercontent.com";
@@ -29,10 +27,18 @@ interface ProviderEntry {
   logo?: unknown;
 }
 
-interface CachedPluginFile {
+interface SelectedProviderEntry extends ProviderEntry {
+  id: string;
+  filename: string;
+}
+
+interface RemotePluginFile {
   entry: ProviderEntry;
   filename: string;
-  cacheKey: string;
+  owner: string;
+  repo: string;
+  commit: string;
+  originalFilename: string;
 }
 
 export interface SourceSelection {
@@ -44,17 +50,13 @@ export interface SourceSelection {
 
 export interface SavedSourceSelection extends SourceSelection {
   commit: string;
+  providers?: SelectedProviderEntry[];
 }
 
 interface GitHubRepository {
   owner: string;
   repo: string;
   url: string;
-}
-
-interface CacheChunkRow {
-  chunk_index: number;
-  content: string;
 }
 
 // ---------- validation ----------
@@ -489,150 +491,29 @@ export async function inspectGitHubSource(
   };
 }
 
-// ---------- database cache ----------
+// ---------- live plugin lookup ----------
 
-function cacheKey(
-  owner: string,
-  repo: string,
-  commit: string,
-  filename: string
-): string {
-  return `github:${owner}/${repo}/${commit}/${filename}`;
-}
-
-function manifestCacheKey(
+async function fetchSourceManifest(
   owner: string,
   repo: string,
   commit: string
-): string {
-  return cacheKey(owner, repo, commit, "manifest.json");
-}
-
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = "";
-
-  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
-    const slice = bytes.subarray(
-      offset,
-      Math.min(offset + 0x8000, bytes.length)
-    );
-
-    binary += String.fromCharCode(...slice);
-  }
-
-  return btoa(binary);
-}
-
-function base64ToBytes(value: string): Uint8Array {
-  const binary = atob(value);
-  const bytes = new Uint8Array(binary.length);
-
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-
-  return bytes;
-}
-
-async function saveCachedContent(
-  db: Database,
-  key: string,
-  content: string
-): Promise<void> {
-  const bytes = new TextEncoder().encode(content);
-
-  const statements: SqlStatement[] = [
-    {
-      sql: "DELETE FROM provider_cache WHERE cache_key = ?",
-      params: [key]
-    }
-  ];
-
-  let chunkIndex = 0;
-
-  for (
-    let offset = 0;
-    offset < bytes.length || (offset === 0 && bytes.length === 0);
-    offset += CACHE_CHUNK_BYTES
-  ) {
-    const chunk = bytes.subarray(
-      offset,
-      Math.min(offset + CACHE_CHUNK_BYTES, bytes.length)
-    );
-
-    statements.push({
-      sql: `INSERT INTO provider_cache
-         (cache_key, chunk_index, content, updated_at)
-         VALUES (?, ?, ?, ?)`,
-      params: [
-        key,
-        chunkIndex++,
-        bytesToBase64(chunk),
-        Date.now()
-      ]
-    });
-
-    if (bytes.length === 0) break;
-  }
-
-  await db.batch(statements);
-}
-
-async function getCachedContent(
-  db: Database,
-  key: string
-): Promise<string | null> {
-  const rows = await db.all<CacheChunkRow>(
-    `SELECT chunk_index, content
-       FROM provider_cache
-       WHERE cache_key = ?
-       ORDER BY chunk_index ASC`,
-    [key]
+): Promise<SelectedProviderEntry[]> {
+  const manifest = await fetchJson(
+    `${GITHUB_RAW}/${owner}/${repo}/${validateCommit(commit)}/manifest.json`
   );
 
-  if (rows.length === 0) return null;
-
-  const chunks = rows.map(row => base64ToBytes(row.content));
-
-  const totalLength = chunks.reduce(
-    (total, chunk) => total + chunk.length,
-    0
+  return manifestEntries(manifest).filter(
+    (entry): entry is SelectedProviderEntry =>
+      typeof entry.id === "string" &&
+      typeof entry.filename === "string"
   );
-
-  const combined = new Uint8Array(totalLength);
-  let offset = 0;
-
-  for (const chunk of chunks) {
-    combined.set(chunk, offset);
-    offset += chunk.length;
-  }
-
-  return new TextDecoder().decode(combined);
 }
 
-async function hasCachedContent(
-  db: Database,
-  key: string
-): Promise<boolean> {
-  const row = await db.first<{ present: number }>(
-    `SELECT 1 AS present
-       FROM provider_cache
-       WHERE cache_key = ?
-       LIMIT 1`,
-    [key]
-  );
-
-  return row !== null;
-}
-
-// ---------- cached plugin lookup ----------
-
-async function getCachedPluginFiles(
-  db: Database,
+async function getRemotePluginFiles(
   sources: SavedSourceSelection[],
   middlewareSettings: unknown
-): Promise<CachedPluginFile[]> {
-  const result: CachedPluginFile[] = [];
+): Promise<RemotePluginFile[]> {
+  const result: RemotePluginFile[] = [];
   const middlewareFingerprint = createHash("sha256")
     .update(`${STREAM_MIDDLEWARE_VERSION}:${JSON.stringify(normalizeStreamMiddlewareSettings(middlewareSettings))}`)
     .digest("hex")
@@ -641,37 +522,16 @@ async function getCachedPluginFiles(
   for (const selection of sources) {
     const { owner, repo } = parseRepository(selection.repository);
     const commit = validateCommit(selection.commit);
-
-    const manifest = await getCachedContent(
-      db,
-      manifestCacheKey(owner, repo, commit)
-    );
-
-    if (manifest === null) {
-      throw new Error(
-        `Cached provider manifest is missing for ${selection.repository}`
-      );
-    }
-
-    let parsedManifest: unknown;
-
-    try {
-      parsedManifest = JSON.parse(manifest);
-    } catch {
-      throw new Error(
-        `Cached provider manifest is invalid for ${selection.repository}`
-      );
-    }
-
-    const selected = manifestEntries(parsedManifest).filter(
+    const entries = selection.providers ??
+      await fetchSourceManifest(owner, repo, commit);
+    const selected = entries.filter(
       entry =>
-        typeof entry.id === "string" &&
         selection.providerIds.includes(entry.id) &&
         entry.enabled !== false
     );
 
     for (const entry of selected) {
-      const id = String(entry.id);
+      const id = entry.id;
       const originalFilename = safeProviderPath(entry.filename);
 
       const suffix = createHash("sha256")
@@ -683,12 +543,10 @@ async function getCachedPluginFiles(
         entry,
         filename:
           `providers/${owner}-${repo}-${safeIdSlug(id)}-${suffix}.js`,
-        cacheKey: cacheKey(
-          owner,
-          repo,
-          commit,
-          originalFilename
-        )
+        owner,
+        repo,
+        commit,
+        originalFilename
       });
     }
   }
@@ -697,12 +555,11 @@ async function getCachedPluginFiles(
 }
 
 export async function getPluginRepositoryManifest(
-  db: Database,
   userId: string,
   sources: SavedSourceSelection[],
   middlewareSettings: unknown
 ) {
-  const plugins = await getCachedPluginFiles(db, sources, middlewareSettings);
+  const plugins = await getRemotePluginFiles(sources, middlewareSettings);
 
   const scrapers = plugins.map(({ entry, filename }) => ({
     ...entry,
@@ -717,13 +574,12 @@ export async function getPluginRepositoryManifest(
   };
 }
 
-export async function getCachedPluginFile(
-  db: Database,
+export async function getRemotePluginFile(
   sources: SavedSourceSelection[],
   filename: string,
   middlewareSettings: unknown
 ): Promise<string | null> {
-  const plugins = await getCachedPluginFiles(db, sources, middlewareSettings);
+  const plugins = await getRemotePluginFiles(sources, middlewareSettings);
 
   const plugin = plugins.find(
     entry => entry.filename === filename
@@ -731,22 +587,25 @@ export async function getCachedPluginFile(
 
   if (!plugin) return null;
 
-  const source = await getCachedContent(db, plugin.cacheKey);
+  const urlPath = plugin.originalFilename
+    .split("/")
+    .map(encodeURIComponent)
+    .join("/");
+  const source = await fetchText(
+    `${GITHUB_RAW}/${plugin.owner}/${plugin.repo}/${plugin.commit}/${urlPath}`
+  );
 
-  return source === null
-    ? null
-    : wrapPluginStreams(
-        source,
-        middlewareSettings,
-        typeof plugin.entry.name === "string" ? plugin.entry.name : ""
-      );
+  return wrapPluginStreams(
+    source,
+    middlewareSettings,
+    typeof plugin.entry.name === "string" ? plugin.entry.name : ""
+  );
 }
 
-// ---------- fetch and cache selected providers ----------
+// ---------- resolve selected providers ----------
 
-export async function fetchAndCacheSources(
-  value: unknown,
-  db: Database
+export async function resolveSelectedSources(
+  value: unknown
 ): Promise<{
   sources: SavedSourceSelection[];
   plugins: number;
@@ -831,7 +690,7 @@ export async function fetchAndCacheSources(
     }
 
     const selectedEntries = source.entries.filter(
-      entry =>
+      (entry): entry is ProviderEntry & { id: string } =>
         typeof entry.id === "string" &&
         selection.providerIds.includes(entry.id)
     );
@@ -844,54 +703,25 @@ export async function fetchAndCacheSources(
       );
     }
 
-    const cachedManifestKey = manifestCacheKey(
-      source.owner,
-      source.repo,
-      source.commit
-    );
-
-    if (!(await hasCachedContent(db, cachedManifestKey))) {
-      await saveCachedContent(
-        db,
-        cachedManifestKey,
-        JSON.stringify(source.manifest, null, 2)
-      );
-    }
-
-    for (const entry of selectedEntries) {
+    const providers: SelectedProviderEntry[] = selectedEntries.map(entry => {
       if (entry.enabled === false) {
         throw new Error(
           `Provider "${String(entry.id)}" is disabled in its manifest`
         );
       }
 
-      const filename = safeProviderPath(entry.filename);
-
-      const urlPath = filename
-        .split("/")
-        .map(encodeURIComponent)
-        .join("/");
-
-      const fileCacheKey = cacheKey(
-        source.owner,
-        source.repo,
-        source.commit,
-        filename
-      );
-
-      if (await hasCachedContent(db, fileCacheKey)) continue;
-
-      const code = await fetchText(
-        `${GITHUB_RAW}/${source.owner}/${source.repo}/${source.commit}/${urlPath}`
-      );
-
-      await saveCachedContent(db, fileCacheKey, code);
-    }
+      return {
+        ...entry,
+        id: entry.id,
+        filename: safeProviderPath(entry.filename)
+      };
+    });
 
     saved.push({
       ...selection,
       repository: source.url,
-      commit: source.commit
+      commit: source.commit,
+      providers
     });
 
     plugins += selectedEntries.length;

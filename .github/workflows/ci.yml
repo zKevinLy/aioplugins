@@ -33,7 +33,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node-version: [22, 24]
+        node-version: [22.23.4, 24]
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -65,7 +65,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 22.23.4
           cache: npm
 
       - name: Install dependencies

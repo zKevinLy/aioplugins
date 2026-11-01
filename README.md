@@ -6,7 +6,7 @@ Build personalized Nuvio plugin repositories by selecting plugins from multiple 
 
 1. Create an account with a password of at least 8 characters. You receive a UUID; the UUID and password are your login. Keep both.
 2. Enter an HTTPS GitHub repository URL (and optionally a branch or tag; the default is `main`). AIOPlugins resolves it to an exact commit and reads the `manifest.json` at the repository root.
-3. Select the plugins you want and apply. The selected files are downloaded from that exact commit and cached in the database.
+3. Select the plugins you want and apply. The selected providers' manifest metadata is saved with your setup; their JavaScript is fetched from the pinned commit when Nuvio requests it.
 4. Your account gets a Nuvio repository URL of the form `/u/<uuid>/<token>/manifest.json`. Add it to Nuvio's plugin source settings.
 
 The token in that URL is a bearer credential: anyone who has the URL can load your manifest and plugin files, so share it only with people who should have access. Your password is required to delete the account.
@@ -19,7 +19,7 @@ No repository clone is needed. The combined manifest uses the Nuvio `scrapers` f
 
 ## Sources and execution
 
-The picker accepts HTTPS GitHub repository URLs with either a top-level array manifest or an object containing `scrapers`. Plugin files are fetched but not executed by the builder. Nuvio downloads the selected JavaScript files from the generated `filename` URLs and runs them in its own plugin runtime. Review sources before building a link because the selected plugin code will execute in Nuvio.
+The picker accepts HTTPS GitHub repository URLs with either a top-level array manifest or an object containing `scrapers`. When Nuvio requests a generated `filename` URL, AIOPlugins fetches that selected JavaScript file from GitHub and formats it without executing or persisting it. Nuvio runs the returned code in its own plugin runtime. Review sources before building a link because the selected plugin code will execute in Nuvio.
 
 Limits: manifests and commit feeds up to 2 MB, provider files up to 8 MB, request bodies up to 1 MB. Requests to GitHub use a 15 second timeout and only the hosts `github.com` and `raw.githubusercontent.com` are contacted.
 
@@ -41,7 +41,7 @@ src/
 ├── index.ts                  Wrangler entry point (re-exports the Cloudflare worker)
 ├── server.ts                 Routing, sessions, rate limiting: handleRequest(request, platform)
 ├── users.ts                  Accounts, sessions, profiles, per-user source config
-├── providers/remote.ts       GitHub discovery, validation, and provider caching
+├── providers/remote.ts       GitHub discovery, validation, and live provider fetching
 ├── lib/
 │   ├── db.ts                 Contract: Database (first, all, run, atomic batch)
 │   └── platform.ts           Contract: Platform (db, static assets, client IP)
@@ -60,7 +60,7 @@ The application's SQL is written for SQLite with `?` placeholders. An adapter fo
 
 ## Run locally
 
-Requirements: Node.js 22.5 or newer and npm.
+Requirements: Node.js 22.23.4 or newer and npm.
 
 ```sh
 npm install
@@ -73,12 +73,12 @@ The Worker expects these bindings in your Wrangler configuration:
 
 | Binding | Type | Purpose |
 | --- | --- | --- |
-| `DB` | D1 database | Accounts, sessions, profiles, source selections, provider cache |
+| `DB` | D1 database | Accounts, sessions, profiles, and source selections |
 | `ASSETS` | Static assets | Astro output in `dist/site`; `/` serves the generated `index.html` and the Worker forwards bundled assets |
 
 It also needs the `nodejs_compat` compatibility flag because it uses `node:crypto`. `GITHUB_TOKEN` is declared as an optional binding but is not currently used.
 
-The database needs these tables: `users`, `user_config`, `profiles`, `sessions`, and `provider_cache`. Apply your schema to the local D1 database before first use (see your migrations).
+The database needs these tables: `users`, `user_config`, `profiles`, and `sessions`. Apply your schema to the local D1 database before first use (see your migrations).
 
 Type-check with `npm run typecheck`.
 
@@ -91,7 +91,7 @@ Type-check with `npm run typecheck`.
 
 Pull requests run the test suite on Node.js 22 and 24. Every push to `main` runs the same checks; after they pass, GitHub creates a release and tag, applies remote D1 migrations, and deploys the Worker.
 
-Plugin files and manifests are cached in D1 (in 512 KB chunks), so there is no local filesystem state and no persistent disk to configure.
+Provider JavaScript is not stored in D1. The selected source references and provider manifest metadata are stored so the install manifest can be built without contacting GitHub; provider files are fetched live from their pinned commits when requested.
 
 ## Releases
 
@@ -116,7 +116,7 @@ GitHub generates release notes for each tag. `CHANGELOG.md` is not automatically
 - [Yoru's Nuvio providers](https://github.com/yoruix/nuvio-providers)
 - [All-in-One Nuvio](https://github.com/NuvioPlugin/All-in-One-Nuvio)
 
-Their source files are fetched on demand and cached in the database, not committed to this repository. Yoru's repository is GPL-3.0. All-in-One's README states GPL-3.0, but its main branch did not contain a `LICENSE` file when last checked; confirm its license before redistributing selected plugin files. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Selected repository, commit, provider IDs, and manifest metadata are stored with your account. Provider JavaScript is fetched from the pinned Git commit when Nuvio requests it, formatted, and returned without being stored in the database. Serving providers therefore depends on GitHub being available. Yoru's repository is GPL-3.0. All-in-One's README states GPL-3.0, but its main branch did not contain a `LICENSE` file when last checked; confirm its license before redistributing selected plugin files. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## License and disclaimer
 

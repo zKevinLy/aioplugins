@@ -186,6 +186,13 @@ after(() => {
   db.sqlite.close();
 });
 
+test("removes the provider file cache table", () => {
+  assert.throws(
+    () => db.sqlite.prepare("SELECT cache_key FROM provider_cache").get(),
+    /no such table: provider_cache/
+  );
+});
+
 test("builds a combined Nuvio manifest and serves selected files without executing them", async () => {
   const home = await testFetch("/").then((response) => response.text());
   assert.match(home, /AIOPlugins/);
@@ -229,6 +236,7 @@ test("builds a combined Nuvio manifest and serves selected files without executi
     })
   }).then((response) => response.json());
   assert.equal(profileCreated.plugins, 1);
+  assert.equal(fixtureFileRequests, 0);
 
   const middlewareFormat = "{stream.resolution} / {stream.title}";
   const applied = await testFetch("/api/apply", {
@@ -251,6 +259,7 @@ test("builds a combined Nuvio manifest and serves selected files without executi
     })
   }).then((response) => response.json());
   assert.equal(applied.plugins, 1);
+  assert.equal(fixtureFileRequests, 0);
   const config = await testFetch("/api/config").then((response) => response.json());
   assert.equal(config.middleware.format, middlewareFormat);
   assert.equal(config.middleware.descriptionFormat, middlewareFormat);
@@ -304,11 +313,16 @@ test("builds a combined Nuvio manifest and serves selected files without executi
   assert.equal(pluginResponse.status, 200);
   assert.equal(pluginResponse.headers.get("content-type"), "application/javascript; charset=utf-8");
   assert.equal(pluginResponse.headers.get("cache-control"), "no-store");
+  assert.equal(fixtureFileRequests, 1);
   const servedPlugin = await pluginResponse.text();
   assert.ok(servedPlugin.startsWith(pluginSource));
   assert.match(servedPlugin, /originalGetStreams/);
   assert.ok(servedPlugin.includes(`"format":"${middlewareFormat}"`));
   assert.equal(globalThis.fixturePluginExecuted, undefined);
+
+  const secondPluginResponse = await testFetch(fileUrl);
+  assert.equal(secondPluginResponse.status, 200);
+  assert.equal(fixtureFileRequests, 2);
 
   cookieJar = savedCookie;
   await testFetch("/api/apply", {
@@ -335,26 +349,6 @@ test("builds a combined Nuvio manifest and serves selected files without executi
 
   const health = await testFetch("/health").then((response) => response.json());
   assert.deepEqual(health, { status: "ok" });
-});
-
-test("pre-caches source batches without refetching cached provider files", async () => {
-  const requestsBefore = fixtureFileRequests;
-  const response = await testFetch("/api/cache", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      sources: [{
-        repository: "https://github.com/example/plugins",
-        ref: "main",
-        commit,
-        providerIds: ["fixture-plugin"]
-      }]
-    })
-  });
-
-  assert.equal(response.status, 200);
-  assert.equal((await response.json()).plugins, 1);
-  assert.equal(fixtureFileRequests, requestsBefore);
 });
 
 test("retries transient GitHub failures during source discovery", async () => {
