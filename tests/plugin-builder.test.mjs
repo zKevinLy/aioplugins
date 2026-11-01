@@ -605,7 +605,7 @@ test("formats the stream name and description separately", async () => {
   assert.equal(stream.name, "1080p");
   assert.equal(stream.description, "Doctor X Mafia · 1080p");
   assert.equal(stream.title, stream.description);
-  assert.equal(stream.size, 1234);
+  assert.equal(stream.size, stream.description);
   assert.equal(stream.fileSize, 1234);
 });
 
@@ -724,7 +724,7 @@ test("extracts shared media fields from provider filenames before formatting", a
   assert.equal(wrapped.title, "Doctor X Mafia in White · S01 E06 · 1080p · WEB-DL · Netflix · AVC");
   assert.equal(wrapped.network, "Netflix");
   assert.equal(wrapped.fileSize, 2240000000);
-  assert.equal(wrapped.size, 2240000000);
+  assert.equal(wrapped.size, wrapped.description);
   assert.equal(wrapped.description, wrapped.title);
   assert.equal(wrapped.name, "🚀 FHD");
 });
