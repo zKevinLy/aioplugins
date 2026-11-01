@@ -2,16 +2,179 @@ import {
   DEFAULT_STREAM_DESCRIPTION_FORMAT,
   DEFAULT_STREAM_NAME_FORMAT
 } from "../lib/default-stream-format";
+import type {
+  StreamFieldDefinition,
+  StreamFieldType,
+  StreamFilter,
+  StreamFilterOperator
+} from "../providers/stream-middleware.js";
 
-const $ = (selector) => document.querySelector(selector);
+type AppView = "configure" | "middleware" | "save" | "account";
+type MiddlewareTab = "filters" | "sorting" | "formatting";
+type OperatorOption = [StreamFilterOperator, string];
 
-    let user = null;
-    let pendingUser = null;
-    let state = new Map();
-    let profiles = [];
-    let streamFields = [];
-    let activeView = "configure";
-    let activeMiddlewareTab = "filters";
+interface PublicUser {
+  id: string;
+  installPath: string;
+}
+
+interface UserResponse {
+  user: PublicUser;
+}
+
+interface SessionResponse {
+  user: PublicUser | null;
+}
+
+interface ProviderSummary {
+  id: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  types: string[];
+}
+
+interface DiscoveredSource {
+  repository: string;
+  ref: string;
+  commit: string;
+  providers: ProviderSummary[];
+}
+
+interface LoadedSource extends DiscoveredSource {
+  selected: Set<string>;
+}
+
+interface SavedSource {
+  repository: string;
+  ref: string;
+  providerIds: string[];
+  commit?: string;
+}
+
+interface SourceReference {
+  repository: string;
+  ref: string;
+  providerIds?: string[];
+  commit?: string;
+}
+
+interface SavedProfile {
+  id: string;
+  name: string;
+  sources: SavedSource[];
+}
+
+interface ConfigResponse {
+  sources: SavedSource[];
+  middleware: unknown;
+  fields: StreamFieldDefinition[];
+}
+
+interface ProfilesResponse {
+  profiles: SavedProfile[];
+}
+
+interface DiscoverResponse extends DiscoveredSource {}
+
+interface FormatterPreviewResponse {
+  name: string;
+  description: string;
+  parsed: Record<string, unknown>;
+}
+
+interface ApplyResponse {
+  plugins: number;
+}
+
+interface SelectedProvider {
+  name: string;
+  id: string;
+  repository: string;
+  types: string[];
+}
+
+interface ProfileBackup {
+  format: "aioplugins-profile";
+  version: 1;
+  sources: SavedSource[];
+  middleware?: unknown;
+}
+
+interface ManifestPreview {
+  scrapers?: unknown[];
+}
+
+function $<T extends Element = HTMLElement>(selector: string): T {
+  const element = document.querySelector<T>(selector);
+  if (!element) throw new Error(`Missing required UI element: ${selector}`);
+  return element;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "An unexpected error occurred.";
+}
+
+function isStreamFilterOperator(value: string): value is StreamFilterOperator {
+  return [
+    "contains", "notContains", "equals", "notEquals", "gt", "gte",
+    "lt", "lte", "isTrue", "isFalse", "exists", "missing"
+  ].includes(value);
+}
+
+function isStreamFilter(value: unknown): value is StreamFilter {
+  return isRecord(value) &&
+    typeof value.field === "string" &&
+    typeof value.operator === "string" &&
+    isStreamFilterOperator(value.operator) &&
+    typeof value.value === "string";
+}
+
+function parseJsonRecord(value: string, message: string): Record<string, unknown> {
+  const parsed: unknown = JSON.parse(value);
+  if (!isRecord(parsed)) throw new Error(message);
+  return parsed;
+}
+
+function isSavedSource(value: unknown): value is SavedSource {
+  return isRecord(value) &&
+    typeof value.repository === "string" &&
+    typeof value.ref === "string" &&
+    Array.isArray(value.providerIds) &&
+    value.providerIds.every((id) => typeof id === "string") &&
+    (value.commit === undefined || typeof value.commit === "string");
+}
+
+function parseProfileBackup(value: unknown): ProfileBackup {
+  if (
+    !isRecord(value) ||
+    value.format !== "aioplugins-profile" ||
+    value.version !== 1 ||
+    !Array.isArray(value.sources) ||
+    !value.sources.every(isSavedSource)
+  ) {
+    throw new Error("This file is not a valid AIOPlugins backup.");
+  }
+
+  return {
+    format: "aioplugins-profile",
+    version: 1,
+    sources: value.sources,
+    middleware: value.middleware
+  };
+}
+
+    let user: PublicUser | null = null;
+    let pendingUser: PublicUser | null = null;
+    let state = new Map<string, LoadedSource>();
+    let profiles: SavedProfile[] = [];
+    let streamFields: StreamFieldDefinition[] = [];
+    let activeView: AppView = "configure";
+    let activeMiddlewareTab: MiddlewareTab = "filters";
     let pluginUrl = "";
     let manifestPath = "";
     let isSaving = false;
@@ -19,7 +182,7 @@ const $ = (selector) => document.querySelector(selector);
     let formatterPreviewRequest = 0;
     const defaultNameFormat = DEFAULT_STREAM_NAME_FORMAT;
     const defaultDescriptionFormat = DEFAULT_STREAM_DESCRIPTION_FORMAT;
-    const streamFormatPresets = {
+    const streamFormatPresets: Record<string, string> = {
       detailed: defaultDescriptionFormat,
       compact: "{stream.title}{? · {stream.resolution}?}{? · {stream.size::sbytes}?}",
       title: "{stream.title}"
@@ -29,20 +192,20 @@ const $ = (selector) => document.querySelector(selector);
     const status = $("#status");
     const saveStatus = $("#save-status");
     const authStatus = $("#auth-status");
-    const discoverButton = $("#discover");
-    const applyButton = $("#apply");
-    const goSaveButton = $("#go-save");
-    const searchInput = $("#search");
-    const pluginUrlButton = $("#plugin-url");
-    const copyUrlButton = $("#copy-plugin-url");
+    const discoverButton = $<HTMLButtonElement>("#discover");
+    const applyButton = $<HTMLButtonElement>("#apply");
+    const goSaveButton = $<HTMLButtonElement>("#go-save");
+    const searchInput = $<HTMLInputElement>("#search");
+    const pluginUrlButton = $<HTMLButtonElement>("#plugin-url");
+    const copyUrlButton = $<HTMLButtonElement>("#copy-plugin-url");
     const copyFeedback = $("#copy-feedback");
     const manifestPreview = $("#manifest-preview");
     const outputState = $("#output-state");
-    const middlewareSaveButton = $("#save-middleware");
-    const copyrightYear = document.querySelector("#copyright-year");
+    const middlewareSaveButton = $<HTMLButtonElement>("#save-middleware");
+    const copyrightYear = document.querySelector<HTMLElement>("#copyright-year");
 
     if (copyrightYear) {
-      copyrightYear.textContent = new Date().getFullYear();
+      copyrightYear.textContent = String(new Date().getFullYear());
     }
     
     async function loadAppVersion() {
@@ -53,9 +216,9 @@ const $ = (selector) => document.querySelector(selector);
 
         if (!response.ok) return;
 
-        const data = await response.json();
+        const data: unknown = await response.json();
 
-        if (typeof data.version === "string" && data.version.trim()) {
+        if (isRecord(data) && typeof data.version === "string" && data.version.trim()) {
           const badge = $("#app-version");
           badge.textContent = data.version;
           badge.hidden = false;
@@ -65,23 +228,30 @@ const $ = (selector) => document.querySelector(selector);
       }
     }
 
-    async function api(path, body, method) {
-      const response = await fetch(path, {
-        method: method || (body === undefined ? "GET" : "POST"),
-        headers: body === undefined ? {} : { "content-type": "application/json" },
-        body: body === undefined ? undefined : JSON.stringify(body)
-      });
-
-      const result = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        throw new Error(result.error || `Request failed (${response.status})`);
+    async function api<T>(path: string, body?: unknown, method?: string): Promise<T> {
+      const request: RequestInit = {
+        method: method ?? (body === undefined ? "GET" : "POST")
+      };
+      if (body !== undefined) {
+        request.headers = { "content-type": "application/json" };
+        request.body = JSON.stringify(body);
       }
 
-      return result;
+      const response = await fetch(path, request);
+
+      const result: unknown = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        const message = isRecord(result) && typeof result.error === "string"
+          ? result.error
+          : `Request failed (${response.status})`;
+        throw new Error(message);
+      }
+
+      return result as T;
     }
 
-    function setStatus(message, kind = "") {
+    function setStatus(message: string, kind = "") {
       const target = !user
         ? authStatus
         : activeView === "middleware"
@@ -94,7 +264,7 @@ const $ = (selector) => document.querySelector(selector);
       target.className = `status ${kind}`;
     }
 
-    async function copyText(text, onDone, onFail) {
+    async function copyText(text: string, onDone: () => void, onFail: () => void) {
       try {
         await navigator.clipboard.writeText(text);
         onDone();
@@ -103,7 +273,7 @@ const $ = (selector) => document.querySelector(selector);
       }
     }
 
-    function showAuthTab(tab) {
+    function showAuthTab(tab: "login" | "register") {
       const login = tab === "login";
       $("#login-form").hidden = !login;
       $("#register-form").hidden = login;
@@ -112,7 +282,7 @@ const $ = (selector) => document.querySelector(selector);
       authStatus.textContent = "";
     }
 
-    function showView(view) {
+    function showView(view: AppView) {
       activeView = view;
 
       $("#configure-view").hidden = view !== "configure";
@@ -131,14 +301,14 @@ const $ = (selector) => document.querySelector(selector);
       const activeNav = view === "middleware" ? activeMiddlewareTab : view;
 
       Object.entries(navItems).forEach(([name, id]) => {
-        const button = document.getElementById(id);
+        const button = $<HTMLButtonElement>(`#${id}`);
         const active = name === activeNav;
 
         button.classList.toggle("active", active);
         button.setAttribute("aria-current", active ? "page" : "false");
       });
 
-      const pageContent = {
+      const pageContent: Record<Exclude<AppView, "middleware">, { title: string; description: string }> = {
         configure: {
           title: "Choose your plugins",
           description: "Select plugin sources and choose the providers you want to use."
@@ -153,7 +323,7 @@ const $ = (selector) => document.querySelector(selector);
         }
       };
 
-      const middlewareContent = {
+      const middlewareContent: Record<MiddlewareTab, { title: string; description: string }> = {
         filters: { title: "Filter streams", description: "Choose which provider results reach Nuvio." },
         sorting: { title: "Sort streams", description: "Choose the order of each provider's results." },
         formatting: { title: "Format stream details", description: "Surface stream metadata in displayed titles." }
@@ -176,21 +346,21 @@ const $ = (selector) => document.querySelector(selector);
       }
     }
 
-    function showMiddlewareTab(tab) {
+    function showMiddlewareTab(tab: MiddlewareTab) {
       activeMiddlewareTab = tab;
       showView("middleware");
 
-      document.querySelectorAll(".middleware-panel").forEach((panel) => {
+      document.querySelectorAll<HTMLElement>(".middleware-panel").forEach((panel) => {
         panel.hidden = panel.id !== `middleware-${tab}`;
       });
-      document.querySelectorAll(".middleware-tab").forEach((button) => {
+      document.querySelectorAll<HTMLButtonElement>(".middleware-tab").forEach((button) => {
         const active = button.dataset.middlewareTab === tab;
         button.classList.toggle("active", active);
         button.setAttribute("aria-selected", String(active));
       });
     }
 
-    const filterOperatorOptions = {
+    const filterOperatorOptions: Record<StreamFieldType, OperatorOption[]> = {
       text: [
         ["contains", "Contains"], ["notContains", "Does not contain"],
         ["equals", "Equals"], ["notEquals", "Does not equal"],
@@ -213,7 +383,7 @@ const $ = (selector) => document.querySelector(selector);
       ]
     };
 
-    function populateFieldSelect(select, includeProviderOrder = false) {
+    function populateFieldSelect(select: HTMLSelectElement, includeProviderOrder = false) {
       const options = [];
       if (includeProviderOrder) {
         options.push({ value: "", label: "Provider order" });
@@ -229,24 +399,27 @@ const $ = (selector) => document.querySelector(selector);
       }));
     }
 
-    function operatorsForField(fieldKey) {
+    function operatorsForField(fieldKey: string): OperatorOption[] {
       const field = streamFields.find((entry) => entry.key === fieldKey);
-      return filterOperatorOptions[field?.type] || filterOperatorOptions.text;
+      return field ? filterOperatorOptions[field.type] : filterOperatorOptions.text;
     }
 
-    function readFilterRows(includeIncomplete = false) {
-      return [...document.querySelectorAll(".filter-rule")].map((row) => ({
-        field: row.querySelector(".filter-field").value,
-        operator: row.querySelector(".filter-operator").value,
-        value: row.querySelector(".filter-value").value.trim()
-      })).filter((rule) =>
+    function readFilterRows(includeIncomplete = false): StreamFilter[] {
+      return [...document.querySelectorAll<HTMLElement>(".filter-rule")].map((row) => {
+        const operatorValue = row.querySelector<HTMLSelectElement>(".filter-operator")?.value ?? "";
+        return {
+          field: row.querySelector<HTMLSelectElement>(".filter-field")?.value ?? "",
+          operator: isStreamFilterOperator(operatorValue) ? operatorValue : "contains",
+          value: row.querySelector<HTMLInputElement>(".filter-value")?.value.trim() ?? ""
+        };
+      }).filter((rule) =>
         includeIncomplete ||
         ["exists", "missing", "isTrue", "isFalse"].includes(rule.operator) ||
         Boolean(rule.value)
       );
     }
 
-    function renderFilterRules(rules) {
+    function renderFilterRules(rules: StreamFilter[]) {
       const container = $("#filter-rules");
       container.replaceChildren();
       if (!rules.length) {
@@ -297,12 +470,14 @@ const $ = (selector) => document.querySelector(selector);
 
         field.addEventListener("change", () => {
           const nextRules = readFilterRows(true);
-          nextRules[index].field = field.value;
+          const nextRule = nextRules[index];
+          if (!nextRule) return;
+          nextRule.field = field.value;
           const nextOperators = operatorsForField(field.value);
-          if (!nextOperators.some(([value]) => value === nextRules[index].operator)) {
-            nextRules[index].operator = nextOperators[0]?.[0] || "contains";
+          if (!nextOperators.some(([value]) => value === nextRule.operator)) {
+            nextRule.operator = nextOperators[0]?.[0] || "contains";
           }
-          nextRules[index].value = "";
+          nextRule.value = "";
           renderFilterRules(nextRules);
         });
         operator.addEventListener("change", updateValueVisibility);
@@ -323,15 +498,15 @@ const $ = (selector) => document.querySelector(selector);
       });
     }
 
-    function setMiddlewareSettings(value) {
-      const settings = value && typeof value === "object" ? value : {};
-      $("#stream-sort-field").value = settings.sortField || "";
-      $("#stream-sort-direction").value = settings.sortDirection === "asc" ? "asc" : "desc";
-      renderFilterRules(Array.isArray(settings.filters) ? settings.filters : []);
-      $("#stream-name-format").value = typeof settings.nameFormat === "string" && settings.nameFormat.trim()
+    function setMiddlewareSettings(value: unknown) {
+      const settings = isRecord(value) ? value : {};
+      $<HTMLSelectElement>("#stream-sort-field").value = typeof settings.sortField === "string" ? settings.sortField : "";
+      $<HTMLSelectElement>("#stream-sort-direction").value = settings.sortDirection === "asc" ? "asc" : "desc";
+      renderFilterRules(Array.isArray(settings.filters) ? settings.filters.filter(isStreamFilter) : []);
+      $<HTMLTextAreaElement>("#stream-name-format").value = typeof settings.nameFormat === "string" && settings.nameFormat.trim()
         ? settings.nameFormat
         : defaultNameFormat;
-      $("#stream-description-format").value = typeof settings.descriptionFormat === "string" && settings.descriptionFormat.trim()
+      $<HTMLTextAreaElement>("#stream-description-format").value = typeof settings.descriptionFormat === "string" && settings.descriptionFormat.trim()
         ? settings.descriptionFormat
         : typeof settings.format === "string" && settings.format.trim()
           ? settings.format
@@ -342,10 +517,10 @@ const $ = (selector) => document.querySelector(selector);
     function readMiddlewareSettings() {
       return {
         filters: readFilterRows().slice(0, 30),
-        sortField: $("#stream-sort-field").value,
-        sortDirection: $("#stream-sort-direction").value,
-        nameFormat: $("#stream-name-format").value,
-        descriptionFormat: $("#stream-description-format").value
+        sortField: $<HTMLSelectElement>("#stream-sort-field").value,
+        sortDirection: $<HTMLSelectElement>("#stream-sort-direction").value as "asc" | "desc",
+        nameFormat: $<HTMLTextAreaElement>("#stream-name-format").value,
+        descriptionFormat: $<HTMLTextAreaElement>("#stream-description-format").value
       };
     }
 
@@ -363,19 +538,19 @@ const $ = (selector) => document.querySelector(selector);
       const state = $("#formatter-preview-state");
 
       try {
-        const stream = JSON.parse($("#formatter-stream-data").value);
-        const metadata = JSON.parse($("#formatter-metadata").value);
-        if (!stream || typeof stream !== "object" || Array.isArray(stream)) {
-          throw new Error("Stream data must be a JSON object.");
-        }
-        if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
-          throw new Error("Metadata must be a JSON object.");
-        }
-        stream.filename = $("#formatter-filename").value.trim();
+        const stream = parseJsonRecord(
+          $<HTMLTextAreaElement>("#formatter-stream-data").value,
+          "Stream data must be a JSON object."
+        );
+        const metadata = parseJsonRecord(
+          $<HTMLTextAreaElement>("#formatter-metadata").value,
+          "Metadata must be a JSON object."
+        );
+        stream.filename = $<HTMLInputElement>("#formatter-filename").value.trim();
 
-        const result = await api("/api/formatter/preview", {
-          nameFormat: $("#stream-name-format").value,
-          descriptionFormat: $("#stream-description-format").value,
+        const result = await api<FormatterPreviewResponse>("/api/formatter/preview", {
+          nameFormat: $<HTMLTextAreaElement>("#stream-name-format").value,
+          descriptionFormat: $<HTMLTextAreaElement>("#stream-description-format").value,
           stream,
           metadata
         });
@@ -391,12 +566,12 @@ const $ = (selector) => document.querySelector(selector);
         name.textContent = "Preview unavailable";
         description.textContent = "Preview unavailable";
         $("#formatter-parsed-fields").textContent = "{}";
-        state.textContent = error.message;
+        state.textContent = errorMessage(error);
         state.className = "formatter-preview-state error";
       }
     }
 
-    function setUser(next) {
+    function setUser(next: PublicUser | null) {
       user = next;
       state = new Map();
 
@@ -407,8 +582,8 @@ const $ = (selector) => document.querySelector(selector);
       $("#session-bar").hidden = !authed;
       $("#server-state").hidden = authed;
 
-      if (!authed) {
-        for (const input of document.querySelectorAll("#auth-view input, #delete-password")) {
+      if (!next) {
+        for (const input of document.querySelectorAll<HTMLInputElement>("#auth-view input, #delete-password")) {
           input.value = "";
           if (input.type === "checkbox") input.checked = false;
         }
@@ -416,7 +591,7 @@ const $ = (selector) => document.querySelector(selector);
         pendingUser = null;
         $("#new-account").hidden = true;
         $("#auth-tabs").hidden = false;
-        $("#continue").disabled = true;
+        $<HTMLButtonElement>("#continue").disabled = true;
         pluginUrl = "";
         manifestPath = "";
         showAuthTab("login");
@@ -430,14 +605,14 @@ const $ = (selector) => document.querySelector(selector);
       pluginUrl = `${location.origin}${manifestPath}`;
 
       pluginUrlButton.textContent = pluginUrl;
-      $("#open-manifest").href = manifestPath;
+      $<HTMLAnchorElement>("#open-manifest").href = manifestPath;
       copyUrlButton.disabled = false;
 
       showView("configure");
       loadProfilesList().then(() => restoreSelection());
     }
 
-    async function enter(nextUser) {
+    async function enter(nextUser: PublicUser) {
       setUser(nextUser);
     }
 
@@ -450,10 +625,11 @@ const $ = (selector) => document.querySelector(selector);
         throw new Error("Could not load the Nuvio manifest preview");
       }
 
-      const manifest = await response.json();
+      const manifestData: unknown = await response.json();
+      const manifest: ManifestPreview = isRecord(manifestData) ? manifestData : {};
       manifestPreview.textContent = JSON.stringify(manifest, null, 2);
 
-      const pluginCount = manifest.scrapers?.length || 0;
+      const pluginCount = Array.isArray(manifest.scrapers) ? manifest.scrapers.length : 0;
 
       outputState.textContent = pluginCount === 1
         ? "1 plugin included"
@@ -491,7 +667,7 @@ const $ = (selector) => document.querySelector(selector);
 
       container.replaceChildren();
 
-      const selected = [];
+      const selected: SelectedProvider[] = [];
 
       for (const source of state.values()) {
         for (const provider of source.providers) {
@@ -693,7 +869,11 @@ const $ = (selector) => document.querySelector(selector);
       updateCounts();
     }
 
-    async function inspect(repository, ref, options = {}) {
+    async function inspect(
+      repository: string,
+      ref: string,
+      options: { showStatus?: boolean; render?: boolean } = {}
+    ): Promise<LoadedSource | null> {
       if (!repository) {
         setStatus("Enter a GitHub repository URL.", "error");
         return null;
@@ -708,13 +888,13 @@ const $ = (selector) => document.querySelector(selector);
       }
 
       try {
-        const source = await api("/api/discover", { repository, ref });
+        const source = await api<DiscoverResponse>("/api/discover", { repository, ref });
         const key = `${source.repository}@${source.ref}`;
         const prior = state.get(key);
 
         const loaded = {
           ...source,
-          selected: prior?.selected || new Set()
+          selected: prior?.selected ?? new Set<string>()
         };
 
         state.set(key, loaded);
@@ -730,7 +910,7 @@ const $ = (selector) => document.querySelector(selector);
 
         return loaded;
       } catch (error) {
-        if (showStatus) setStatus(error.message, "error");
+        if (showStatus) setStatus(errorMessage(error), "error");
         throw error;
       } finally {
         if (showStatus) {
@@ -741,10 +921,10 @@ const $ = (selector) => document.querySelector(selector);
     }
 
     function suggestedSources() {
-      return [...document.querySelectorAll(".quick-source")].map((button) => ({
-        repository: button.dataset.repo,
-        ref: "main"
-      }));
+      return [...document.querySelectorAll<HTMLButtonElement>(".quick-source")]
+        .flatMap((button) => button.dataset.repo
+          ? [{ repository: button.dataset.repo, ref: "main" }]
+          : []);
     }
 
     async function restoreSelection() {
@@ -752,13 +932,13 @@ const $ = (selector) => document.querySelector(selector);
       setStatus("Loading your plugin sources…");
 
       try {
-        const saved = await api("/api/config");
-        streamFields = Array.isArray(saved.fields) ? saved.fields : [];
-        populateFieldSelect($("#stream-sort-field"), true);
-        populateFieldSelect($("#format-field"));
+        const saved = await api<ConfigResponse>("/api/config");
+        streamFields = saved.fields;
+        populateFieldSelect($<HTMLSelectElement>("#stream-sort-field"), true);
+        populateFieldSelect($<HTMLSelectElement>("#format-field"));
         setMiddlewareSettings(saved.middleware);
         const savedSources = saved.sources || [];
-        const wanted = new Map();
+        const wanted = new Map<string, SourceReference>();
 
         for (const source of [...suggestedSources(), ...savedSources]) {
           wanted.set(`${source.repository}@${source.ref}`, source);
@@ -768,21 +948,22 @@ const $ = (selector) => document.querySelector(selector);
 
         const results = await Promise.allSettled(
           requestedSources.map((source) =>
-            api("/api/discover", {
+            api<DiscoverResponse>("/api/discover", {
               repository: source.repository,
               ref: source.ref
             })
           )
         );
 
-        const failed = [];
+        const failed: string[] = [];
 
         results.forEach((result, index) => {
           const requested = requestedSources[index];
+          if (!requested) return;
 
           if (result.status === "rejected") {
             failed.push(
-              `${requested.repository.split("/").slice(-1)[0]}: ${result.reason.message}`
+              `${requested.repository.split("/").slice(-1)[0]}: ${errorMessage(result.reason)}`
             );
             return;
           }
@@ -811,7 +992,7 @@ const $ = (selector) => document.querySelector(selector);
           );
         }
       } catch (error) {
-        setStatus(error.message, "error");
+        setStatus(errorMessage(error), "error");
       } finally {
         discoverButton.disabled = false;
       }
@@ -820,10 +1001,10 @@ const $ = (selector) => document.querySelector(selector);
     // Profiles
     async function loadProfilesList() {
       try {
-        const res = await api("/api/profiles");
-        profiles = Array.isArray(res.profiles) ? res.profiles : [];
+        const res = await api<ProfilesResponse>("/api/profiles");
+        profiles = res.profiles;
 
-        const select = $("#profile-select");
+        const select = $<HTMLSelectElement>("#profile-select");
         select.replaceChildren();
 
         if (profiles.length === 0) {
@@ -840,25 +1021,26 @@ const $ = (selector) => document.querySelector(selector);
           });
         }
 
-        $("#delete-profile").disabled = profiles.length === 0;
+        $<HTMLButtonElement>("#delete-profile").disabled = profiles.length === 0;
       } catch (error) {
         console.error("Could not load profiles:", error);
       }
     }
 
-    $("#profile-select").addEventListener("change", async (event) => {
-      const profileId = event.target.value;
+    const profileSelect = $<HTMLSelectElement>("#profile-select");
+    profileSelect.addEventListener("change", async () => {
+      const profileId = profileSelect.value;
       const found = profiles.find((profile) => profile.id === profileId);
       if (!found) return;
 
       setStatus("Switching profile…");
 
-      const nextState = new Map();
-      const failed = [];
+      const nextState = new Map<string, LoadedSource>();
+      const failed: string[] = [];
 
       for (const sourceInfo of found.sources || []) {
         try {
-          const source = await api("/api/discover", {
+          const source = await api<DiscoverResponse>("/api/discover", {
             repository: sourceInfo.repository,
             ref: sourceInfo.ref
           });
@@ -870,7 +1052,7 @@ const $ = (selector) => document.querySelector(selector);
             selected: new Set(sourceInfo.providerIds || [])
           });
         } catch (error) {
-          failed.push(error.message);
+          failed.push(errorMessage(error));
         }
       }
 
@@ -901,16 +1083,16 @@ const $ = (selector) => document.querySelector(selector);
       }
 
       try {
-        await api("/api/profiles", { name: name.trim(), sources });
+        await api<unknown>("/api/profiles", { name: name.trim(), sources });
         await loadProfilesList();
         setStatus("Profile saved successfully.", "success");
       } catch (error) {
-        setStatus(error.message, "error");
+        setStatus(errorMessage(error), "error");
       }
     });
 
     $("#delete-profile").addEventListener("click", async () => {
-      const profileId = $("#profile-select").value;
+      const profileId = profileSelect.value;
 
       if (!profileId) return alert("Select a profile to delete.");
       if (!confirm("Are you sure you want to delete this profile?")) return;
@@ -920,7 +1102,7 @@ const $ = (selector) => document.querySelector(selector);
         await loadProfilesList();
         setStatus("Profile deleted.", "success");
       } catch (error) {
-        setStatus(error.message, "error");
+        setStatus(errorMessage(error), "error");
       }
     });
 
@@ -932,41 +1114,41 @@ const $ = (selector) => document.querySelector(selector);
       event.preventDefault();
 
       try {
-        const result = await api("/api/login", {
-          uuid: $("#login-uuid").value.trim(),
-          password: $("#login-password").value
+        const result = await api<UserResponse>("/api/login", {
+          uuid: $<HTMLInputElement>("#login-uuid").value.trim(),
+          password: $<HTMLInputElement>("#login-password").value
         });
 
         await enter(result.user);
       } catch (error) {
-        setStatus(error.message, "error");
+        setStatus(errorMessage(error), "error");
       }
     });
 
     $("#register-form").addEventListener("submit", async (event) => {
       event.preventDefault();
 
-      const password = $("#register-password").value;
+      const password = $<HTMLInputElement>("#register-password").value;
 
       if (password.length < 8) {
         return setStatus("Password must be at least 8 characters.", "error");
       }
 
-      if (password !== $("#register-confirm").value) {
+      if (password !== $<HTMLInputElement>("#register-confirm").value) {
         return setStatus("Passwords do not match.", "error");
       }
 
       try {
-        const result = await api("/api/register", { password });
+        const result = await api<UserResponse>("/api/register", { password });
 
         pendingUser = result.user;
-        $("#new-uuid").textContent = pendingUser.id;
+        $("#new-uuid").textContent = result.user.id;
         $("#register-form").hidden = true;
         $("#auth-tabs").hidden = true;
         $("#new-account").hidden = false;
         authStatus.textContent = "";
       } catch (error) {
-        setStatus(error.message, "error");
+        setStatus(errorMessage(error), "error");
       }
     });
 
@@ -980,8 +1162,10 @@ const $ = (selector) => document.querySelector(selector);
       );
     });
 
-    $("#saved-ack").addEventListener("change", (event) => {
-      $("#continue").disabled = !event.target.checked;
+    const savedAck = $<HTMLInputElement>("#saved-ack");
+    const continueButton = $<HTMLButtonElement>("#continue");
+    savedAck.addEventListener("change", () => {
+      continueButton.disabled = !savedAck.checked;
     });
 
     $("#continue").addEventListener("click", () => {
@@ -1012,7 +1196,7 @@ const $ = (selector) => document.querySelector(selector);
     });
 
     $("#delete-account").addEventListener("click", async () => {
-      const password = $("#delete-password").value;
+      const password = $<HTMLInputElement>("#delete-password").value;
 
       if (!password) {
         return setStatus("Enter your password to delete your account.", "error");
@@ -1025,23 +1209,25 @@ const $ = (selector) => document.querySelector(selector);
         setUser(null);
         setStatus("Account deleted.", "success");
       } catch (error) {
-        setStatus(error.message, "error");
+        setStatus(errorMessage(error), "error");
       }
     });
 
     // Discover custom sources
     discoverButton.addEventListener("click", () => {
       inspect(
-        $("#repository").value.trim(),
-        $("#ref").value.trim() || "main"
+        $<HTMLInputElement>("#repository").value.trim(),
+        $<HTMLInputElement>("#ref").value.trim() || "main"
       );
     });
 
-    document.querySelectorAll(".quick-source").forEach((button) => {
+    document.querySelectorAll<HTMLButtonElement>(".quick-source").forEach((button) => {
       button.addEventListener("click", () => {
-        $("#repository").value = button.dataset.repo;
-        $("#ref").value = "main";
-        inspect(button.dataset.repo, "main");
+        const repository = button.dataset.repo;
+        if (!repository) return;
+        $<HTMLInputElement>("#repository").value = repository;
+        $<HTMLInputElement>("#ref").value = "main";
+        inspect(repository, "main");
       });
     });
 
@@ -1052,13 +1238,19 @@ const $ = (selector) => document.querySelector(selector);
     $("#filters-tab").addEventListener("click", () => showMiddlewareTab("filters"));
     $("#sorting-tab").addEventListener("click", () => showMiddlewareTab("sorting"));
     $("#formatting-tab").addEventListener("click", () => showMiddlewareTab("formatting"));
-    document.querySelectorAll(".middleware-tab").forEach((button) => {
-      button.addEventListener("click", () => showMiddlewareTab(button.dataset.middlewareTab));
+    document.querySelectorAll<HTMLButtonElement>(".middleware-tab").forEach((button) => {
+      button.addEventListener("click", () => {
+        const tab = button.dataset.middlewareTab;
+        if (tab === "filters" || tab === "sorting" || tab === "formatting") {
+          showMiddlewareTab(tab);
+        }
+      });
     });
     ["#stream-name-format", "#stream-description-format", "#formatter-filename", "#formatter-stream-data", "#formatter-metadata"]
       .forEach((selector) => $(selector).addEventListener("input", scheduleFormatterPreview));
     $("#apply-format-preset").addEventListener("click", () => {
-      $("#stream-description-format").value = streamFormatPresets[$("#format-preset").value] || defaultDescriptionFormat;
+      const preset = $<HTMLSelectElement>("#format-preset").value;
+      $<HTMLTextAreaElement>("#stream-description-format").value = streamFormatPresets[preset] || defaultDescriptionFormat;
       scheduleFormatterPreview();
     });
     $("#add-stream-filter").addEventListener("click", () => {
@@ -1069,10 +1261,13 @@ const $ = (selector) => document.querySelector(selector);
       renderFilterRules(filters);
     });
     $("#insert-format-field").addEventListener("click", () => {
-      const editor = $(`#${$("#format-target").value}`);
-      const token = `{stream.${$("#format-field").value}}`;
-      const start = editor.selectionStart;
-      const end = editor.selectionEnd;
+      const target = $<HTMLSelectElement>("#format-target").value;
+      const editor = target === "stream-name-format"
+        ? $<HTMLTextAreaElement>("#stream-name-format")
+        : $<HTMLTextAreaElement>("#stream-description-format");
+      const token = `{stream.${$<HTMLSelectElement>("#format-field").value}}`;
+      const start = editor.selectionStart ?? editor.value.length;
+      const end = editor.selectionEnd ?? start;
       editor.setRangeText(token, start, end, "end");
       editor.focus();
       scheduleFormatterPreview();
@@ -1110,7 +1305,7 @@ const $ = (selector) => document.querySelector(selector);
     pluginUrlButton.addEventListener("click", copyPluginUrl);
     copyUrlButton.addEventListener("click", copyPluginUrl);
 
-    async function applySetup(button) {
+    async function applySetup(button: HTMLButtonElement) {
       if (isSaving || selectionCount() === 0) return;
 
       isSaving = true;
@@ -1129,7 +1324,7 @@ const $ = (selector) => document.querySelector(selector);
       })).filter((source) => source.providerIds.length);
 
       try {
-        const result = await api("/api/apply", {
+        const result = await api<ApplyResponse>("/api/apply", {
           sources,
           middleware: readMiddlewareSettings()
         });
@@ -1145,7 +1340,7 @@ const $ = (selector) => document.querySelector(selector);
         outputState.classList.add("ready");
 
         copyFeedback.textContent =
-          "Your setup is saved. Copy your URL and add it to Nuvio.";
+          "Setup saved. Refresh the AIOPlugins source in Nuvio, or add the URL below if it is not installed yet.";
 
         if (button === applyButton) {
           $(".output-panel").scrollIntoView({
@@ -1154,7 +1349,7 @@ const $ = (selector) => document.querySelector(selector);
           });
         }
       } catch (error) {
-        setStatus(error.message, "error");
+        setStatus(errorMessage(error), "error");
       } finally {
         isSaving = false;
         button.textContent = originalLabel;
@@ -1170,7 +1365,7 @@ const $ = (selector) => document.querySelector(selector);
     // Export backup
     $("#export-config").addEventListener("click", async () => {
       try {
-        const saved = await api("/api/config");
+        const saved = await api<ConfigResponse>("/api/config");
 
         const backup = {
           format: "aioplugins-profile",
@@ -1185,6 +1380,8 @@ const $ = (selector) => document.querySelector(selector);
           })
         );
 
+        if (!user) throw new Error("Log in to export your configuration.");
+
         const link = document.createElement("a");
         link.href = blobUrl;
         link.download = `aioplugins-${user.id.slice(0, 8)}.json`;
@@ -1193,29 +1390,22 @@ const $ = (selector) => document.querySelector(selector);
         URL.revokeObjectURL(blobUrl);
         setStatus("Backup exported.", "success");
       } catch (error) {
-        setStatus(error.message, "error");
+        setStatus(errorMessage(error), "error");
       }
     });
 
     // Import backup
+    const importConfigInput = $<HTMLInputElement>("#import-config-file");
     $("#import-config").addEventListener("click", () => {
-      $("#import-config-file").click();
+      importConfigInput.click();
     });
 
-    $("#import-config-file").addEventListener("change", async (event) => {
-      const file = event.target.files?.[0];
+    importConfigInput.addEventListener("change", async () => {
+      const file = importConfigInput.files?.[0];
       if (!file) return;
 
       try {
-        const backup = JSON.parse(await file.text());
-
-        if (
-          backup.format !== "aioplugins-profile" ||
-          backup.version !== 1 ||
-          !Array.isArray(backup.sources)
-        ) {
-          throw new Error("This file is not a valid AIOPlugins backup.");
-        }
+        const backup = parseProfileBackup(JSON.parse(await file.text()) as unknown);
 
         setStatus("Restoring plugins…");
         await api("/api/apply", {
@@ -1227,7 +1417,7 @@ const $ = (selector) => document.querySelector(selector);
         const restoredState = new Map();
 
         for (const sourceInfo of backup.sources) {
-          const source = await api("/api/discover", {
+          const source = await api<DiscoverResponse>("/api/discover", {
             repository: sourceInfo.repository,
             ref: sourceInfo.ref
           });
@@ -1247,16 +1437,16 @@ const $ = (selector) => document.querySelector(selector);
         setStatus("Backup restored successfully.", "success");
         showView("configure");
       } catch (error) {
-        setStatus(error.message, "error");
+        setStatus(errorMessage(error), "error");
       } finally {
-        event.target.value = "";
+        importConfigInput.value = "";
       }
     });
 
     // Initial session check
     async function initialize() {
       try {
-        const { user: current } = await api("/api/session");
+        const { user: current } = await api<SessionResponse>("/api/session");
 
         if (current) {
           await enter(current);
@@ -1265,7 +1455,7 @@ const $ = (selector) => document.querySelector(selector);
         }
       } catch (error) {
         setUser(null);
-        setStatus(error.message, "error");
+        setStatus(errorMessage(error), "error");
       }
     }
 

@@ -661,6 +661,25 @@ test("extracts shared media fields from provider filenames before formatting", a
   assert.equal(wrapped.name, "🚀 FHD");
 });
 
+test("keeps the media title when a provider name contains only its source and resolution", async () => {
+  const module = { exports: {} };
+  const source = `module.exports = { getStreams: async () => [{
+    name: "4KHDHub - PixelDrain 720p",
+    title: "Doctor.X.Mafia.in.White.S01E01\\n2.59 GB",
+    quality: "720p"
+  }] };`;
+  new Function("module", "exports", wrapPluginStreams(source, DEFAULT_STREAM_MIDDLEWARE))(
+    module,
+    module.exports
+  );
+
+  const [stream] = await module.exports.getStreams({});
+
+  assert.equal(stream.name, "💿 HD");
+  assert.match(stream.description, /Doctor X Mafia In White/);
+  assert.doesNotMatch(stream.description, /4KHDHub - PixelDrain/);
+});
+
 test("uses the detailed formatter template by default", () => {
   const settings = normalizeStreamMiddlewareSettings({});
   assert.equal(settings.format, DEFAULT_STREAM_MIDDLEWARE.format);

@@ -9,7 +9,7 @@
     "build:site": "astro build",
     "build:worker": "tsc -p tsconfig.json",
     "build": "npm run build:site && npm run build:worker",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.browser.json --noEmit",
     "predev": "npm run build:site",
     "dev": "wrangler dev",
     "predeploy": "npm run build",
