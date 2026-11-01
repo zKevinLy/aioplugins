@@ -100,6 +100,9 @@ jobs:
             writeFileSync("public/version.json", JSON.stringify({ version: process.env.VERSION }) + "\n");
           '
 
+      - name: Build Astro site and Worker
+        run: npm run build
+
       - name: Apply D1 migrations
         run: npx wrangler d1 migrations apply db_aioplugins --remote
         env:
