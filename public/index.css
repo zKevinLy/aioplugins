@@ -72,9 +72,9 @@ button { -webkit-tap-highlight-color: transparent; }
 .brand { display: flex; align-items: center; gap: 12px; }
 
 .brand-mark {
-  width: 39px;
-  height: 39px;
-  display: grid;
+  height: 32px;
+  width: auto;
+  display: block;
   place-items: center;
   border-radius: 10px;
   background: var(--accent);
@@ -1114,3 +1114,4 @@ select { cursor: pointer; }
   color: var(--accent);
   text-decoration: underline;
 }
+
