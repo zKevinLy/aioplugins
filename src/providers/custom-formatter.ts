@@ -2,7 +2,8 @@ type FormatterContext = Record<string, unknown>;
 
 export function renderAioStreamsFormat(
   template: string,
-  stream: Record<string, unknown>
+  stream: Record<string, unknown>,
+  addonName = ""
 ): string {
   const REMOVE_LINE = "\u0000AIOSTREAMS_REMOVE_LINE\u0000";
   const extractFilenameMetadata = (
@@ -178,7 +179,9 @@ export function renderAioStreamsFormat(
       ...service,
       cached: service.cached ?? stream.cached
     },
-    addon: {},
+    addon: {
+      name: addonName || stream.addonName || stream.provider || stream.indexer || ""
+    },
     metadata: {},
     user: {},
     config: {},

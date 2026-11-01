@@ -197,9 +197,11 @@ export function normalizeStreamMiddlewareSettings(
 
 export function wrapPluginStreams(
   source: string,
-  value: unknown
+  value: unknown,
+  addonName = ""
 ): string {
   const settings = JSON.stringify(normalizeStreamMiddlewareSettings(value));
+  const formattedAddonName = JSON.stringify(addonName);
   const formatterSource = renderAioStreamsFormat.toString();
   const fieldTypes = JSON.stringify(
     Object.fromEntries(STREAM_FIELD_CATALOG.map(field => [field.key, field.type]))
@@ -207,6 +209,7 @@ export function wrapPluginStreams(
 
   return `${source}\n;(() => {
   const config = ${settings};
+  const addonName = ${formattedAddonName};
   const renderAioStreamsFormat = ${formatterSource};
   const fieldTypes = ${fieldTypes};
   const plugin = typeof module !== "undefined" && module.exports
@@ -323,7 +326,7 @@ export function wrapPluginStreams(
       const normalized = { ...stream };
       let name = stringify(normalized.name ?? normalized.title ?? "");
       try {
-        name = renderAioStreamsFormat(config.format, normalized);
+        name = renderAioStreamsFormat(config.format, normalized, addonName);
       } catch {
         name = formatFallback(normalized) || name;
       }

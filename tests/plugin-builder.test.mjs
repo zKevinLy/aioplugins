@@ -484,6 +484,33 @@ test("supports AIOStreams nested optional groups and conditional branches", () =
   });
 });
 
+test("renders nested language conditional branches in wrapped providers", async () => {
+  const module = { exports: {} };
+  const source = `module.exports = { getStreams: async () => [{ title: "Example", languages: ["English", "Korean"] }] };`;
+  const format = `{stream.languages::exists["🗣️ {stream.languages::~English["🇬🇧 "||""]}{stream.languages::~Chinese["🇨🇳 "||""]}{stream.languages::~Korean["🇰🇷 "||""]}{stream.languages::length::>1["🌐{stream.languages::length} "||""]}"||""]}`;
+  new Function("module", "exports", wrapPluginStreams(source, {
+    ...DEFAULT_STREAM_MIDDLEWARE,
+    format
+  }))(module, module.exports);
+
+  const [stream] = await module.exports.getStreams({});
+
+  assert.equal(stream.name, "🗣️ 🇬🇧 🇰🇷 🌐2 ");
+});
+
+test("provides the selected plugin name as the addon formatter scope", async () => {
+  const module = { exports: {} };
+  const source = `module.exports = { getStreams: async () => [{ title: "Sample" }] };`;
+  new Function("module", "exports", wrapPluginStreams(source, {
+    ...DEFAULT_STREAM_MIDDLEWARE,
+    format: "{addon.name} · {stream.title}"
+  }, "ReAnime"))(module, module.exports);
+
+  const [stream] = await module.exports.getStreams({});
+
+  assert.equal(stream.name, "ReAnime · Sample");
+});
+
 test("supports AIOStreams array, track, language, date, and duration modifiers", () => {
   const stream = {
     audioTracks: [
