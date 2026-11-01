@@ -165,6 +165,7 @@ function parseProfileBackup(value: unknown): ProfileBackup {
     let user: PublicUser | null = null;
     let pendingUser: PublicUser | null = null;
     let state = new Map<string, LoadedSource>();
+    let isLoadingSources = false;
     let profiles: SavedProfile[] = [];
     let streamFields: StreamFieldDefinition[] = [];
     let activeView: AppView = "configure";
@@ -756,10 +757,14 @@ function parseProfileBackup(value: unknown): ProfileBackup {
         selectFilteredButton.textContent = "Select all";
 
         const heading = document.createElement("strong");
-        heading.textContent = "Loading your plugin sources...";
+        heading.textContent = isLoadingSources
+          ? "Loading your plugin sources..."
+          : "No plugin sources loaded.";
 
         const message = document.createElement("p");
-        message.textContent = "Your suggested sources will appear here automatically.";
+        message.textContent = isLoadingSources
+          ? "Your suggested sources will appear here automatically."
+          : "Check the source error above, or add a custom GitHub source.";
 
         catalog.append(heading, message);
         updateCounts();
@@ -932,6 +937,7 @@ function parseProfileBackup(value: unknown): ProfileBackup {
     }
 
     async function restoreSelection() {
+      isLoadingSources = true;
       discoverButton.disabled = true;
       setStatus("Loading your plugin sources…");
 
@@ -985,8 +991,6 @@ function parseProfileBackup(value: unknown): ProfileBackup {
           });
         });
 
-        render();
-
         if (failed.length) {
           setStatus(`Some sources couldn't load: ${failed.join("; ")}`, "error");
         } else {
@@ -998,6 +1002,8 @@ function parseProfileBackup(value: unknown): ProfileBackup {
       } catch (error) {
         setStatus(errorMessage(error), "error");
       } finally {
+        isLoadingSources = false;
+        render();
         discoverButton.disabled = false;
       }
     }
