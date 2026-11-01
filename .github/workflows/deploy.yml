@@ -33,15 +33,23 @@ jobs:
 
       - name: Generate app version
         run: |
-          node --input-type=module -e '
-            import { writeFileSync } from "node:fs";
-            writeFileSync(
-              "public/version.json",
-              JSON.stringify({ version: process.env.APP_VERSION }) + "\n"
-            );
-          '
+          node --input-type=module <<'NODE'
+          import { writeFileSync } from "node:fs";
+
+          const version = process.env.RELEASE_VERSION;
+
+          if (!version) {
+            throw new Error("Could not determine the latest release version.");
+          }
+
+          writeFileSync(
+            "public/version.json",
+            JSON.stringify({ version }) + "\n"
+          );
+          NODE
         env:
-          APP_VERSION: ${{ github.event_name == 'release' && github.event.release.tag_name || format('main-{0}', github.sha) }}
+          RELEASE_VERSION: ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
+          
       - name: Apply D1 migrations
         run: npx wrangler d1 migrations apply db_aioplugins --remote
         env:
