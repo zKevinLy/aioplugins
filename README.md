@@ -80,24 +80,23 @@ Type-check with `npm run typecheck`.
 1. Create a D1 database and put its ID in your Wrangler configuration under the `DB` binding.
 2. Apply the schema to the remote database.
 3. Configure the `ASSETS` binding and the `nodejs_compat` flag.
-4. Run `npm run deploy`.
+4. Add the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets, and configure the `prod` GitHub Actions environment.
+
+Pull requests run the test suite on Node.js 22 and 24. Every push to `main` runs the same checks; after they pass, GitHub creates a release and tag, applies remote D1 migrations, and deploys the Worker.
 
 Plugin files and manifests are cached in D1 (in 512 KB chunks), so there is no local filesystem state and no persistent disk to configure.
 
 ## Releases
 
-Releases are automated with [release-please](https://github.com/googleapis/release-please) and follow [Conventional Commits](https://www.conventionalcommits.org/). Write commit messages like this:
+Every successful push to `main` creates a GitHub Release and matching `vX.Y.Z` tag, then deploys that revision. The tag is the deployed app version; `package.json` is not used as the release version after the initial fallback. If a push contains multiple commits, the highest applicable bump is used. Releases follow [Conventional Commits](https://www.conventionalcommits.org/):
 
 | Commit message | Effect |
 | --- | --- |
-| `fix: handle empty manifest` | patch release (0.1.0 to 0.1.1) |
-| `feat: add profile export` | minor release (0.1.0 to 0.2.0) |
-| `feat!: change install URL format` (or a `BREAKING CHANGE:` footer) | major release (0.x: minor) |
-| `chore:`, `docs:`, `test:`, `refactor:` | no release on their own |
+| `feat: add profile export` | minor bump |
+| `feat!: change install URL format` or a `BREAKING CHANGE:` footer | major bump, including before 1.0.0 |
+| Any other commit, including `fix:`, `chore:`, `docs:`, and `test:` | patch bump |
 
-After pushes to `main`, release-please opens or updates a "release" pull request that bumps the version and writes `CHANGELOG.md`. Merging that pull request creates the `vX.Y.Z` tag and the GitHub Release. To deploy a release: `git fetch --tags && git checkout vX.Y.Z && npm run deploy`.
-
-To force a version, add `Release-As: 1.0.0` as a footer on a commit.
+GitHub generates release notes for each tag. `CHANGELOG.md` is not automatically rewritten by the release workflow.
 
 ## Security notes
 

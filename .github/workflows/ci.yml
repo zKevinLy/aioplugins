@@ -1,7 +1,8 @@
-name: CI
+name: CI, Release, Deploy
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 permissions:
@@ -27,3 +28,86 @@ jobs:
         run: npm ci
       - name: Run tests
         run: npm test
+
+  release-deploy:
+    name: Release and deploy
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    environment: prod
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Determine next release version
+        id: version
+        run: |
+          LAST="$(git tag --list 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)"
+
+          if [ -z "$LAST" ]; then
+            LAST="v$(node -p "require('./package.json').version")"
+            COMMITS="$(git log -1 --format='%s%n%b' "$GITHUB_SHA")"
+          else
+            COMMITS="$(git log --format='%s%n%b' "$LAST..$GITHUB_SHA")"
+          fi
+
+          if printf '%s\n' "$COMMITS" | grep -Eiq '^[[:alnum:]_-]+(\([^)]*\))?!:|^[[:space:]]*BREAKING CHANGE:|^[[:space:]]*BREAKING-CHANGE:'; then
+            BUMP=major
+          elif printf '%s\n' "$COMMITS" | grep -Eiq '^feat(\([^)]*\))?:'; then
+            BUMP=minor
+          else
+            BUMP=patch
+          fi
+
+          IFS=. read -r MAJOR MINOR PATCH <<< "${LAST#v}"
+          case "$BUMP" in
+            major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH + 1)) ;;
+          esac
+
+          TAG="v${MAJOR}.${MINOR}.${PATCH}"
+          echo "Previous: $LAST -> Next: $TAG ($BUMP)"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub release and tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" --generate-notes
+
+      - name: Generate app version
+        env:
+          VERSION: ${{ steps.version.outputs.tag }}
+        run: |
+          export VERSION
+          node --input-type=module -e '
+            import { writeFileSync } from "node:fs";
+            writeFileSync("public/version.json", JSON.stringify({ version: process.env.VERSION }) + "\n");
+          '
+
+      - name: Apply D1 migrations
+        run: npx wrangler d1 migrations apply db_aioplugins --remote
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Deploy Cloudflare Worker
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
