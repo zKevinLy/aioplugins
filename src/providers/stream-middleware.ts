@@ -283,9 +283,15 @@ export function wrapPluginStreams(
     };
 
     const streams = result.filter(stream => stream && typeof stream === "object").map((stream, index) => {
-      const name = renderAioStreamsFormat(config.format, stream);
+      const normalized = { ...stream };
+      let name = stringify(normalized.name ?? normalized.title ?? "");
+      try {
+        name = renderAioStreamsFormat(config.format, normalized);
+      } catch {
+        // Keep the provider's original result if a malformed field breaks formatting.
+      }
       return {
-        stream: { ...stream, name },
+        stream: { ...normalized, name },
         index
       };
     }).filter(item =>

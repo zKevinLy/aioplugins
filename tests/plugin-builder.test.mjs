@@ -303,6 +303,36 @@ test("validates hardcoded media search against cached plugin code with latency t
   assert.ok(latencyMs >= 0);
 });
 
+test("wraps frozen provider stream objects without mutating them", async () => {
+  const module = { exports: {} };
+  const source = `module.exports = { getStreams: async () => [Object.freeze({ title: "Sample.1080p.WEB-DL.mkv", url: "https://example.com/stream.m3u8" })] };`;
+  new Function("module", "exports", wrapPluginStreams(source, DEFAULT_STREAM_MIDDLEWARE))(
+    module,
+    module.exports
+  );
+
+  const streams = await module.exports.getStreams({});
+
+  assert.equal(streams.length, 1);
+  assert.equal(streams[0].title, "Sample");
+  assert.equal(streams[0].resolution, "1080p");
+  assert.equal(streams[0].name, "🚀 FHD · Sample");
+});
+
+test("keeps provider streams when formatter metadata is circular", async () => {
+  const module = { exports: {} };
+  const source = `const stream = { title: "Sample 1080p", url: "https://example.com/stream.m3u8" }; stream.extra = { parent: stream }; module.exports = { getStreams: async () => [stream] };`;
+  new Function("module", "exports", wrapPluginStreams(source, DEFAULT_STREAM_MIDDLEWARE))(
+    module,
+    module.exports
+  );
+
+  const streams = await module.exports.getStreams({});
+
+  assert.equal(streams.length, 1);
+  assert.equal(streams[0].name, "Sample 1080p");
+});
+
 test("wraps plugin streams with metadata formatting, filtering, and sorting", async () => {
   const source = `module.exports = { getStreams: async () => [
     { title: "Sample 720p", size: 700000000, seeders: 3 },
