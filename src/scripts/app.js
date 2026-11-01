@@ -1,4 +1,7 @@
-import { DEFAULT_STREAM_FORMAT } from "../lib/default-stream-format";
+import {
+  DEFAULT_STREAM_DESCRIPTION_FORMAT,
+  DEFAULT_STREAM_NAME_FORMAT
+} from "../lib/default-stream-format";
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -14,9 +17,10 @@ const $ = (selector) => document.querySelector(selector);
     let isSaving = false;
     let formatterPreviewTimer = 0;
     let formatterPreviewRequest = 0;
-    const defaultStreamFormat = DEFAULT_STREAM_FORMAT;
+    const defaultNameFormat = DEFAULT_STREAM_NAME_FORMAT;
+    const defaultDescriptionFormat = DEFAULT_STREAM_DESCRIPTION_FORMAT;
     const streamFormatPresets = {
-      detailed: defaultStreamFormat,
+      detailed: defaultDescriptionFormat,
       compact: "{stream.title}{? · {stream.resolution}?}{? · {stream.size::sbytes}?}",
       title: "{stream.title}"
     };
@@ -324,9 +328,14 @@ const $ = (selector) => document.querySelector(selector);
       $("#stream-sort-field").value = settings.sortField || "";
       $("#stream-sort-direction").value = settings.sortDirection === "asc" ? "asc" : "desc";
       renderFilterRules(Array.isArray(settings.filters) ? settings.filters : []);
-      $("#stream-format").value = typeof settings.format === "string" && settings.format.trim()
-        ? settings.format
-        : defaultStreamFormat;
+      $("#stream-name-format").value = typeof settings.nameFormat === "string" && settings.nameFormat.trim()
+        ? settings.nameFormat
+        : defaultNameFormat;
+      $("#stream-description-format").value = typeof settings.descriptionFormat === "string" && settings.descriptionFormat.trim()
+        ? settings.descriptionFormat
+        : typeof settings.format === "string" && settings.format.trim()
+          ? settings.format
+          : defaultDescriptionFormat;
       scheduleFormatterPreview();
     }
 
@@ -335,7 +344,8 @@ const $ = (selector) => document.querySelector(selector);
         filters: readFilterRows().slice(0, 30),
         sortField: $("#stream-sort-field").value,
         sortDirection: $("#stream-sort-direction").value,
-        format: $("#stream-format").value
+        nameFormat: $("#stream-name-format").value,
+        descriptionFormat: $("#stream-description-format").value
       };
     }
 
@@ -348,7 +358,8 @@ const $ = (selector) => document.querySelector(selector);
 
     async function renderFormatterPreview() {
       const requestId = ++formatterPreviewRequest;
-      const title = $("#formatter-preview-title");
+      const name = $("#formatter-preview-name");
+      const description = $("#formatter-preview-description");
       const state = $("#formatter-preview-state");
 
       try {
@@ -363,19 +374,22 @@ const $ = (selector) => document.querySelector(selector);
         stream.filename = $("#formatter-filename").value.trim();
 
         const result = await api("/api/formatter/preview", {
-          format: $("#stream-format").value,
+          nameFormat: $("#stream-name-format").value,
+          descriptionFormat: $("#stream-description-format").value,
           stream,
           metadata
         });
         if (requestId !== formatterPreviewRequest) return;
 
-        title.textContent = result.title || "(empty output)";
+        name.textContent = result.name || "(empty output)";
+        description.textContent = result.description || "(empty output)";
         $("#formatter-parsed-fields").textContent = JSON.stringify(result.parsed, null, 2);
         state.textContent = "Updated";
         state.className = "formatter-preview-state ready";
       } catch (error) {
         if (requestId !== formatterPreviewRequest) return;
-        title.textContent = "Preview unavailable";
+        name.textContent = "Preview unavailable";
+        description.textContent = "Preview unavailable";
         $("#formatter-parsed-fields").textContent = "{}";
         state.textContent = error.message;
         state.className = "formatter-preview-state error";
@@ -1041,10 +1055,10 @@ const $ = (selector) => document.querySelector(selector);
     document.querySelectorAll(".middleware-tab").forEach((button) => {
       button.addEventListener("click", () => showMiddlewareTab(button.dataset.middlewareTab));
     });
-    ["#stream-format", "#formatter-filename", "#formatter-stream-data", "#formatter-metadata"]
+    ["#stream-name-format", "#stream-description-format", "#formatter-filename", "#formatter-stream-data", "#formatter-metadata"]
       .forEach((selector) => $(selector).addEventListener("input", scheduleFormatterPreview));
     $("#apply-format-preset").addEventListener("click", () => {
-      $("#stream-format").value = streamFormatPresets[$("#format-preset").value] || defaultStreamFormat;
+      $("#stream-description-format").value = streamFormatPresets[$("#format-preset").value] || defaultDescriptionFormat;
       scheduleFormatterPreview();
     });
     $("#add-stream-filter").addEventListener("click", () => {
@@ -1055,7 +1069,7 @@ const $ = (selector) => document.querySelector(selector);
       renderFilterRules(filters);
     });
     $("#insert-format-field").addEventListener("click", () => {
-      const editor = $("#stream-format");
+      const editor = $(`#${$("#format-target").value}`);
       const token = `{stream.${$("#format-field").value}}`;
       const start = editor.selectionStart;
       const end = editor.selectionEnd;

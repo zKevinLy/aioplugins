@@ -1,5 +1,8 @@
 import { renderAioStreamsFormat } from "./custom-formatter.js";
-import { DEFAULT_STREAM_FORMAT } from "../lib/default-stream-format.js";
+import {
+  DEFAULT_STREAM_DESCRIPTION_FORMAT,
+  DEFAULT_STREAM_NAME_FORMAT
+} from "../lib/default-stream-format.js";
 
 export type StreamFieldType = "text" | "number" | "boolean" | "list";
 
@@ -90,6 +93,8 @@ export interface StreamMiddlewareSettings {
   filters: StreamFilter[];
   sortField: string;
   sortDirection: "asc" | "desc";
+  nameFormat: string;
+  descriptionFormat: string;
   format: string;
 }
 
@@ -97,7 +102,9 @@ export const DEFAULT_STREAM_MIDDLEWARE: StreamMiddlewareSettings = {
   filters: [],
   sortField: "",
   sortDirection: "desc",
-  format: DEFAULT_STREAM_FORMAT
+  nameFormat: DEFAULT_STREAM_NAME_FORMAT,
+  descriptionFormat: DEFAULT_STREAM_DESCRIPTION_FORMAT,
+  format: DEFAULT_STREAM_DESCRIPTION_FORMAT
 };
 
 const PREVIOUS_DEFAULT_STREAM_FORMAT = "{?{stream.resolution::replace('2160p', '🔥4K UHD')::replace('1440p', '✨ QHD')::replace('1080p', '🚀 FHD')::replace('720p', '💿 HD')::replace('576p', '💩 Low Quality')::replace('480p', '💩 Low Quality')::replace('360p', '💩 Low Quality')::replace('240p', '💩 Low Quality')::replace('144p', '💩 Low Quality')} · ?}{stream.title}{? · {stream.formattedSeasons}?}{? · {stream.formattedEpisodes}?}{? · 📦 {stream.size::sbytes}?}{? · 🎧 {stream.audioTags::join(' | ')}?}";
@@ -182,20 +189,50 @@ export function normalizeStreamMiddlewareSettings(
   const sortDirection = candidate.sortDirection === "asc" || candidate.sortDirection === "desc"
     ? candidate.sortDirection
     : candidate.sortBy === "title" ? "asc" : DEFAULT_STREAM_MIDDLEWARE.sortDirection;
+  const requestedNameFormat = typeof candidate.nameFormat === "string"
+    ? candidate.nameFormat.trim()
+    : "";
+  const requestedDescriptionFormat = typeof candidate.descriptionFormat === "string"
+    ? candidate.descriptionFormat.trim()
+    : "";
   const requestedFormat = typeof candidate.format === "string"
     ? candidate.format.trim()
     : "";
-  const isPreviousDefault = requestedFormat === PREVIOUS_DEFAULT_STREAM_FORMAT ||
-    requestedFormat === LEGACY_DEFAULT_STREAM_FORMAT;
-  const format = requestedFormat && !isPreviousDefault
-    ? requestedFormat.slice(0, MAX_FORMAT_LENGTH)
-    : DEFAULT_STREAM_MIDDLEWARE.format;
+  const hasSplitFormats = typeof candidate.nameFormat === "string" ||
+    typeof candidate.descriptionFormat === "string";
+  const legacyFormatOverridesSplit = requestedFormat &&
+    (!hasSplitFormats || (
+      requestedFormat !== DEFAULT_STREAM_MIDDLEWARE.format &&
+      requestedFormat !== requestedDescriptionFormat
+    ));
+  const selectedDescriptionFormat = legacyFormatOverridesSplit
+    ? requestedFormat
+    : requestedDescriptionFormat || requestedFormat;
+  const normalizedPreviousFormat = selectedDescriptionFormat
+    .replace(/\r\n/g, "\n")
+    .replace(/\n{2,}/g, "\n")
+    .trim();
+  const normalizedDefaultDescription = DEFAULT_STREAM_DESCRIPTION_FORMAT
+    .replace(/\r\n/g, "\n")
+    .replace(/\n{2,}/g, "\n")
+    .trim();
+  const isPreviousDefault = normalizedPreviousFormat === normalizedDefaultDescription ||
+    selectedDescriptionFormat === PREVIOUS_DEFAULT_STREAM_FORMAT ||
+    selectedDescriptionFormat === LEGACY_DEFAULT_STREAM_FORMAT;
+  const nameFormat = requestedNameFormat
+    ? requestedNameFormat.slice(0, MAX_FORMAT_LENGTH)
+    : DEFAULT_STREAM_NAME_FORMAT;
+  const descriptionFormat = selectedDescriptionFormat && !isPreviousDefault
+    ? selectedDescriptionFormat.slice(0, MAX_FORMAT_LENGTH)
+    : DEFAULT_STREAM_DESCRIPTION_FORMAT;
 
   return {
     filters,
     sortField,
     sortDirection,
-    format
+    nameFormat,
+    descriptionFormat,
+    format: descriptionFormat
   };
 }
 
@@ -252,6 +289,17 @@ export function wrapPluginStreams(
       return 0;
     };
     const hasValue = value => value !== "" && value != null && (!Array.isArray(value) || value.length > 0);
+    const prepareFormatterStream = stream => {
+      const prepared = { ...stream };
+      try {
+        if (prepared.service && typeof prepared.service === "object") {
+          prepared.service = { ...prepared.service };
+        }
+      } catch {
+        delete prepared.service;
+      }
+      return prepared;
+    };
     const numericValue = (stream, path) => {
       if (path === "resolution") return resolutionNumber(stream);
       const value = getValue(stream, path);
@@ -288,7 +336,7 @@ export function wrapPluginStreams(
       if (filter.operator === "notEquals") return actual !== expected;
       return true;
     };
-    const formatFallback = stream => {
+    const formatFallback = (format, stream) => {
       const tokenValue = expression => {
         const parts = expression.split("::");
         const path = parts.shift().replace(/^stream\\./, "");
@@ -319,7 +367,7 @@ export function wrapPluginStreams(
         }
         return stringify(value);
       };
-      const optional = config.format.replace(/\\{\\?([\\s\\S]*?)\\?\\}/g, (_block, contents) => {
+      const optional = format.replace(/\\{\\?([\\s\\S]*?)\\?\\}/g, (_block, contents) => {
         const tokens = [...contents.matchAll(/\\{stream\\.([^{}]+)\\}/g)];
         return tokens.some(([, expression]) => tokenValue(expression)) ? contents : "";
       });
@@ -328,14 +376,23 @@ export function wrapPluginStreams(
 
     const streams = result.filter(stream => stream && typeof stream === "object").map((stream, index) => {
       const normalized = { ...stream };
-      let title = stringify(normalized.title ?? normalized.name ?? "");
+      let name = stringify(normalized.name ?? normalized.title ?? "");
       try {
-        title = renderAioStreamsFormat(config.format, normalized, addonName);
+        name = renderAioStreamsFormat(config.nameFormat, prepareFormatterStream(normalized), addonName);
       } catch {
-        title = formatFallback(normalized) || title;
+        name = formatFallback(config.nameFormat, normalized) || name;
       }
-      const formatted = { ...normalized, title };
-      if (!normalized.name) formatted.name = title;
+      let description = stringify(normalized.title ?? normalized.description ?? "");
+      const descriptionInput = prepareFormatterStream(normalized);
+      try {
+        description = renderAioStreamsFormat(config.descriptionFormat, descriptionInput, addonName);
+      } catch {
+        description = formatFallback(config.descriptionFormat, normalized) || description;
+      }
+      for (const [key, value] of Object.entries(descriptionInput)) {
+        if (key !== "service") normalized[key] = value;
+      }
+      const formatted = { ...normalized, name, description, title: description };
       const sourceStream = { ...normalized };
       return {
         stream: formatted,

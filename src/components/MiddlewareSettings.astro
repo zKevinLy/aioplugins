@@ -59,8 +59,8 @@
             <section id="middleware-formatting" class="panel middleware-panel" aria-labelledby="formatter-heading" hidden>
               <div class="panel-head">
                 <div>
-                  <h2 id="formatter-heading">Stream title format</h2>
-                  <p class="panel-subtitle">Format the release details shown in Nuvio while keeping the provider label.</p>
+                  <h2 id="formatter-heading">Stream name and description</h2>
+                  <p class="panel-subtitle">Set the short stream label separately from its release details.</p>
                 </div>
               </div>
               <div class="panel-body">
@@ -68,7 +68,7 @@
                   <div class="formatter-editor">
                     <div class="field-row formatter-presets">
                       <div class="field">
-                        <label for="format-preset">Starting format</label>
+                        <label for="format-preset">Description preset</label>
                         <select id="format-preset">
                           <option value="detailed">Detailed</option>
                           <option value="compact">Compact</option>
@@ -85,14 +85,25 @@
                         <label for="format-field">Insert stream field</label>
                         <select id="format-field"></select>
                       </div>
+                      <div class="field">
+                        <label for="format-target">Insert into</label>
+                        <select id="format-target">
+                          <option value="stream-name-format">Name</option>
+                          <option value="stream-description-format" selected>Description</option>
+                        </select>
+                      </div>
                       <div class="field formatter-action">
                         <label aria-hidden="true">&nbsp;</label>
                         <button id="insert-format-field" class="button button-small" type="button">Insert token</button>
                       </div>
                     </div>
                     <div class="field">
-                      <label for="stream-format">Template</label>
-                      <textarea id="stream-format" rows="12" spellcheck="false"></textarea>
+                      <label for="stream-name-format">Name template</label>
+                      <textarea id="stream-name-format" rows="3" spellcheck="false"></textarea>
+                    </div>
+                    <div class="field">
+                      <label for="stream-description-format">Description template</label>
+                      <textarea id="stream-description-format" rows="12" spellcheck="false"></textarea>
                       <p class="field-hint">AIOStreams formatter syntax is supported, including nested groups, conditions, and modifiers. Common release fields are inferred from provider filenames when possible; other fields need to be supplied by the provider.</p>
                     </div>
                   </div>
@@ -104,7 +115,14 @@
                     </div>
                     <div class="formatter-preview-output">
                       <span class="formatter-preview-source">4KHDHub · 1080p</span>
-                      <p id="formatter-preview-title" aria-live="polite">Rendering preview…</p>
+                      <div class="formatter-preview-line">
+                        <span class="formatter-preview-label">Name</span>
+                        <p id="formatter-preview-name" aria-live="polite">Rendering preview…</p>
+                      </div>
+                      <div class="formatter-preview-line">
+                        <span class="formatter-preview-label">Description</span>
+                        <p id="formatter-preview-description" aria-live="polite">Rendering preview…</p>
+                      </div>
                     </div>
 
                     <details class="formatter-sample-section" open>

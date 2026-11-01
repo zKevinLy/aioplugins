@@ -245,6 +245,8 @@ test("builds a combined Nuvio manifest and serves selected files without executi
   assert.equal(applied.plugins, 1);
   const config = await testFetch("/api/config").then((response) => response.json());
   assert.equal(config.middleware.format, middlewareFormat);
+  assert.equal(config.middleware.descriptionFormat, middlewareFormat);
+  assert.equal(config.middleware.nameFormat, DEFAULT_STREAM_MIDDLEWARE.nameFormat);
   assert.ok(config.fields.some((field) => field.key === "audioTags"));
   assert.ok(config.fields.some((field) => field.key === "service.shortName"));
 
@@ -252,15 +254,29 @@ test("builds a combined Nuvio manifest and serves selected files without executi
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      format: "{metadata.title} ({stream.year}) · {stream.resolution}",
+      nameFormat: "{stream.resolution}",
+      descriptionFormat: "{metadata.title} ({stream.year}) · {stream.resolution}",
       stream: { filename: "Movie.Title.2023.2160p.BluRay.HEVC.mkv" },
       metadata: { title: "Movie Title" }
     })
   });
   assert.equal(previewResponse.status, 200);
   const preview = await previewResponse.json();
-  assert.equal(preview.title, "Movie Title (2023) · 2160p");
+  assert.equal(preview.name, "2160p");
+  assert.equal(preview.description, "Movie Title (2023) · 2160p");
+  assert.equal(preview.title, preview.description);
   assert.equal(preview.parsed.quality, "BluRay");
+
+  const legacyPreview = await testFetch("/api/formatter/preview", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      format: "{stream.title}",
+      stream: { title: "Legacy format" }
+    })
+  }).then((response) => response.json());
+  assert.equal(legacyPreview.description, "Legacy format");
+  assert.equal(legacyPreview.title, legacyPreview.description);
 
   assert.equal(globalThis.fixturePluginExecuted, undefined);
 
@@ -345,10 +361,11 @@ test("wraps frozen provider stream objects without mutating them", async () => {
   const streams = await module.exports.getStreams({});
 
   assert.equal(streams.length, 1);
-  assert.match(streams[0].title, /^🎬 Sample/);
-  assert.match(streams[0].title, /WEB-DL/);
+  assert.equal(streams[0].name, "🚀 FHD");
+  assert.match(streams[0].description, /^🎬 Sample/);
+  assert.match(streams[0].description, /WEB-DL/);
+  assert.equal(streams[0].title, streams[0].description);
   assert.equal(streams[0].resolution, "1080p");
-  assert.equal(streams[0].name, streams[0].title);
 });
 
 test("formats provider streams with circular metadata", async () => {
@@ -362,8 +379,9 @@ test("formats provider streams with circular metadata", async () => {
   const streams = await module.exports.getStreams({});
 
   assert.equal(streams.length, 1);
-  assert.match(streams[0].title, /^🎬 Sample/);
-  assert.equal(streams[0].name, streams[0].title);
+  assert.equal(streams[0].name, "🚀 FHD");
+  assert.match(streams[0].description, /^🎬 Sample/);
+  assert.equal(streams[0].title, streams[0].description);
 });
 
 test("falls back to legacy token formatting when metadata access throws", async () => {
@@ -377,7 +395,9 @@ test("falls back to legacy token formatting when metadata access throws", async 
   const streams = await module.exports.getStreams({});
 
   assert.equal(streams.length, 1);
-  assert.equal(streams[0].name, "FHD · Sample");
+  assert.equal(streams[0].name, "🚀 FHD");
+  assert.equal(streams[0].description, "FHD · Sample");
+  assert.equal(streams[0].title, streams[0].description);
 });
 
 test("wraps plugin streams with metadata formatting, filtering, and sorting", async () => {
@@ -400,10 +420,11 @@ test("wraps plugin streams with metadata formatting, filtering, and sorting", as
   new Function("module", "exports", wrapped)(module, module.exports);
 
   const streams = await module.exports.getStreams({ title: "Sample" });
-  assert.deepEqual(streams.map(stream => stream.name), [
+  assert.deepEqual(streams.map(stream => stream.description), [
     "1080p | Sample"
   ]);
   assert.equal(streams[0].title, "1080p | Sample");
+  assert.equal(streams[0].name, "🚀 FHD");
   assert.equal(streams[0].filename, "Sample 1080p");
 });
 
@@ -419,11 +440,13 @@ test("formats available metadata and omits empty optional blocks", async () => {
   );
 
   const streams = await module.exports.getStreams({ title: "Feature" });
-  assert.match(streams[0].name, /🎬 Feature/);
-  assert.match(streams[0].name, /📦 1.5 GB/);
-  assert.match(streams[0].name, /🎧 AAC \| DTS/);
-  assert.equal(streams[0].title, streams[0].name);
-  assert.match(streams[1].name, /^🎬 Unlabeled Source/);
+  assert.equal(streams[0].name, "🔥4K UHD");
+  assert.match(streams[0].description, /🎬 Feature/);
+  assert.match(streams[0].description, /📦 1.5 GB/);
+  assert.match(streams[0].description, /🎧 AAC \| DTS/);
+  assert.equal(streams[0].title, streams[0].description);
+  assert.equal(streams[1].name, "💩 Unknown");
+  assert.match(streams[1].description, /^🎬 Unlabeled Source/);
 });
 
 test("filters, sorts, and formats across shared metadata fields", async () => {
@@ -449,7 +472,7 @@ test("filters, sorts, and formats across shared metadata fields", async () => {
   );
 
   const streams = await module.exports.getStreams({ title: "Test" });
-  assert.deepEqual(streams.map((stream) => stream.name), [
+  assert.deepEqual(streams.map((stream) => stream.description), [
     "English | Beta | AAC",
     "English | Gamma | DTS"
   ]);
@@ -514,7 +537,8 @@ test("supports AIOStreams nested optional groups and conditional branches", () =
     format: wrapperFormat
   }))(module, module.exports);
   return module.exports.getStreams({}).then(streams => {
-    assert.equal(streams[0].name, "Uncached · 2160p");
+    assert.equal(streams[0].description, "Uncached · 2160p");
+    assert.equal(streams[0].title, streams[0].description);
   });
 });
 
@@ -529,21 +553,23 @@ test("renders nested language conditional branches in wrapped providers", async 
 
   const [stream] = await module.exports.getStreams({});
 
-  assert.equal(stream.name, "🗣️ 🇬🇧 🇰🇷 🌐2 ");
+  assert.equal(stream.description, "🗣️ 🇬🇧 🇰🇷 🌐2 ");
 });
 
-test("formats the displayed stream title and preserves the provider name", async () => {
+test("formats the stream name and description separately", async () => {
   const module = { exports: {} };
   const source = `module.exports = { getStreams: async () => [{ name: "4KHDHub - HubCloud 1080p", title: "Doctor.X.Mafia.S01E01.1080p.WEB-DL.mkv" }] };`;
   new Function("module", "exports", wrapPluginStreams(source, {
     ...DEFAULT_STREAM_MIDDLEWARE,
-    format: "{stream.title} · {stream.resolution}"
+    nameFormat: "{stream.resolution}",
+    descriptionFormat: "{stream.title} · {stream.resolution}"
   }))(module, module.exports);
 
   const [stream] = await module.exports.getStreams({});
 
-  assert.equal(stream.title, "Doctor X Mafia · 1080p");
-  assert.equal(stream.name, "4KHDHub - HubCloud 1080p");
+  assert.equal(stream.name, "1080p");
+  assert.equal(stream.description, "Doctor X Mafia · 1080p");
+  assert.equal(stream.title, stream.description);
 });
 
 test("applies title filters to provider metadata rather than formatted output", async () => {
@@ -568,7 +594,8 @@ test("provides the selected plugin name as the addon formatter scope", async () 
 
   const [stream] = await module.exports.getStreams({});
 
-  assert.equal(stream.name, "ReAnime · Sample");
+  assert.equal(stream.description, "ReAnime · Sample");
+  assert.equal(stream.title, stream.description);
 });
 
 test("supports AIOStreams array, track, language, date, and duration modifiers", () => {
@@ -630,13 +657,18 @@ test("extracts shared media fields from provider filenames before formatting", a
   assert.equal(wrapped.title, "Doctor X Mafia in White · S01 E06 · 1080p · WEB-DL · Netflix · AVC");
   assert.equal(wrapped.network, "Netflix");
   assert.equal(wrapped.size, 2240000000);
-  assert.equal(wrapped.name, "4KHDHub - PixelDrain 1080p");
+  assert.equal(wrapped.description, wrapped.title);
+  assert.equal(wrapped.name, "🚀 FHD");
 });
 
 test("uses the detailed formatter template by default", () => {
   const settings = normalizeStreamMiddlewareSettings({});
   assert.equal(settings.format, DEFAULT_STREAM_MIDDLEWARE.format);
   assert.ok(settings.format.length < 3000);
+  assert.equal(
+    renderAioStreamsFormat(DEFAULT_STREAM_MIDDLEWARE.nameFormat, { title: "Sample without resolution" }),
+    "💩 Unknown"
+  );
 
   const label = renderAioStreamsFormat(settings.format, {
     title: "the matrix",

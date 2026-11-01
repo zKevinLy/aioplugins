@@ -747,7 +747,7 @@ export function renderAioStreamsFormat(
         }
       }
       const selected = result ?? (typeof value === "boolean" ? value : hasValue(value));
-      const selectedTemplate = !present
+      const selectedTemplate = !present && branch.branches.length > 2
         ? branch.branches[2] ?? ""
         : branch.branches[selected ? 0 : 1] ?? "";
       return renderTemplate(selectedTemplate, currentContext);

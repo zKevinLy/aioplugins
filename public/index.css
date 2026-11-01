@@ -794,6 +794,7 @@ textarea { resize: vertical; }
 .middleware-panel { max-width: 860px; }
 .middleware-panel .panel-body { max-width: 100%; }
 .formatter-action button { width: 100%; }
+.formatter-insert { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) 100px; }
 .formatter-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(260px, .85fr);
@@ -809,12 +810,16 @@ textarea { resize: vertical; }
 .formatter-preview-state.error { color: var(--coral); }
 .formatter-preview-output {
   min-width: 0;
+  display: grid;
+  gap: 10px;
   padding: 12px;
   border-left: 3px solid var(--coral);
   background: var(--surface-raised);
 }
 .formatter-preview-source { color: var(--muted); font-size: 10px; }
-.formatter-preview-output p { margin: 7px 0 0; color: var(--ink); font-size: 13px; font-weight: 650; line-height: 1.55; overflow-wrap: anywhere; white-space: pre-wrap; }
+.formatter-preview-line { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 8px; align-items: start; }
+.formatter-preview-label { padding-top: 2px; color: var(--muted); font-size: 10px; font-weight: 700; }
+.formatter-preview-output p { min-width: 0; margin: 0; color: var(--ink); font-size: 12px; font-weight: 650; line-height: 1.55; overflow-wrap: anywhere; white-space: pre-wrap; }
 .formatter-sample-section { min-width: 0; padding-top: 10px; border-top: 1px solid var(--line); }
 .formatter-sample-section summary { margin-bottom: 10px; cursor: pointer; font-size: 11px; font-weight: 700; }
 .formatter-sample-section label { margin-top: 8px; }
@@ -835,10 +840,9 @@ textarea { resize: vertical; }
   grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
   gap: 10px;
 }
-#stream-format { font-family: Consolas, monospace; font-size: 11px; }
-#stream-format { line-height: 1.65; }
-#stream-format + .field-hint { max-width: 720px; line-height: 1.7; }
-#stream-format + .field-hint code { color: var(--accent-hover); font-size: 10px; }
+#stream-name-format, #stream-description-format { font-family: Consolas, monospace; font-size: 11px; line-height: 1.65; }
+#stream-description-format + .field-hint { max-width: 720px; line-height: 1.7; }
+#stream-description-format + .field-hint code { color: var(--accent-hover); font-size: 10px; }
 
 .step-heading {
   display: flex;
@@ -1164,6 +1168,7 @@ textarea { resize: vertical; }
   .panel-head { padding: 11px 12px; }
   .panel-body { padding: 12px; }
   .field-row { grid-template-columns: minmax(0, 1fr) 90px; }
+  .formatter-insert { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 90px; }
   .output-body { grid-template-columns: 1fr; gap: 16px; }
 
   .catalog-tools {
@@ -1210,6 +1215,8 @@ textarea { resize: vertical; }
   .nav-item { padding: 7px 8px; }
   .nav-tag { display: none; }
   .field-row { grid-template-columns: 1fr; }
+  .formatter-insert { grid-template-columns: 1fr 1fr; }
+  .formatter-insert .formatter-action { grid-column: 1 / -1; }
   .field-row .field:last-child { margin-bottom: 0; }
   .uuid-row { grid-template-columns: 1fr auto; }
   .uuid-row-label { grid-column: 1 / -1; }

@@ -11,7 +11,10 @@ import {
   inspectGitHubSource
 } from "./providers/remote.js";
 import { renderAioStreamsFormat } from "./providers/custom-formatter.js";
-import { STREAM_FIELD_CATALOG } from "./providers/stream-middleware.js";
+import {
+  DEFAULT_STREAM_MIDDLEWARE,
+  STREAM_FIELD_CATALOG
+} from "./providers/stream-middleware.js";
 
 import {
   HttpError,
@@ -362,7 +365,15 @@ async function handleApi(
 
   if (pathname === "/api/formatter/preview" && method === "POST") {
     const body = await readJsonBody(request);
-    if (typeof body.format !== "string" || body.format.length > 3000) {
+    const nameFormat = typeof body.nameFormat === "string"
+      ? body.nameFormat
+      : DEFAULT_STREAM_MIDDLEWARE.nameFormat;
+    const descriptionFormat = typeof body.descriptionFormat === "string"
+      ? body.descriptionFormat
+      : typeof body.format === "string"
+        ? body.format
+        : DEFAULT_STREAM_MIDDLEWARE.descriptionFormat;
+    if (nameFormat.length > 3000 || descriptionFormat.length > 3000) {
       throw new HttpError(400, "Formatter template must be 3000 characters or fewer");
     }
     if (!body.stream || typeof body.stream !== "object" || Array.isArray(body.stream)) {
@@ -375,7 +386,13 @@ async function handleApi(
 
     const stream = { ...(body.stream as Record<string, unknown>) };
     const metadata = (body.metadata || {}) as Record<string, unknown>;
-    const title = renderAioStreamsFormat(body.format, stream, "AIOPlugins", { metadata });
+    const name = renderAioStreamsFormat(nameFormat, { ...stream }, "AIOPlugins", { metadata });
+    const description = renderAioStreamsFormat(
+      descriptionFormat,
+      stream,
+      "AIOPlugins",
+      { metadata }
+    );
     const parsedFields = [
       "title", "filename", "year", "resolution", "quality", "encode", "network",
       "visualTags", "audioTags", "audioChannels", "languages", "subtitles",
@@ -386,7 +403,7 @@ async function handleApi(
       .filter(field => Object.prototype.hasOwnProperty.call(stream, field))
       .map(field => [field, stream[field]]));
 
-    return sendJson(200, { title, parsed });
+    return sendJson(200, { name, description, title: description, parsed });
   }
 
   if (pathname === "/api/discover" && method === "POST") {
