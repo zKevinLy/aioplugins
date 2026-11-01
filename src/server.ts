@@ -10,6 +10,7 @@ import {
   getPluginRepositoryManifest,
   inspectGitHubSource
 } from "./providers/remote.js";
+import { STREAM_FIELD_CATALOG } from "./providers/stream-middleware.js";
 
 import {
   HttpError,
@@ -18,9 +19,11 @@ import {
   destroySession,
   getProfiles,
   getSources,
+  getStreamMiddlewareSettings,
   loginUser,
   registerUser,
   saveProfile,
+  saveStreamMiddlewareSettings,
   deleteProfile,
   saveSources,
   userFromInstallLink,
@@ -349,7 +352,11 @@ async function handleApi(
       })
     );
 
-    return sendJson(200, { sources });
+    return sendJson(200, {
+      sources,
+      middleware: await getStreamMiddlewareSettings(user.id, db),
+      fields: STREAM_FIELD_CATALOG
+    });
   }
 
   if (pathname === "/api/discover" && method === "POST") {
@@ -397,6 +404,7 @@ async function handleApi(
     );
 
     await saveSources(user.id, sources, db);
+    await saveStreamMiddlewareSettings(user.id, body.middleware, db);
 
     return sendJson(200, { plugins });
   }
@@ -555,7 +563,6 @@ export async function handleRequest(
       }
 
       const sources = await getSources(user.id, platform.db);
-
       const manifest = await getPluginRepositoryManifest(
         platform.db,
         user.id,
@@ -601,12 +608,16 @@ export async function handleRequest(
       const sources = user
         ? await getSources(user.id, platform.db)
         : [];
+      const middleware = user
+        ? await getStreamMiddlewareSettings(user.id, platform.db)
+        : undefined;
 
       const source = user
         ? await getCachedPluginFile(
             platform.db,
             sources,
-            `providers/${filename}`
+            `providers/${filename}`,
+            middleware
           )
         : null;
 
@@ -624,7 +635,7 @@ export async function handleRequest(
         "application/javascript; charset=utf-8",
         {
           ...PUBLIC_CORS,
-          "cache-control": "public, max-age=300"
+          "cache-control": "no-store"
         }
       );
     } catch (error) {

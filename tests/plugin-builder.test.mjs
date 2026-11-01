@@ -3,6 +3,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { after, before, test } from "node:test";
 import { handleRequest } from "../dist/server.js";
+import { DEFAULT_STREAM_MIDDLEWARE, wrapPluginStreams } from "../dist/providers/stream-middleware.js";
 
 const commit = "b".repeat(40);
 const sourceManifest = {
@@ -203,6 +204,32 @@ test("builds a combined Nuvio manifest and serves selected files without executi
   }).then((response) => response.json());
   assert.equal(profileCreated.plugins, 1);
 
+  const middlewareFormat = "{stream.resolution} / {stream.title}";
+  const applied = await testFetch("/api/apply", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      sources: [{
+        repository: "https://github.com/example/plugins",
+        ref: "main",
+        commit,
+        providerIds: ["fixture-plugin"]
+      }],
+      middleware: {
+        sortBy: "resolution",
+        minResolution: 1080,
+        excludeKeywords: ["cam"],
+        cachedOnly: true,
+        format: middlewareFormat
+      }
+    })
+  }).then((response) => response.json());
+  assert.equal(applied.plugins, 1);
+  const config = await testFetch("/api/config").then((response) => response.json());
+  assert.equal(config.middleware.format, middlewareFormat);
+  assert.ok(config.fields.some((field) => field.key === "audioTags"));
+  assert.ok(config.fields.some((field) => field.key === "service.shortName"));
+
   assert.equal(globalThis.fixturePluginExecuted, undefined);
 
   // The install link is a bearer credential: it must work without a session.
@@ -220,7 +247,11 @@ test("builds a combined Nuvio manifest and serves selected files without executi
   const pluginResponse = await testFetch(fileUrl);
   assert.equal(pluginResponse.status, 200);
   assert.equal(pluginResponse.headers.get("content-type"), "application/javascript; charset=utf-8");
-  assert.equal(await pluginResponse.text(), pluginSource);
+  assert.equal(pluginResponse.headers.get("cache-control"), "no-store");
+  const servedPlugin = await pluginResponse.text();
+  assert.ok(servedPlugin.startsWith(pluginSource));
+  assert.match(servedPlugin, /originalGetStreams/);
+  assert.ok(servedPlugin.includes(`"format":"${middlewareFormat}"`));
   assert.equal(globalThis.fixturePluginExecuted, undefined);
   cookieJar = savedCookie;
 
@@ -247,6 +278,76 @@ test("validates hardcoded media search against cached plugin code with latency t
   assert.equal(streams.length, 1);
   assert.equal(streams[0].title, "Fight Club 1080p");
   assert.ok(latencyMs >= 0);
+});
+
+test("wraps plugin streams with metadata formatting, filtering, and sorting", async () => {
+  const source = `module.exports = { getStreams: async () => [
+    { title: "Sample 720p", size: 700000000, seeders: 3 },
+    { title: "Sample CAM 2160p", size: 2000000000, seeders: 1 },
+    { title: "Sample 1080p", size: 1400000000, seeders: 8 }
+  ] };`;
+  const wrapped = wrapPluginStreams(source, {
+    ...DEFAULT_STREAM_MIDDLEWARE,
+    sortField: "resolution",
+    sortDirection: "desc",
+    filters: [
+      { field: "resolution", operator: "gte", value: "1080" },
+      { field: "title", operator: "notContains", value: "cam" }
+    ],
+    format: "{stream.resolution} | {stream.title}"
+  });
+  const module = { exports: {} };
+  new Function("module", "exports", wrapped)(module, module.exports);
+
+  const streams = await module.exports.getStreams({ title: "Sample" });
+  assert.deepEqual(streams.map(stream => stream.title), [
+    "1080p | Sample 1080p"
+  ]);
+});
+
+test("formats available metadata and omits empty optional blocks", async () => {
+  const source = `module.exports = { getStreams: async () => [
+    { title: "Feature", resolution: "2160p", size: 1500000000, audioTags: ["AAC", "DTS"] },
+    { title: "Unlabeled source" }
+  ] };`;
+  const module = { exports: {} };
+  new Function("module", "exports", wrapPluginStreams(source, DEFAULT_STREAM_MIDDLEWARE))(
+    module,
+    module.exports
+  );
+
+  const streams = await module.exports.getStreams({ title: "Feature" });
+  assert.equal(streams[0].title, "🔥4K UHD · Feature · 📦 1.5 GB · 🎧 AAC | DTS");
+  assert.equal(streams[1].title, "Unlabeled source");
+});
+
+test("filters, sorts, and formats across shared metadata fields", async () => {
+  const source = `module.exports = { getStreams: async () => [
+    { title: "Alpha", languages: ["Japanese"], audioTags: ["DTS"], size: 1000, cached: false },
+    { title: "Beta", languages: ["English"], audioTags: ["AAC"], size: 3000, cached: true },
+    { title: "Gamma", languages: ["English"], audioTags: ["DTS"], size: 2000, cached: true }
+  ] };`;
+  const settings = {
+    ...DEFAULT_STREAM_MIDDLEWARE,
+    filters: [
+      { field: "languages", operator: "contains", value: "English" },
+      { field: "cached", operator: "isTrue", value: "" }
+    ],
+    sortField: "size",
+    sortDirection: "desc",
+    format: "{stream.languages::join(', ')} | {stream.title} | {stream.audioTags::join(', ')}"
+  };
+  const module = { exports: {} };
+  new Function("module", "exports", wrapPluginStreams(source, settings))(
+    module,
+    module.exports
+  );
+
+  const streams = await module.exports.getStreams({ title: "Test" });
+  assert.deepEqual(streams.map((stream) => stream.title), [
+    "English | Beta | AAC",
+    "English | Gamma | DTS"
+  ]);
 });
 
 test("keeps named profiles and sources manageable", async () => {

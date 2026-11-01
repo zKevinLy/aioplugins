@@ -1,6 +1,9 @@
 
 import { createHash } from "node:crypto";
 import type { Database, SqlStatement } from "../lib/db.js";
+import {
+  wrapPluginStreams
+} from "./stream-middleware.js";
 
 type MediaType = "movie" | "series";
 
@@ -663,7 +666,8 @@ export async function getPluginRepositoryManifest(
 export async function getCachedPluginFile(
   db: Database,
   sources: SavedSourceSelection[],
-  filename: string
+  filename: string,
+  middlewareSettings: unknown
 ): Promise<string | null> {
   const plugins = await getCachedPluginFiles(db, sources);
 
@@ -673,7 +677,11 @@ export async function getCachedPluginFile(
 
   if (!plugin) return null;
 
-  return getCachedContent(db, plugin.cacheKey);
+  const source = await getCachedContent(db, plugin.cacheKey);
+
+  return source === null
+    ? null
+    : wrapPluginStreams(source, middlewareSettings);
 }
 
 // ---------- fetch and cache selected providers ----------

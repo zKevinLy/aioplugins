@@ -8,6 +8,11 @@ import {
 } from "node:crypto";
 import type { Database } from "./lib/db.js";
 import type { SavedSourceSelection } from "./providers/remote.js";
+import {
+  DEFAULT_STREAM_MIDDLEWARE,
+  normalizeStreamMiddlewareSettings,
+  type StreamMiddlewareSettings
+} from "./providers/stream-middleware.js";
 
 export class HttpError extends Error {
   constructor(readonly status: number, message: string) {
@@ -501,6 +506,45 @@ export async function saveSources(
     [
       userId,
       JSON.stringify(sources),
+      Date.now()
+    ]
+  );
+}
+
+export async function getStreamMiddlewareSettings(
+  userId: string,
+  db: Database
+): Promise<StreamMiddlewareSettings> {
+  const row = await db.first<{ settings: string }>(
+    "SELECT settings FROM user_config WHERE user_id = ?",
+    [userId]
+  );
+
+  try {
+    return normalizeStreamMiddlewareSettings(
+      JSON.parse(row?.settings ?? "{}")
+    );
+  } catch {
+    return DEFAULT_STREAM_MIDDLEWARE;
+  }
+}
+
+export async function saveStreamMiddlewareSettings(
+  userId: string,
+  settings: unknown,
+  db: Database
+): Promise<void> {
+  await db.run(
+    `INSERT INTO user_config
+       (user_id, settings, updated_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT(user_id)
+       DO UPDATE SET
+         settings = excluded.settings,
+         updated_at = excluded.updated_at`,
+    [
+      userId,
+      JSON.stringify(normalizeStreamMiddlewareSettings(settings)),
       Date.now()
     ]
   );

@@ -23,9 +23,9 @@ The picker accepts HTTPS GitHub repository URLs with either a top-level array ma
 
 Limits: manifests and commit feeds up to 2 MB, provider files up to 8 MB, request bodies up to 1 MB. Requests to GitHub use a 15 second timeout and only the hosts `github.com` and `raw.githubusercontent.com` are contacted.
 
-Source metadata such as plugin names, descriptions, supported types, logos, and settings flags is preserved in the combined manifest. Nuvio continues to render and store each plugin's native settings. AIOPlugins does not combine movie metadata or rewrite plugin behavior; it selects and republishes source manifest entries and bundled files.
+Source metadata such as plugin names, descriptions, supported types, logos, and settings flags is preserved in the combined manifest. Nuvio continues to render and store each plugin's native settings. AIOPlugins wraps each selected plugin's `getStreams` result at request time. A shared typed field catalog drives field-based filters, sorting, and formatter token insertion, covering stream details such as resolution, title, size, languages, audio, release group, service state, and more. Common resolution values are inferred from quality or title when absent. Results are handled in memory by Nuvio and are never stored by AIOPlugins. The formatter supports AIOStreams-style `{stream.field}` tokens, optional blocks, and common modifiers such as `replace`, `join`, `sbytes`, and `time`; it is not a full AIOStreams template-engine implementation.
 
-Accounts carry over AIOStreams-style per-person GUID/password configuration links. Nuvio owns plugin execution, stream filtering, and plugin setting storage, so AIOPlugins does not implement Stremio stream filters, sorting, debrid services, or playback features.
+Accounts carry per-person GUID/password configuration links. Nuvio still owns plugin execution, plugin setting storage, debrid services, and playback. AIOPlugins middleware only processes the array returned by each plugin's `getStreams` method.
 
 ## Architecture
 

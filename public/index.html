@@ -120,18 +120,22 @@
                 <span class="nav-tag">1</span>
               </button>
 
-              <button id="filters-tab" class="nav-item" type="button" disabled
-                aria-label="Filters coming soon">
+              <button id="filters-tab" class="nav-item" type="button">
                 <span class="nav-icon" aria-hidden="true">⌕</span>
                 <span class="nav-label">Filters</span>
-                <span class="nav-tag">Soon</span>
+                <span class="nav-tag">1</span>
               </button>
 
-              <button id="sorting-tab" class="nav-item" type="button" disabled
-                aria-label="Sorting coming soon">
+              <button id="sorting-tab" class="nav-item" type="button">
                 <span class="nav-icon" aria-hidden="true">↕</span>
                 <span class="nav-label">Sorting</span>
-                <span class="nav-tag">Soon</span>
+                <span class="nav-tag">2</span>
+              </button>
+
+              <button id="formatting-tab" class="nav-item" type="button">
+                <span class="nav-icon" aria-hidden="true">≡</span>
+                <span class="nav-label">Formatter</span>
+                <span class="nav-tag">3</span>
               </button>
 
               <button id="save-tab" class="nav-item" type="button" aria-current="false">
@@ -266,6 +270,107 @@
               </section>
 
             </div>
+          </section>
+
+          <!-- Stream middleware settings -->
+          <section id="middleware-view" class="view" hidden>
+            <div class="step-heading">
+              <div>
+                <h2>Stream middleware</h2>
+                <p class="view-intro">Shape provider results as Nuvio receives them.</p>
+              </div>
+              <button id="save-middleware" class="button button-primary" type="button" disabled>
+                Save settings
+              </button>
+            </div>
+
+            <nav class="middleware-tabs" role="tablist" aria-label="Stream middleware">
+              <button class="middleware-tab active" type="button" role="tab" data-middleware-tab="filters" aria-selected="true">Filters</button>
+              <button class="middleware-tab" type="button" role="tab" data-middleware-tab="sorting" aria-selected="false">Sorting</button>
+              <button class="middleware-tab" type="button" role="tab" data-middleware-tab="formatting" aria-selected="false">Formatter</button>
+            </nav>
+
+            <section id="middleware-filters" class="panel middleware-panel" aria-labelledby="filter-heading">
+              <div class="panel-head">
+                <div>
+                  <h2 id="filter-heading">Stream filters</h2>
+                  <p class="panel-subtitle">Remove results that do not match these limits.</p>
+                </div>
+              </div>
+              <div class="panel-body">
+                <div id="filter-rules" class="filter-rules"></div>
+                <button id="add-stream-filter" class="button button-small" type="button">Add filter</button>
+                <p class="field-hint">All rules must match. Use the same stream metadata fields available to sorting and the formatter.</p>
+              </div>
+            </section>
+
+            <section id="middleware-sorting" class="panel middleware-panel" aria-labelledby="sorting-heading" hidden>
+              <div class="panel-head">
+                <div>
+                  <h2 id="sorting-heading">Stream order</h2>
+                  <p class="panel-subtitle">Sort each provider's results before Nuvio displays them.</p>
+                </div>
+              </div>
+              <div class="panel-body">
+                <div class="sort-controls">
+                  <div class="field">
+                    <label for="stream-sort-field">Sort field</label>
+                    <select id="stream-sort-field">
+                      <option value="">Provider order</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label for="stream-sort-direction">Direction</label>
+                    <select id="stream-sort-direction">
+                      <option value="desc">Descending</option>
+                      <option value="asc">Ascending</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section id="middleware-formatting" class="panel middleware-panel" aria-labelledby="formatter-heading" hidden>
+              <div class="panel-head">
+                <div>
+                  <h2 id="formatter-heading">Stream title format</h2>
+                  <p class="panel-subtitle">Add provider metadata to the title Nuvio displays.</p>
+                </div>
+              </div>
+              <div class="panel-body">
+                <div class="field-row formatter-presets">
+                  <div class="field">
+                    <label for="format-preset">Starting format</label>
+                    <select id="format-preset">
+                      <option value="detailed">Detailed</option>
+                      <option value="compact">Compact</option>
+                      <option value="title">Title only</option>
+                    </select>
+                  </div>
+                  <div class="field formatter-action">
+                    <label aria-hidden="true">&nbsp;</label>
+                    <button id="apply-format-preset" class="button button-small" type="button">Use format</button>
+                  </div>
+                </div>
+                <div class="field-row formatter-insert">
+                  <div class="field">
+                    <label for="format-field">Insert stream field</label>
+                    <select id="format-field"></select>
+                  </div>
+                  <div class="field formatter-action">
+                    <label aria-hidden="true">&nbsp;</label>
+                    <button id="insert-format-field" class="button button-small" type="button">Insert token</button>
+                  </div>
+                </div>
+                <div class="field">
+                  <label for="stream-format">Template</label>
+                  <textarea id="stream-format" rows="8" spellcheck="false"></textarea>
+                  <p class="field-hint">Use tokens such as <code>{stream.title}</code>, <code>{stream.resolution}</code>, <code>{stream.size}</code>, <code>{stream.languages}</code>, and <code>{stream.audioTags}</code>. Optional blocks use <code>{?text {stream.field} ?}</code>. Common modifiers include <code>::replace('old', 'new')</code>, <code>::join(' | ')</code>, <code>::sbytes</code>, and <code>::time</code>.</p>
+                </div>
+              </div>
+            </section>
+
+            <p id="middleware-status" class="status" role="status" aria-live="polite"></p>
           </section>
 
           <!-- STEP 2: Review and install -->
@@ -460,10 +565,18 @@
     let pendingUser = null;
     let state = new Map();
     let profiles = [];
+    let streamFields = [];
     let activeView = "configure";
+    let activeMiddlewareTab = "filters";
     let pluginUrl = "";
     let manifestPath = "";
     let isSaving = false;
+    const defaultStreamFormat = "{?{stream.resolution::replace('2160p', '🔥4K UHD')::replace('1440p', '✨ QHD')::replace('1080p', '🚀 FHD')::replace('720p', '💿 HD')::replace('576p', '💩 Low Quality')::replace('480p', '💩 Low Quality')::replace('360p', '💩 Low Quality')::replace('240p', '💩 Low Quality')::replace('144p', '💩 Low Quality')} · ?}{stream.title}{? · 📦 {stream.size::sbytes} ?}{? · 🎧 {stream.audioTags::join(' | ')} ?}";
+    const streamFormatPresets = {
+      detailed: defaultStreamFormat,
+      compact: "{stream.title} · {stream.resolution} · {stream.size}",
+      title: "{stream.title}"
+    };
 
     const catalog = $("#catalog");
     const status = $("#status");
@@ -478,6 +591,7 @@
     const copyFeedback = $("#copy-feedback");
     const manifestPreview = $("#manifest-preview");
     const outputState = $("#output-state");
+    const middlewareSaveButton = $("#save-middleware");
     const copyrightYear = document.querySelector("#copyright-year");
 
     if (copyrightYear) {
@@ -523,6 +637,8 @@
     function setStatus(message, kind = "") {
       const target = !user
         ? authStatus
+        : activeView === "middleware"
+          ? $("#middleware-status")
         : activeView === "account" || activeView === "save"
           ? saveStatus
           : status;
@@ -553,18 +669,23 @@
       activeView = view;
 
       $("#configure-view").hidden = view !== "configure";
+      $("#middleware-view").hidden = view !== "middleware";
       $("#save-view").hidden = view !== "save";
       $("#account-view").hidden = view !== "account";
 
       const navItems = {
         configure: "configure-tab",
+        filters: "filters-tab",
+        sorting: "sorting-tab",
+        formatting: "formatting-tab",
         save: "save-tab",
         account: "account-nav"
       };
+      const activeNav = view === "middleware" ? activeMiddlewareTab : view;
 
       Object.entries(navItems).forEach(([name, id]) => {
         const button = document.getElementById(id);
-        const active = name === view;
+        const active = name === activeNav;
 
         button.classList.toggle("active", active);
         button.setAttribute("aria-current", active ? "page" : "false");
@@ -585,8 +706,17 @@
         }
       };
 
-      $("#page-title").textContent = pageContent[view].title;
-      $("#page-description").textContent = pageContent[view].description;
+      const middlewareContent = {
+        filters: { title: "Filter streams", description: "Choose which provider results reach Nuvio." },
+        sorting: { title: "Sort streams", description: "Choose the order of each provider's results." },
+        formatting: { title: "Format stream details", description: "Surface stream metadata in displayed titles." }
+      };
+      const content = view === "middleware"
+        ? middlewareContent[activeMiddlewareTab]
+        : pageContent[view];
+
+      $("#page-title").textContent = content.title;
+      $("#page-description").textContent = content.description;
 
       if (view === "save") {
         renderReview();
@@ -597,6 +727,172 @@
           });
         }
       }
+    }
+
+    function showMiddlewareTab(tab) {
+      activeMiddlewareTab = tab;
+      showView("middleware");
+
+      document.querySelectorAll(".middleware-panel").forEach((panel) => {
+        panel.hidden = panel.id !== `middleware-${tab}`;
+      });
+      document.querySelectorAll(".middleware-tab").forEach((button) => {
+        const active = button.dataset.middlewareTab === tab;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-selected", String(active));
+      });
+    }
+
+    const filterOperatorOptions = {
+      text: [
+        ["contains", "Contains"], ["notContains", "Does not contain"],
+        ["equals", "Equals"], ["notEquals", "Does not equal"],
+        ["exists", "Has a value"], ["missing", "Is empty"]
+      ],
+      list: [
+        ["contains", "Contains"], ["notContains", "Does not contain"],
+        ["equals", "Equals"], ["notEquals", "Does not equal"],
+        ["exists", "Has a value"], ["missing", "Is empty"]
+      ],
+      number: [
+        ["equals", "Equals"], ["notEquals", "Does not equal"],
+        ["gt", "Greater than"], ["gte", "At least"],
+        ["lt", "Less than"], ["lte", "At most"],
+        ["exists", "Has a value"], ["missing", "Is empty"]
+      ],
+      boolean: [
+        ["isTrue", "Is true"], ["isFalse", "Is false"],
+        ["exists", "Has a value"], ["missing", "Is empty"]
+      ]
+    };
+
+    function populateFieldSelect(select, includeProviderOrder = false) {
+      const options = [];
+      if (includeProviderOrder) {
+        options.push({ value: "", label: "Provider order" });
+      }
+      for (const field of streamFields) {
+        options.push({ value: field.key, label: field.label });
+      }
+      select.replaceChildren(...options.map(({ value, label }) => {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = label;
+        return option;
+      }));
+    }
+
+    function operatorsForField(fieldKey) {
+      const field = streamFields.find((entry) => entry.key === fieldKey);
+      return filterOperatorOptions[field?.type] || filterOperatorOptions.text;
+    }
+
+    function readFilterRows(includeIncomplete = false) {
+      return [...document.querySelectorAll(".filter-rule")].map((row) => ({
+        field: row.querySelector(".filter-field").value,
+        operator: row.querySelector(".filter-operator").value,
+        value: row.querySelector(".filter-value").value.trim()
+      })).filter((rule) =>
+        includeIncomplete ||
+        ["exists", "missing", "isTrue", "isFalse"].includes(rule.operator) ||
+        Boolean(rule.value)
+      );
+    }
+
+    function renderFilterRules(rules) {
+      const container = $("#filter-rules");
+      container.replaceChildren();
+      if (!rules.length) {
+        const empty = document.createElement("p");
+        empty.className = "field-hint filter-empty";
+        empty.textContent = "No filters added.";
+        container.append(empty);
+        return;
+      }
+
+      rules.forEach((rule, index) => {
+        const row = document.createElement("div");
+        row.className = "filter-rule";
+
+        const field = document.createElement("select");
+        field.className = "filter-field";
+        populateFieldSelect(field);
+        field.value = rule.field;
+
+        const operator = document.createElement("select");
+        operator.className = "filter-operator";
+        const operators = operatorsForField(rule.field);
+        for (const [value, label] of operators) {
+          const option = document.createElement("option");
+          option.value = value;
+          option.textContent = label;
+          operator.append(option);
+        }
+        operator.value = operators.some(([value]) => value === rule.operator)
+          ? rule.operator
+          : operators[0]?.[0] || "contains";
+
+        const value = document.createElement("input");
+        value.className = "filter-value";
+        value.type = streamFields.find((entry) => entry.key === rule.field)?.type === "number"
+          ? "number"
+          : "text";
+        value.step = "any";
+        value.placeholder = "Value";
+        value.value = rule.value || "";
+
+        const updateValueVisibility = () => {
+          const noValue = ["exists", "missing", "isTrue", "isFalse"].includes(operator.value);
+          value.hidden = noValue;
+          value.disabled = noValue;
+        };
+        updateValueVisibility();
+
+        field.addEventListener("change", () => {
+          const nextRules = readFilterRows(true);
+          nextRules[index].field = field.value;
+          const nextOperators = operatorsForField(field.value);
+          if (!nextOperators.some(([value]) => value === nextRules[index].operator)) {
+            nextRules[index].operator = nextOperators[0]?.[0] || "contains";
+          }
+          nextRules[index].value = "";
+          renderFilterRules(nextRules);
+        });
+        operator.addEventListener("change", updateValueVisibility);
+
+        const remove = document.createElement("button");
+        remove.className = "button button-small filter-remove";
+        remove.type = "button";
+        remove.textContent = "Remove";
+        remove.setAttribute("aria-label", `Remove ${rule.field} filter`);
+        remove.addEventListener("click", () => {
+          const nextRules = readFilterRows(true);
+          nextRules.splice(index, 1);
+          renderFilterRules(nextRules);
+        });
+
+        row.append(field, operator, value, remove);
+        container.append(row);
+      });
+    }
+
+    function setMiddlewareSettings(value) {
+      const settings = value && typeof value === "object" ? value : {};
+      $("#stream-sort-field").value = settings.sortField || "";
+      $("#stream-sort-direction").value = settings.sortDirection === "asc" ? "asc" : "desc";
+      renderFilterRules(Array.isArray(settings.filters) ? settings.filters : []);
+      $("#stream-format").value = typeof settings.format === "string" && settings.format.trim()
+        ? settings.format
+        : defaultStreamFormat;
+    }
+
+    function readMiddlewareSettings() {
+      return {
+        filters: readFilterRows().slice(0, 30),
+        sortField: $("#stream-sort-field").value,
+        sortDirection: $("#stream-sort-direction").value,
+        format: $("#stream-format").value
+      };
     }
 
     function setUser(next) {
@@ -682,6 +978,7 @@
       $("#review-count").textContent = label;
 
       applyButton.disabled = count === 0 || isSaving;
+      middlewareSaveButton.disabled = count === 0 || isSaving;
       goSaveButton.disabled = count === 0;
 
       renderReview();
@@ -950,6 +1247,10 @@
 
       try {
         const saved = await api("/api/config");
+        streamFields = Array.isArray(saved.fields) ? saved.fields : [];
+        populateFieldSelect($("#stream-sort-field"), true);
+        populateFieldSelect($("#format-field"));
+        setMiddlewareSettings(saved.middleware);
         const savedSources = saved.sources || [];
         const wanted = new Map();
 
@@ -1242,6 +1543,30 @@
     searchInput.addEventListener("input", render);
 
     $("#configure-tab").addEventListener("click", () => showView("configure"));
+    $("#filters-tab").addEventListener("click", () => showMiddlewareTab("filters"));
+    $("#sorting-tab").addEventListener("click", () => showMiddlewareTab("sorting"));
+    $("#formatting-tab").addEventListener("click", () => showMiddlewareTab("formatting"));
+    document.querySelectorAll(".middleware-tab").forEach((button) => {
+      button.addEventListener("click", () => showMiddlewareTab(button.dataset.middlewareTab));
+    });
+    $("#apply-format-preset").addEventListener("click", () => {
+      $("#stream-format").value = streamFormatPresets[$("#format-preset").value] || defaultStreamFormat;
+    });
+    $("#add-stream-filter").addEventListener("click", () => {
+      const filters = readFilterRows(true);
+      const firstField = streamFields[0];
+      if (!firstField) return;
+      filters.push({ field: firstField.key, operator: "contains", value: "" });
+      renderFilterRules(filters);
+    });
+    $("#insert-format-field").addEventListener("click", () => {
+      const editor = $("#stream-format");
+      const token = `{stream.${$("#format-field").value}}`;
+      const start = editor.selectionStart;
+      const end = editor.selectionEnd;
+      editor.setRangeText(token, start, end, "end");
+      editor.focus();
+    });
 
     $("#save-tab").addEventListener("click", () => {
       if (selectionCount() === 0) return;
@@ -1275,13 +1600,14 @@
     pluginUrlButton.addEventListener("click", copyPluginUrl);
     copyUrlButton.addEventListener("click", copyPluginUrl);
 
-    // Save selection
-    applyButton.addEventListener("click", async () => {
+    async function applySetup(button) {
       if (isSaving || selectionCount() === 0) return;
 
       isSaving = true;
       applyButton.disabled = true;
-      applyButton.textContent = "Saving…";
+      middlewareSaveButton.disabled = true;
+      const originalLabel = button.textContent;
+      button.textContent = "Saving…";
 
       setStatus("Fetching selected plugin files and building your link…");
 
@@ -1293,7 +1619,10 @@
       })).filter((source) => source.providerIds.length);
 
       try {
-        const result = await api("/api/apply", { sources });
+        const result = await api("/api/apply", {
+          sources,
+          middleware: readMiddlewareSettings()
+        });
 
         await refreshManifestPreview();
 
@@ -1308,18 +1637,25 @@
         copyFeedback.textContent =
           "Your setup is saved. Copy your URL and add it to Nuvio.";
 
-        $(".output-panel").scrollIntoView({
-          behavior: "smooth",
-          block: "start"
-        });
+        if (button === applyButton) {
+          $(".output-panel").scrollIntoView({
+            behavior: "smooth",
+            block: "start"
+          });
+        }
       } catch (error) {
         setStatus(error.message, "error");
       } finally {
         isSaving = false;
-        applyButton.textContent = "Save Plugin Setup";
+        button.textContent = originalLabel;
         applyButton.disabled = selectionCount() === 0;
+        middlewareSaveButton.disabled = selectionCount() === 0;
       }
-    });
+    }
+
+    // Save selection and middleware settings
+    applyButton.addEventListener("click", () => applySetup(applyButton));
+    middlewareSaveButton.addEventListener("click", () => applySetup(middlewareSaveButton));
 
     // Export backup
     $("#export-config").addEventListener("click", async () => {
@@ -1329,7 +1665,8 @@
         const backup = {
           format: "aioplugins-profile",
           version: 1,
-          sources: saved.sources || []
+          sources: saved.sources || [],
+          middleware: saved.middleware
         };
 
         const blobUrl = URL.createObjectURL(
@@ -1371,7 +1708,11 @@
         }
 
         setStatus("Restoring plugins…");
-        await api("/api/apply", { sources: backup.sources });
+        await api("/api/apply", {
+          sources: backup.sources,
+          middleware: backup.middleware
+        });
+        setMiddlewareSettings(backup.middleware);
 
         const restoredState = new Map();
 
