@@ -1,3 +1,5 @@
+import { renderAioStreamsFormat } from "./custom-formatter.js";
+
 export type StreamFieldType = "text" | "number" | "boolean" | "list";
 
 export interface StreamFieldDefinition {
@@ -76,7 +78,7 @@ export const DEFAULT_STREAM_MIDDLEWARE: StreamMiddlewareSettings = {
   filters: [],
   sortField: "",
   sortDirection: "desc",
-  format: "{?{stream.resolution::replace('2160p', '🔥4K UHD')::replace('1440p', '✨ QHD')::replace('1080p', '🚀 FHD')::replace('720p', '💿 HD')::replace('576p', '💩 Low Quality')::replace('480p', '💩 Low Quality')::replace('360p', '💩 Low Quality')::replace('240p', '💩 Low Quality')::replace('144p', '💩 Low Quality')} · ?}{stream.title}{? · 📦 {stream.size::sbytes} ?}{? · 🎧 {stream.audioTags::join(' | ')} ?}"
+  format: "{?{stream.resolution::replace('2160p', '🔥4K UHD')::replace('1440p', '✨ QHD')::replace('1080p', '🚀 FHD')::replace('720p', '💿 HD')::replace('576p', '💩 Low Quality')::replace('480p', '💩 Low Quality')::replace('360p', '💩 Low Quality')::replace('240p', '💩 Low Quality')::replace('144p', '💩 Low Quality')} · ?}{stream.title}{? · 📦 {stream.size::sbytes}?}{? · 🎧 {stream.audioTags::join(' | ')}?}"
 };
 
 const MAX_FORMAT_LENGTH = 3000;
@@ -172,12 +174,14 @@ export function wrapPluginStreams(
   value: unknown
 ): string {
   const settings = JSON.stringify(normalizeStreamMiddlewareSettings(value));
+  const formatterSource = renderAioStreamsFormat.toString();
   const fieldTypes = JSON.stringify(
     Object.fromEntries(STREAM_FIELD_CATALOG.map(field => [field.key, field.type]))
   );
 
   return `${source}\n;(() => {
   const config = ${settings};
+  const renderAioStreamsFormat = ${formatterSource};
   const fieldTypes = ${fieldTypes};
   const plugin = typeof module !== "undefined" && module.exports
     ? module.exports
@@ -204,57 +208,6 @@ export function wrapPluginStreams(
       return path.split(".").reduce((value, key) => value == null ? "" : value[key], stream);
     };
     const stringify = value => Array.isArray(value) ? value.join(" | ") : value == null ? "" : String(value);
-    const tokenValue = (expression, stream) => {
-      const parts = expression.split("::");
-      const path = parts.shift().replace(/^stream\\./, "");
-      let value = getValue(stream, path);
-      for (const operation of parts) {
-        let match = operation.match(/^replace\\(['\"](.*?)['\"],\\s*['\"](.*?)['\"]\\)$/);
-        if (match) {
-          value = stringify(value).split(match[1]).join(match[2]);
-          continue;
-        }
-        match = operation.match(/^join\\(['\"](.*?)['\"]\\)$/);
-        if (match) {
-          value = Array.isArray(value) ? value.join(match[1]) : stringify(value);
-          continue;
-        }
-        match = operation.match(/^exists\\[\"([\\s\\S]*?)\"\\|\\|\"([\\s\\S]*?)\"\\]$/);
-        if (match) {
-          value = value ? match[1] : match[2];
-          continue;
-        }
-        if (operation === "title") {
-          value = stringify(value).replace(/\\b\\w/g, character => character.toUpperCase());
-        } else if (operation === "sbytes" && value !== "" && value != null && Number.isFinite(Number(value))) {
-          const bytes = Number(value);
-          const units = ["B", "KB", "MB", "GB", "TB"];
-          let size = bytes;
-          let unit = 0;
-          while (size >= 1000 && unit < units.length - 1) {
-            size /= 1000;
-            unit++;
-          }
-          value = size.toFixed(unit ? 1 : 0) + " " + units[unit];
-        } else if (operation === "time" && value !== "" && value != null && Number.isFinite(Number(value))) {
-          const seconds = Number(value);
-          value = Math.floor(seconds / 3600) > 0
-            ? Math.floor(seconds / 3600) + "h " + Math.floor(seconds % 3600 / 60) + "m"
-            : Math.floor(seconds / 60) + "m";
-        }
-      }
-      return stringify(value);
-    };
-    const formatTitle = stream => {
-      const template = config.format;
-      const optional = template.replace(/\\{\\?([\\s\\S]*?)\\?\\}/g, (block, contents) => {
-        const tokens = [...contents.matchAll(/\\{stream\\.([^{}]+)\\}/g)];
-        return tokens.some(([, expression]) => tokenValue(expression, stream))
-          ? contents
-          : "";
-      });
-      return optional.replace(/\\{stream\\.([^{}]+)\\}/g, (_token, expression) => tokenValue(expression, stream)).replace(/\\s{2,}/g, " ").trim();
-    };
     const resolutionNumber = stream => {
       const resolution = stringify(getValue(stream, "resolution")).toLowerCase();
       const match = resolution.match(/2160|1440|1080|720|576|480|360|240|144/);
@@ -306,7 +259,7 @@ export function wrapPluginStreams(
     const streams = result.filter(stream => stream && typeof stream === "object").filter(stream =>
       config.filters.every(filter => filterMatches(stream, filter))
     ).map((stream, index) => ({
-      stream: { ...stream, name: formatTitle(stream) || stringify(getValue(stream, "title")) },
+      stream: { ...stream, name: renderAioStreamsFormat(config.format, stream) },
       index
     }));
 

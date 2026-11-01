@@ -3,6 +3,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { after, before, test } from "node:test";
 import { handleRequest } from "../dist/server.js";
+import { renderAioStreamsFormat } from "../dist/providers/custom-formatter.js";
 import { DEFAULT_STREAM_MIDDLEWARE, wrapPluginStreams } from "../dist/providers/stream-middleware.js";
 
 const commit = "b".repeat(40);
@@ -372,6 +373,96 @@ test("filters, sorts, and formats across shared metadata fields", async () => {
     "English | Beta | AAC",
     "English | Gamma | DTS"
   ]);
+});
+
+test("supports AIOStreams nested optional groups and conditional branches", () => {
+  const stream = {
+    title: "sample",
+    resolution: "2160p",
+    quality: "WEB-DL",
+    cached: false,
+    type: "p2p",
+    seeders: 8
+  };
+
+  assert.equal(
+    renderAioStreamsFormat(
+      "{?{stream.resolution}{? · {stream.quality}?}?}",
+      stream
+    ),
+    "2160p · WEB-DL"
+  );
+  assert.equal(
+    renderAioStreamsFormat(
+      "{stream.cached[\"Cached\"||\"Uncached\"||\"Unknown\"]} {stream.seeders::>0::and::stream.type::=p2p[\"Seeded\"||\"\"]}",
+      stream
+    ),
+    "Uncached Seeded"
+  );
+  assert.equal(
+    renderAioStreamsFormat(
+      "{stream.resolution::exists[\"{stream.quality::exists[\\\"{stream.resolution} {stream.quality}\\\"||\\\"quality?\\\"]}\"||\"Unknown\"]}",
+      stream
+    ),
+    "2160p WEB-DL"
+  );
+  assert.equal(
+    renderAioStreamsFormat(
+      "{stream.message::exists[\"Found\"||\"Missing\"||\"Unknown\"]}",
+      { message: "   " }
+    ),
+    "Unknown"
+  );
+  assert.equal(
+    renderAioStreamsFormat("{stream.seeders::upper}", stream),
+    "{unknown_number_modifier(upper)}"
+  );
+  assert.equal(
+    renderAioStreamsFormat("{stream.seeders::upper::lower}", stream),
+    "{unknown_number_modifier(upper)}"
+  );
+  assert.equal(
+    renderAioStreamsFormat("{stream.audioTracks::pluck('lang')::join(' ')}", { audioTracks: [] }),
+    ""
+  );
+
+  const module = { exports: {} };
+  const wrapperFormat = "{stream.cached[\"Cached\"||\"Uncached\"||\"Unknown\"]} · {?{stream.resolution}?}";
+  const source = `module.exports = { getStreams: async () => [${JSON.stringify(stream)}] };`;
+  new Function("module", "exports", wrapPluginStreams(source, {
+    ...DEFAULT_STREAM_MIDDLEWARE,
+    format: wrapperFormat
+  }))(module, module.exports);
+  return module.exports.getStreams({}).then(streams => {
+    assert.equal(streams[0].name, "Uncached · 2160p");
+  });
+});
+
+test("supports AIOStreams array, track, language, date, and duration modifiers", () => {
+  const stream = {
+    audioTracks: [
+      { lang: "English", channels: "5.1", commentary: false },
+      { lang: "English", channels: "2.0", commentary: true }
+    ],
+    date: "2024-07-04",
+    duration: 65_000
+  };
+
+  assert.equal(
+    renderAioStreamsFormat(
+      "{stream.audioTracks::where('lang=English', '!commentary')::pluck('lang')::languageCode::join(',')}|{stream.audioTracks::where('lang=English', '!commentary')::each(\"{track.lang::languageCode} {track.channels}\")::join(' | ')}|{stream.date::date('%B %o, %Y')}|{stream.duration::time('[%-Hh ]%-Mm[ %-Ss]')}",
+      stream
+    ),
+    "EN|EN 5.1|July 4th, 2024|1m 5s"
+  );
+  assert.equal(
+    renderAioStreamsFormat("{stream.languages::$EN[\"starts\"||\"no\"]}", { languages: ["EN", "DE"] }),
+    "starts"
+  );
+  assert.equal(
+    renderAioStreamsFormat("{stream.languages::^EN[\"ends\"||\"no\"]}", { languages: ["DE", "EN"] }),
+    "ends"
+  );
 });
 
 test("keeps named profiles and sources manageable", async () => {

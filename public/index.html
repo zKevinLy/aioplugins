@@ -365,7 +365,7 @@
                 <div class="field">
                   <label for="stream-format">Template</label>
                   <textarea id="stream-format" rows="8" spellcheck="false"></textarea>
-                  <p class="field-hint">Use tokens such as <code>{stream.title}</code>, <code>{stream.resolution}</code>, <code>{stream.size}</code>, <code>{stream.languages}</code>, and <code>{stream.audioTags}</code>. Optional blocks use <code>{?text {stream.field} ?}</code>. Common modifiers include <code>::replace('old', 'new')</code>, <code>::join(' | ')</code>, <code>::sbytes</code>, and <code>::time</code>.</p>
+                  <p class="field-hint">AIOStreams formatter syntax is supported: nested optional blocks, conditional branches, chained conditions, and string, number, array, and track modifiers. Tokens use <code>{stream.field}</code>; only fields supplied by the provider are available.</p>
                 </div>
               </div>
             </section>
@@ -571,7 +571,7 @@
     let pluginUrl = "";
     let manifestPath = "";
     let isSaving = false;
-    const defaultStreamFormat = "{?{stream.resolution::replace('2160p', '🔥4K UHD')::replace('1440p', '✨ QHD')::replace('1080p', '🚀 FHD')::replace('720p', '💿 HD')::replace('576p', '💩 Low Quality')::replace('480p', '💩 Low Quality')::replace('360p', '💩 Low Quality')::replace('240p', '💩 Low Quality')::replace('144p', '💩 Low Quality')} · ?}{stream.title}{? · 📦 {stream.size::sbytes} ?}{? · 🎧 {stream.audioTags::join(' | ')} ?}";
+    const defaultStreamFormat = "{?{stream.resolution::replace('2160p', '🔥4K UHD')::replace('1440p', '✨ QHD')::replace('1080p', '🚀 FHD')::replace('720p', '💿 HD')::replace('576p', '💩 Low Quality')::replace('480p', '💩 Low Quality')::replace('360p', '💩 Low Quality')::replace('240p', '💩 Low Quality')::replace('144p', '💩 Low Quality')} · ?}{stream.title}{? · 📦 {stream.size::sbytes}?}{? · 🎧 {stream.audioTags::join(' | ')}?}";
     const streamFormatPresets = {
       detailed: defaultStreamFormat,
       compact: "{stream.title} · {stream.resolution} · {stream.size}",
