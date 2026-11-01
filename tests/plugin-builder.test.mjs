@@ -104,6 +104,7 @@ let platform;
 let originalFetch;
 let cookieJar = "";
 let temporaryAtomFailures = 0;
+let fixtureFileRequests = 0;
 
 async function testFetch(target, options = {}) {
   const headers = new Headers(options.headers || {});
@@ -142,6 +143,7 @@ before(() => {
       return new Response(JSON.stringify(sourceManifest));
     }
     if (url.hostname === "raw.githubusercontent.com" && url.pathname.endsWith("/providers/fixture-plugin.js")) {
+      fixtureFileRequests++;
       return new Response(pluginSource);
     }
     if (url.hostname === "raw.githubusercontent.com" && url.pathname.endsWith("/providers/not-selected.js")) {
@@ -333,6 +335,26 @@ test("builds a combined Nuvio manifest and serves selected files without executi
 
   const health = await testFetch("/health").then((response) => response.json());
   assert.deepEqual(health, { status: "ok" });
+});
+
+test("pre-caches source batches without refetching cached provider files", async () => {
+  const requestsBefore = fixtureFileRequests;
+  const response = await testFetch("/api/cache", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      sources: [{
+        repository: "https://github.com/example/plugins",
+        ref: "main",
+        commit,
+        providerIds: ["fixture-plugin"]
+      }]
+    })
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).plugins, 1);
+  assert.equal(fixtureFileRequests, requestsBefore);
 });
 
 test("retries transient GitHub failures during source discovery", async () => {

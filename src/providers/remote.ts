@@ -610,6 +610,21 @@ async function getCachedContent(
   return new TextDecoder().decode(combined);
 }
 
+async function hasCachedContent(
+  db: Database,
+  key: string
+): Promise<boolean> {
+  const row = await db.first<{ present: number }>(
+    `SELECT 1 AS present
+       FROM provider_cache
+       WHERE cache_key = ?
+       LIMIT 1`,
+    [key]
+  );
+
+  return row !== null;
+}
+
 // ---------- cached plugin lookup ----------
 
 async function getCachedPluginFiles(
@@ -829,16 +844,19 @@ export async function fetchAndCacheSources(
       );
     }
 
-    // Cache the manifest in the database.
-    await saveCachedContent(
-      db,
-      manifestCacheKey(
-        source.owner,
-        source.repo,
-        source.commit
-      ),
-      JSON.stringify(source.manifest, null, 2)
+    const cachedManifestKey = manifestCacheKey(
+      source.owner,
+      source.repo,
+      source.commit
     );
+
+    if (!(await hasCachedContent(db, cachedManifestKey))) {
+      await saveCachedContent(
+        db,
+        cachedManifestKey,
+        JSON.stringify(source.manifest, null, 2)
+      );
+    }
 
     for (const entry of selectedEntries) {
       if (entry.enabled === false) {
@@ -854,20 +872,20 @@ export async function fetchAndCacheSources(
         .map(encodeURIComponent)
         .join("/");
 
+      const fileCacheKey = cacheKey(
+        source.owner,
+        source.repo,
+        source.commit,
+        filename
+      );
+
+      if (await hasCachedContent(db, fileCacheKey)) continue;
+
       const code = await fetchText(
         `${GITHUB_RAW}/${source.owner}/${source.repo}/${source.commit}/${urlPath}`
       );
 
-      await saveCachedContent(
-        db,
-        cacheKey(
-          source.owner,
-          source.repo,
-          source.commit,
-          filename
-        ),
-        code
-      );
+      await saveCachedContent(db, fileCacheKey, code);
     }
 
     saved.push({

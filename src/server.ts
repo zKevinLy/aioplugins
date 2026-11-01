@@ -456,6 +456,22 @@ async function handleApi(
     return sendJson(200, { plugins });
   }
 
+  if (pathname === "/api/cache" && method === "POST") {
+    const limited = enforceRateLimit(
+      clientIp,
+      "cache",
+      20,
+      10 * 60 * 1000
+    );
+
+    if (limited) return limited;
+
+    const body = await readJsonBody(request);
+    const { plugins } = await fetchAndCacheSources(body.sources, db);
+
+    return sendJson(200, { plugins });
+  }
+
   if (pathname === "/api/profiles" && method === "GET") {
     return sendJson(200, {
       profiles: await getProfiles(user.id, db)

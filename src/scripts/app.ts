@@ -12,6 +12,7 @@ import type {
 type AppView = "configure" | "middleware" | "save" | "account";
 type MiddlewareTab = "filters" | "sorting" | "formatting";
 type OperatorOption = [StreamFilterOperator, string];
+const PROVIDER_CACHE_BATCH_SIZE = 20;
 
 interface PublicUser {
   id: string;
@@ -196,6 +197,7 @@ function parseProfileBackup(value: unknown): ProfileBackup {
     const applyButton = $<HTMLButtonElement>("#apply");
     const goSaveButton = $<HTMLButtonElement>("#go-save");
     const searchInput = $<HTMLInputElement>("#search");
+    const selectFilteredButton = $<HTMLButtonElement>("#select-filtered");
     const pluginUrlButton = $<HTMLButtonElement>("#plugin-url");
     const copyUrlButton = $<HTMLButtonElement>("#copy-plugin-url");
     const copyFeedback = $("#copy-feedback");
@@ -720,12 +722,41 @@ function parseProfileBackup(value: unknown): ProfileBackup {
       container.append(list);
     }
 
-    function render() {
+    function matchingProviders(source: LoadedSource) {
       const query = searchInput.value.trim().toLowerCase();
+
+      return source.providers.filter((provider) =>
+        `${provider.name} ${provider.id} ${provider.description}`
+          .toLowerCase()
+          .includes(query)
+      );
+    }
+
+    function toggleFilteredSelection() {
+      const targets = [...state.values()].flatMap((source) =>
+        matchingProviders(source)
+          .filter((provider) => provider.enabled && provider.types.length > 0)
+          .map((provider) => ({ source, provider }))
+      );
+      const shouldSelect = !targets.every(({ source, provider }) =>
+        source.selected.has(provider.id)
+      );
+
+      for (const { source, provider } of targets) {
+        if (shouldSelect) source.selected.add(provider.id);
+        else source.selected.delete(provider.id);
+      }
+
+      render();
+    }
+
+    function render() {
       catalog.replaceChildren();
 
       if (state.size === 0) {
         catalog.className = "catalog-empty";
+        selectFilteredButton.disabled = true;
+        selectFilteredButton.textContent = "Select all";
 
         const heading = document.createElement("strong");
         heading.textContent = "Loading your plugin sources...";
@@ -740,16 +771,18 @@ function parseProfileBackup(value: unknown): ProfileBackup {
 
       catalog.className = "catalog-content";
       let visible = 0;
+      const selectable: { source: LoadedSource; id: string }[] = [];
 
       for (const [key, source] of state) {
-        const providers = source.providers.filter((provider) =>
-          `${provider.name} ${provider.id} ${provider.description}`
-            .toLowerCase()
-            .includes(query)
-        );
+        const providers = matchingProviders(source);
 
         if (providers.length === 0) continue;
         visible += providers.length;
+        selectable.push(
+          ...providers
+            .filter((provider) => provider.enabled && provider.types.length > 0)
+            .map((provider) => ({ source, id: provider.id }))
+        );
 
         const group = document.createElement("section");
         group.className = "source-group";
@@ -781,10 +814,10 @@ function parseProfileBackup(value: unknown): ProfileBackup {
         const chooseAll = document.createElement("button");
         chooseAll.className = "button button-small";
         chooseAll.type = "button";
-        chooseAll.textContent = "Select enabled";
+        chooseAll.textContent = "Select visible";
 
         chooseAll.addEventListener("click", () => {
-          for (const provider of source.providers) {
+          for (const provider of providers) {
             if (provider.enabled && provider.types.length) {
               source.selected.add(provider.id);
             }
@@ -859,12 +892,20 @@ function parseProfileBackup(value: unknown): ProfileBackup {
         catalog.className = "catalog-empty";
 
         const message = document.createElement("p");
-        message.textContent = query
+        message.textContent = searchInput.value.trim()
           ? "No plugins match this search."
           : "No available plugins found.";
 
         catalog.append(message);
       }
+
+      const allSelected = selectable.length > 0 && selectable.every(
+        ({ source, id }) => source.selected.has(id)
+      );
+      selectFilteredButton.disabled = selectable.length === 0;
+      selectFilteredButton.textContent = allSelected
+        ? "Deselect all"
+        : "Select all";
 
       updateCounts();
     }
@@ -1233,6 +1274,7 @@ function parseProfileBackup(value: unknown): ProfileBackup {
 
     // Navigation
     searchInput.addEventListener("input", render);
+    selectFilteredButton.addEventListener("click", toggleFilteredSelection);
 
     $("#configure-tab").addEventListener("click", () => showView("configure"));
     $("#filters-tab").addEventListener("click", () => showMiddlewareTab("filters"));
@@ -1324,6 +1366,39 @@ function parseProfileBackup(value: unknown): ProfileBackup {
       })).filter((source) => source.providerIds.length);
 
       try {
+        const cacheBatches = sources.flatMap((source) => {
+          const batches = [];
+
+          for (
+            let offset = 0;
+            offset < source.providerIds.length;
+            offset += PROVIDER_CACHE_BATCH_SIZE
+          ) {
+            batches.push({
+              ...source,
+              providerIds: source.providerIds.slice(
+                offset,
+                offset + PROVIDER_CACHE_BATCH_SIZE
+              )
+            });
+          }
+
+          return batches;
+        });
+
+        if (cacheBatches.length > 1) {
+          for (let index = 0; index < cacheBatches.length; index++) {
+            setStatus(
+              `Preparing plugin files (${index + 1} of ${cacheBatches.length})…`
+            );
+            await api<ApplyResponse>("/api/cache", {
+              sources: [cacheBatches[index]]
+            });
+          }
+        }
+
+        setStatus("Saving your setup and building your link…");
+
         const result = await api<ApplyResponse>("/api/apply", {
           sources,
           middleware: readMiddlewareSettings()
