@@ -22,6 +22,6 @@
     "src/**/*.ts"
   ],
   "exclude": [
-    "src/scripts/app.ts"
+    "src/scripts/**/*.ts"
   ]
 }

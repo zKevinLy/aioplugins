@@ -8,6 +8,7 @@ import type {
   StreamFilter,
   StreamFilterOperator
 } from "../providers/stream-middleware.js";
+import { renderProviderListItem } from "./components/ProviderListItem.js";
 
 type AppView = "configure" | "middleware" | "save" | "account";
 type MiddlewareTab = "filters" | "sorting" | "formatting";
@@ -85,13 +86,6 @@ interface FormatterPreviewResponse {
 
 interface ApplyResponse {
   plugins: number;
-}
-
-interface SelectedProvider {
-  name: string;
-  id: string;
-  repository: string;
-  types: string[];
 }
 
 interface ProfileBackup {
@@ -668,17 +662,15 @@ function parseProfileBackup(value: unknown): ProfileBackup {
 
       container.replaceChildren();
 
-      const selected: SelectedProvider[] = [];
+      const selected: {
+        source: LoadedSource;
+        provider: ProviderSummary;
+      }[] = [];
 
       for (const source of state.values()) {
         for (const provider of source.providers) {
           if (source.selected.has(provider.id)) {
-            selected.push({
-              name: provider.name,
-              id: provider.id,
-              repository: source.repository,
-              types: provider.types
-            });
+            selected.push({ source, provider });
           }
         }
       }
@@ -694,28 +686,16 @@ function parseProfileBackup(value: unknown): ProfileBackup {
       const list = document.createElement("div");
       list.className = "review-list";
 
-      for (const plugin of selected) {
-        const row = document.createElement("div");
-        row.className = "review-row";
-
-        const details = document.createElement("div");
-        const name = document.createElement("strong");
-        name.textContent = plugin.name;
-
-        const id = document.createElement("p");
-        id.className = "provider-id";
-        id.textContent = plugin.id;
-
-        details.append(name, id);
-
-        const type = document.createElement("span");
-        type.className = "type-tag";
-        type.textContent = plugin.types.length
-          ? plugin.types.join(" · ")
-          : "plugin";
-
-        row.append(details, type);
-        list.append(row);
+      for (const { source, provider } of selected) {
+        list.append(renderProviderListItem(provider, {
+          checked: true,
+          onChange: (checked) => {
+            if (!checked) {
+              source.selected.delete(provider.id);
+              updateCounts();
+            }
+          }
+        }));
       }
 
       container.append(list);
@@ -840,48 +820,14 @@ function parseProfileBackup(value: unknown): ProfileBackup {
         group.append(titleRow);
 
         for (const provider of providers) {
-          const row = document.createElement("label");
-          row.className = "provider-row";
-
-          const checkbox = document.createElement("input");
-          checkbox.type = "checkbox";
-          checkbox.checked = source.selected.has(provider.id);
-          checkbox.disabled = !provider.enabled || provider.types.length === 0;
-
-          checkbox.addEventListener("change", () => {
-            if (checkbox.checked) source.selected.add(provider.id);
-            else source.selected.delete(provider.id);
-            updateCounts();
-          });
-
-          const detail = document.createElement("span");
-
-          const name = document.createElement("span");
-          name.className = "provider-name";
-          name.append(document.createTextNode(provider.name));
-
-          const id = document.createElement("span");
-          id.className = "provider-id";
-          id.textContent = provider.id;
-          name.append(id);
-
-          const description = document.createElement("p");
-          description.className = "provider-description";
-          description.textContent = provider.description || "No description provided.";
-
-          detail.append(name, description);
-
-          const tag = document.createElement("span");
-          tag.className = `type-tag${
-            provider.enabled && provider.types.length ? "" : " disabled"
-          }`;
-
-          tag.textContent = provider.types.length
-            ? provider.types.join(" · ")
-            : "unsupported";
-
-          row.append(checkbox, detail, tag);
-          group.append(row);
+          group.append(renderProviderListItem(provider, {
+            checked: source.selected.has(provider.id),
+            onChange: (checked) => {
+              if (checked) source.selected.add(provider.id);
+              else source.selected.delete(provider.id);
+              updateCounts();
+            }
+          }));
         }
 
         catalog.append(group);

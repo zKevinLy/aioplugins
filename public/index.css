@@ -858,20 +858,8 @@ textarea { resize: vertical; }
 .save-card { margin-bottom: 12px; }
 .save-card .panel-body { padding: 14px 16px; }
 
-.review-selection { padding: 0 18px; }
+.review-selection { padding: 5px 18px 12px; }
 .review-list { display: grid; gap: 0; }
-
-.review-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  padding: 13px 0;
-  border-bottom: 1px solid var(--line);
-}
-
-.review-row:last-child { border-bottom: 0; }
-.review-row strong { display: block; font-size: 14px; }
 
 .review-footer {
   display: flex;
@@ -1195,8 +1183,6 @@ textarea { resize: vertical; }
   .filter-rule .filter-value { grid-column: 1; }
   .filter-rule .filter-remove { grid-column: 2; grid-row: 2; }
   .sort-controls { grid-template-columns: 1fr; gap: 0; }
-  .review-row { align-items: flex-start; }
-
   .backup-row {
     align-items: flex-start;
     flex-wrap: wrap;
