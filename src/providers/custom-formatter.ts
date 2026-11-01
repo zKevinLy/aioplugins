@@ -295,8 +295,8 @@ export function renderAioStreamsFormat(
     const trimmed = value.trim();
     if (
       trimmed.length < 2 ||
-      !((trimmed[0] === "'" && trimmed.at(-1) === "'") ||
-        (trimmed[0] === '"' && trimmed.at(-1) === '"'))
+      !((trimmed[0] === "'" && trimmed[trimmed.length - 1] === "'") ||
+        (trimmed[0] === '"' && trimmed[trimmed.length - 1] === '"'))
     ) return trimmed;
     return trimmed.slice(1, -1)
       .replace(/\\([\\"'])/g, "$1")
@@ -459,7 +459,7 @@ export function renderAioStreamsFormat(
       const chars = new Set([...stringify(args[0])]);
       const points = [...value];
       while (points.length && chars.has(points[0]!)) points.shift();
-      while (points.length && chars.has(points.at(-1)!)) points.pop();
+      while (points.length && chars.has(points[points.length - 1]!)) points.pop();
       return points.join("");
     }
     if (name === "smallcaps" && typeof value === "string") {
@@ -525,7 +525,7 @@ export function renderAioStreamsFormat(
     }
     if (name === "slice" && array) return array.slice(Number(args[0]) || 0, args[1] === undefined ? undefined : Number(args[1]));
     if (name === "first" && array && !objectList) return array[0];
-    if (name === "last" && array && !objectList) return array.at(-1);
+    if (name === "last" && array && !objectList) return array[array.length - 1];
     if (name === "random" && array && !objectList) return array[Math.floor(Math.random() * array.length)];
     if ((name === "sort" || name === "rsort" || name === "lsort") && array && !objectList) {
       const sorted = [...array].sort((left, right) => {
@@ -671,7 +671,7 @@ export function renderAioStreamsFormat(
       return expectedList.includes(stringify(value[0]).toLowerCase());
     }
     if (Array.isArray(value) && match[1] === "^") {
-      return expectedList.includes(stringify(value.at(-1)).toLowerCase());
+      return expectedList.includes(stringify(value[value.length - 1]).toLowerCase());
     }
     return values.some(item => {
       const text = stringify(item).toLowerCase();

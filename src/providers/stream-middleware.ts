@@ -251,6 +251,7 @@ export function wrapPluginStreams(
   return `${source}\n;(() => {
   const config = ${settings};
   const addonName = ${formattedAddonName};
+  const __name = (target) => target;
   const renderAioStreamsFormat = ${formatterSource};
   const fieldTypes = ${fieldTypes};
   const plugin = typeof module !== "undefined" && module.exports

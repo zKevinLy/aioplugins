@@ -350,6 +350,41 @@ test("validates hardcoded media search against cached plugin code with latency t
   assert.ok(latencyMs >= 0);
 });
 
+test("formats wrapped streams when the embedded formatter uses esbuild helpers", async () => {
+  const formatter = renderAioStreamsFormat;
+  const originalToString = Object.getOwnPropertyDescriptor(formatter, "toString");
+  const originalStringAt = Object.getOwnPropertyDescriptor(String.prototype, "at");
+  const formatterSource = formatter.toString();
+  formatter.toString = () => formatterSource.replace(
+    "const REMOVE_LINE =",
+    "__name(() => {}, 'formatter');\n  const REMOVE_LINE ="
+  );
+
+  try {
+    Object.defineProperty(String.prototype, "at", {
+      configurable: true,
+      value: undefined
+    });
+    const module = { exports: {} };
+    const source = `module.exports = { getStreams: async () => [{ title: "Sample.1080p.WEB-DL.mkv", quality: "1080p" }] };`;
+    new Function("module", "exports", wrapPluginStreams(source, {
+      ...DEFAULT_STREAM_MIDDLEWARE,
+      descriptionFormat: "{stream.resolution}"
+    }))(module, module.exports);
+
+    const [stream] = await module.exports.getStreams({});
+
+    assert.match(stream.name, /FHD/);
+    assert.doesNotMatch(stream.name, /\{stream\./);
+    assert.equal(stream.description, "1080p");
+  } finally {
+    if (originalToString) Object.defineProperty(formatter, "toString", originalToString);
+    else delete formatter.toString;
+    if (originalStringAt) Object.defineProperty(String.prototype, "at", originalStringAt);
+    else delete String.prototype.at;
+  }
+});
+
 test("wraps frozen provider stream objects without mutating them", async () => {
   const module = { exports: {} };
   const source = `module.exports = { getStreams: async () => [Object.freeze({ title: "Sample.1080p.WEB-DL.mkv", url: "https://example.com/stream.m3u8" })] };`;
