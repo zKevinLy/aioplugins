@@ -393,7 +393,16 @@ export function wrapPluginStreams(
       for (const [key, value] of Object.entries(descriptionInput)) {
         if (key !== "service") normalized[key] = value;
       }
-      const formatted = { ...normalized, name, description, title: description };
+      const formatted = {
+        ...normalized,
+        ...(normalized.size !== undefined
+          ? { fileSize: normalized.fileSize ?? normalized.size }
+          : {}),
+        name,
+        description,
+        title: description,
+        size: description
+      };
       const sourceStream = { ...normalized };
       return {
         stream: formatted,
