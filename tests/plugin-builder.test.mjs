@@ -660,6 +660,36 @@ test("supports AIOStreams array, track, language, date, and duration modifiers",
   );
 });
 
+test("extracts filename metadata from Nuvio behavior hints before provider labels", () => {
+  const withBehaviorFilename = {
+    name: "4KHDHub - HubCloud 1080p",
+    title: "WEB-DL",
+    quality: "1080p",
+    behaviorHints: {
+      filename: "Doctor.X.Mafia.in.White.S01E06.1080p.NF.WEB-DL.English.AAC2.0.H.264-GRP.mkv"
+    }
+  };
+  const extracted = renderAioStreamsFormat(
+    "{stream.title}|{stream.formattedSeasons}|{stream.formattedEpisodes}|{stream.resolution}|{stream.quality}|{stream.network}|{stream.encode}|{stream.audioTags::join(', ')}",
+    withBehaviorFilename
+  );
+
+  assert.equal(
+    extracted,
+    "Doctor X Mafia in White|S01|E06|1080p|WEB-DL|Netflix|AVC|AAC"
+  );
+
+  const withTitleOnly = {
+    name: "4KHDHub - HubCloud 1080p",
+    title: "Doctor X Mafia WEB-DL",
+    quality: "1080p"
+  };
+  assert.equal(
+    renderAioStreamsFormat("{stream.title}", withTitleOnly),
+    "Doctor X Mafia"
+  );
+});
+
 test("extracts shared media fields from provider filenames before formatting", async () => {
   const stream = {
     name: "4KHDHub - PixelDrain 1080p",

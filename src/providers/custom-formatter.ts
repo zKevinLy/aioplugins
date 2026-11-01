@@ -10,15 +10,20 @@ export function renderAioStreamsFormat(
   const extractFilenameMetadata = (
     original: Record<string, unknown>
   ): Record<string, unknown> => {
-    const candidates = [original.filename, original.fileName, original.title, original.name]
+    const behaviorHints = original.behaviorHints && typeof original.behaviorHints === "object" && !Array.isArray(original.behaviorHints)
+      ? original.behaviorHints as Record<string, unknown>
+      : {};
+    const candidates = [
+      original.filename,
+      original.fileName,
+      behaviorHints.filename,
+      original.title,
+      original.name
+    ]
       .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
       .map(value => value.trim());
     const markerPattern = /\bS\d{1,2}(?:[ ._-]*E\d{1,3})?\b|\b(?:episode|ep)\s*0*\d{1,3}\b|\bE0*\d{1,3}\b|\b(?:2160p?|1440p?|1080[pi]?|720[pi]?|576p?|480[pi]?|360p?|240p?|144p?|4k|uhd|qhd|fhd|hdtv|web[ ._-]?(?:dl|rip)|blu[ ._-]?ray|brrip|bdrip|dvdrip|hdrip|remux|h\.?264|h\.?265|x264|x265|hevc|avc|av1|aac|eac3|ddp|ac3|dts|truehd|flac|opus|hdr10\+?|dolby[ ._-]?vision|\b(?:19|20)\d{2})\b/i;
-    const score = (value: string): number =>
-      (/[.](?:mkv|mp4|avi|mov|m4v|webm|ts|m2ts)$/i.test(value) ? 100 : 0) +
-      (value.match(/\b(?:S\d{1,2}E\d{1,3}|2160p?|1440p?|1080p?|720p?|WEB[ ._-]?DL|WEBRip|BluRay|HDR|H\.?26[45]|x26[45])\b/gi)?.length ?? 0) * 20 +
-      Math.min(value.length, 1000) / 1000;
-    const raw = candidates.sort((left, right) => score(right) - score(left))[0] ?? "";
+    const raw = candidates[0] ?? "";
     const sizeMatch = raw.match(/(?:^|\s)(\d+(?:\.\d+)?)\s*(B|KB|MB|GB|TB)\s*$/i);
     const unitFactors: Record<string, number> = {
       B: 1, KB: 1e3, MB: 1e6, GB: 1e9, TB: 1e12
