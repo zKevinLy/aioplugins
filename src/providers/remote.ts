@@ -2,6 +2,7 @@
 import { createHash } from "node:crypto";
 import type { Database, SqlStatement } from "../lib/db.js";
 import {
+  normalizeStreamMiddlewareSettings,
   wrapPluginStreams
 } from "./stream-middleware.js";
 
@@ -581,9 +582,14 @@ async function getCachedContent(
 
 async function getCachedPluginFiles(
   db: Database,
-  sources: SavedSourceSelection[]
+  sources: SavedSourceSelection[],
+  middlewareSettings: unknown
 ): Promise<CachedPluginFile[]> {
   const result: CachedPluginFile[] = [];
+  const middlewareFingerprint = createHash("sha256")
+    .update(JSON.stringify(normalizeStreamMiddlewareSettings(middlewareSettings)))
+    .digest("hex")
+    .slice(0, 10);
 
   for (const selection of sources) {
     const { owner, repo } = parseRepository(selection.repository);
@@ -622,7 +628,7 @@ async function getCachedPluginFiles(
       const originalFilename = safeProviderPath(entry.filename);
 
       const suffix = createHash("sha256")
-        .update(`${owner}/${repo}/${commit}/${id}`)
+        .update(`${owner}/${repo}/${commit}/${id}/${middlewareFingerprint}`)
         .digest("hex")
         .slice(0, 10);
 
@@ -646,9 +652,10 @@ async function getCachedPluginFiles(
 export async function getPluginRepositoryManifest(
   db: Database,
   userId: string,
-  sources: SavedSourceSelection[]
+  sources: SavedSourceSelection[],
+  middlewareSettings: unknown
 ) {
-  const plugins = await getCachedPluginFiles(db, sources);
+  const plugins = await getCachedPluginFiles(db, sources, middlewareSettings);
 
   const scrapers = plugins.map(({ entry, filename }) => ({
     ...entry,
@@ -669,7 +676,7 @@ export async function getCachedPluginFile(
   filename: string,
   middlewareSettings: unknown
 ): Promise<string | null> {
-  const plugins = await getCachedPluginFiles(db, sources);
+  const plugins = await getCachedPluginFiles(db, sources, middlewareSettings);
 
   const plugin = plugins.find(
     entry => entry.filename === filename

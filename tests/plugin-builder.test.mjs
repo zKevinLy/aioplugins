@@ -253,6 +253,28 @@ test("builds a combined Nuvio manifest and serves selected files without executi
   assert.match(servedPlugin, /originalGetStreams/);
   assert.ok(servedPlugin.includes(`"format":"${middlewareFormat}"`));
   assert.equal(globalThis.fixturePluginExecuted, undefined);
+
+  cookieJar = savedCookie;
+  await testFetch("/api/apply", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      sources: [{
+        repository: "https://github.com/example/plugins",
+        ref: "main",
+        commit,
+        providerIds: ["fixture-plugin"]
+      }],
+      middleware: {
+        sortField: "resolution",
+        sortDirection: "desc",
+        filters: [],
+        format: "{stream.title} · {stream.year}"
+      }
+    })
+  });
+  const updatedManifest = await testFetch(manifestUrl).then((response) => response.json());
+  assert.notEqual(updatedManifest.scrapers[0].filename, manifest.scrapers[0].filename);
   cookieJar = savedCookie;
 
   const health = await testFetch("/health").then((response) => response.json());

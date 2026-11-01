@@ -563,10 +563,12 @@ export async function handleRequest(
       }
 
       const sources = await getSources(user.id, platform.db);
+      const middleware = await getStreamMiddlewareSettings(user.id, platform.db);
       const manifest = await getPluginRepositoryManifest(
         platform.db,
         user.id,
-        sources
+        sources,
+        middleware
       );
 
       return sendJson(200, manifest, PUBLIC_CORS);
