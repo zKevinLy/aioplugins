@@ -281,6 +281,43 @@ export function wrapPluginStreams(
       if (filter.operator === "notEquals") return actual !== expected;
       return true;
     };
+    const formatFallback = stream => {
+      const tokenValue = expression => {
+        const parts = expression.split("::");
+        const path = parts.shift().replace(/^stream\\./, "");
+        let value = getValue(stream, path);
+        for (const operation of parts) {
+          let match = operation.match(/^replace\\(['\"](.*?)['\"],\\s*['\"](.*?)['\"]\\)$/);
+          if (match) {
+            value = stringify(value).split(match[1]).join(match[2]);
+            continue;
+          }
+          match = operation.match(/^join\\(['\"](.*?)['\"]\\)$/);
+          if (match) {
+            value = Array.isArray(value) ? value.join(match[1]) : stringify(value);
+            continue;
+          }
+          if (operation === "title") {
+            value = stringify(value).replace(/\\b\\w/g, character => character.toUpperCase());
+          } else if (operation === "sbytes" && Number.isFinite(Number(value))) {
+            const units = ["B", "KB", "MB", "GB", "TB"];
+            let size = Number(value);
+            let unit = 0;
+            while (size >= 1000 && unit < units.length - 1) {
+              size /= 1000;
+              unit++;
+            }
+            value = size.toFixed(unit ? 1 : 0) + " " + units[unit];
+          }
+        }
+        return stringify(value);
+      };
+      const optional = config.format.replace(/\\{\\?([\\s\\S]*?)\\?\\}/g, (_block, contents) => {
+        const tokens = [...contents.matchAll(/\\{stream\\.([^{}]+)\\}/g)];
+        return tokens.some(([, expression]) => tokenValue(expression)) ? contents : "";
+      });
+      return optional.replace(/\\{stream\\.([^{}]+)\\}/g, (_token, expression) => tokenValue(expression)).trim();
+    };
 
     const streams = result.filter(stream => stream && typeof stream === "object").map((stream, index) => {
       const normalized = { ...stream };
@@ -288,7 +325,7 @@ export function wrapPluginStreams(
       try {
         name = renderAioStreamsFormat(config.format, normalized);
       } catch {
-        // Keep the provider's original result if a malformed field breaks formatting.
+        name = formatFallback(normalized) || name;
       }
       return {
         stream: { ...normalized, name },

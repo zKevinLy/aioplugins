@@ -334,6 +334,20 @@ test("formats provider streams with circular metadata", async () => {
   assert.equal(streams[0].name, "🚀 FHD · Sample");
 });
 
+test("falls back to legacy token formatting when metadata access throws", async () => {
+  const module = { exports: {} };
+  const source = `const service = new Proxy({}, { ownKeys() { throw new Error("unsupported metadata"); } }); module.exports = { getStreams: async () => [{ title: "Sample 1080p", service }] };`;
+  new Function("module", "exports", wrapPluginStreams(source, {
+    ...DEFAULT_STREAM_MIDDLEWARE,
+    format: "{stream.resolution::replace('1080p', 'FHD')} · {stream.title}"
+  }))(module, module.exports);
+
+  const streams = await module.exports.getStreams({});
+
+  assert.equal(streams.length, 1);
+  assert.equal(streams[0].name, "FHD · Sample");
+});
+
 test("wraps plugin streams with metadata formatting, filtering, and sorting", async () => {
   const source = `module.exports = { getStreams: async () => [
     { title: "Sample 720p", size: 700000000, seeders: 3 },
