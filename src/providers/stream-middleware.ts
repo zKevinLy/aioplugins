@@ -638,13 +638,11 @@ export function wrapPluginStreams(
     ];
 
     return streams.map(item => {
-      if (!config.hideOriginalMetadata) return item.stream;
-
       const output = { ...item.stream };
 
-      for (const field of presentationFields) {
-        delete output[field];
-      }
+      // Remove provider metadata that Nuvio can display independently.
+      delete output.quality;
+      delete output.resolution;
 
       return output;
     });
