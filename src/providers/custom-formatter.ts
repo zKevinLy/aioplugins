@@ -7,6 +7,50 @@ export function renderAioStreamsFormat(
   previewData: { metadata?: Record<string, unknown> } = {}
 ): string {
   const REMOVE_LINE = "\u0000AIOSTREAMS_REMOVE_LINE\u0000";
+
+  const stripEmojis = (value: string): string =>
+    value
+      .replace(/\p{Extended_Pictographic}/gu, "")
+      .replace(/\p{Emoji_Modifier}/gu, "")
+      .replace(/\p{Regional_Indicator}/gu, "")
+      .replace(/[\uFE0E\uFE0F\u200D\u20E3]/gu, "")
+      .replace(/[ \t]{2,}/g, " ")
+      .trim();
+
+  const sanitizeProviderValue = (
+    value: unknown,
+    seen = new WeakMap<object, unknown>()
+  ): unknown => {
+    if (typeof value === "string") return stripEmojis(value);
+    if (!value || typeof value !== "object") return value;
+
+    const existing = seen.get(value);
+    if (existing !== undefined) return existing;
+
+    if (Array.isArray(value)) {
+      const result: unknown[] = [];
+      seen.set(value, result);
+
+      for (const item of value) {
+        result.push(sanitizeProviderValue(item, seen));
+      }
+
+      return result;
+    }
+
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) return value;
+
+    const result: Record<string, unknown> = {};
+    seen.set(value, result);
+
+    for (const [key, item] of Object.entries(value)) {
+      result[key] = sanitizeProviderValue(item, seen);
+    }
+
+    return result;
+  };
+
   const extractFilenameMetadata = (
     original: Record<string, unknown>
   ): Record<string, unknown> => {
@@ -158,10 +202,16 @@ export function renderAioStreamsFormat(
       ...(parsedTitle ? { title: parsedTitle } : {})
     };
   };
+
   const originalStream = stream;
   stream = extractFilenameMetadata(stream);
   Object.assign(originalStream, stream);
   stream = originalStream;
+
+  // Keep the original provider data intact for internal filtering and sorting.
+  // Only the formatter's display context receives the sanitized clone.
+  const displayStream = sanitizeProviderValue(stream) as Record<string, unknown>;
+
   const safeJson = (value: unknown, space?: number): string => {
     const seen = new WeakSet<object>();
     try {
@@ -176,25 +226,29 @@ export function renderAioStreamsFormat(
       return "";
     }
   };
-  const service = stream.service && typeof stream.service === "object"
-    ? stream.service as Record<string, unknown>
+
+  const service = displayStream.service && typeof displayStream.service === "object"
+    ? displayStream.service as Record<string, unknown>
     : {};
   const context: FormatterContext = {
-    stream,
+    stream: displayStream,
     service: {
       ...service,
-      cached: service.cached ?? stream.cached
+      cached: service.cached ?? displayStream.cached
     },
     addon: {
-      name: addonName || stream.addonName || stream.provider || stream.indexer || ""
+      name: stripEmojis(
+        addonName ||
+        String(displayStream.addonName || displayStream.provider || displayStream.indexer || "")
+      )
     },
-    metadata: previewData.metadata ?? {},
+    metadata: sanitizeProviderValue(previewData.metadata ?? {}),
     user: {},
     config: {},
     track: {},
     debug: {
-      json: safeJson(stream),
-      jsonf: safeJson(stream, 2)
+      json: safeJson(displayStream),
+      jsonf: safeJson(displayStream, 2)
     },
     tools: { newLine: "\n", removeLine: REMOVE_LINE }
   };
@@ -218,7 +272,7 @@ export function renderAioStreamsFormat(
     return actualKey === undefined ? undefined : record[actualKey];
   };
   const inferResolution = (): unknown => {
-    const source = stringify(stream.title ?? stream.name ?? "");
+    const source = stringify(displayStream.title ?? displayStream.name ?? "");
     const match = source.match(/(?:2160|1440|1080|720|576|480|360|240|144)p|4k|uhd|qhd|fhd|hd/i);
     return match?.[0];
   };
@@ -230,15 +284,16 @@ export function renderAioStreamsFormat(
     const key = parts.shift()?.toLowerCase();
     let value: unknown;
     if (section === "stream" && key) {
+      const currentService = getProperty(currentContext, "service");
       const aliases: Record<string, unknown> = {
-        title: stream.title ?? stream.name,
-        resolution: stream.resolution ?? stream.quality ?? inferResolution(),
-        size: stream.size ?? stream.fileSize,
-        cached: stream.cached ?? service.cached,
-        audioTags: stream.audioTags ?? stream.audio ?? stream.audioCodec,
-        languages: stream.languages ?? stream.language,
-        subtitles: stream.subtitles ?? stream.subtitle,
-        name: stream.name ?? stream.title
+        title: displayStream.title ?? displayStream.name,
+        resolution: displayStream.resolution ?? displayStream.quality ?? inferResolution(),
+        size: displayStream.size ?? displayStream.fileSize,
+        cached: displayStream.cached ?? getProperty(currentService, "cached"),
+        audioTags: displayStream.audioTags ?? displayStream.audio ?? displayStream.audioCodec,
+        languages: displayStream.languages ?? displayStream.language,
+        subtitles: displayStream.subtitles ?? displayStream.subtitle,
+        name: displayStream.name ?? displayStream.title
       };
       value = Object.prototype.hasOwnProperty.call(aliases, key)
         ? aliases[key]

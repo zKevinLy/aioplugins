@@ -767,7 +767,23 @@ test("extracts shared media fields from provider filenames before formatting", a
   assert.equal(wrapped.description, wrapped.title);
   assert.equal(wrapped.name, "🚀 FHD");
 });
+test("strips provider emojis but preserves formatter template emojis", () => {
+  const stream = {
+    quality: "🔥4K UHD",
+    title: "🎬 Doctor X 🇬🇧",
+    languages: ["🇬🇧 English", "🇰🇷 한국어", "🇨🇳 中文"],
+  };
 
+  const result = renderAioStreamsFormat(
+    "🚀 {stream.quality} · 🎥 {stream.title} · {stream.languages::join(', ')}",
+    stream
+  );
+
+  assert.equal(
+    result,
+    "🚀 4K UHD · 🎥 Doctor X · English, 한국어, 中文"
+  );
+});
 test("keeps the media title when a provider name contains only its source and resolution", async () => {
   const module = { exports: {} };
   const source = `module.exports = { getStreams: async () => [{
