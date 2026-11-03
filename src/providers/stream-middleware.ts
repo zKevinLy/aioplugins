@@ -395,13 +395,34 @@ export function wrapPluginStreams(
       }
       const formatted = {
         ...normalized,
+
+        // Preserve original file size separately
         ...(normalized.size !== undefined
           ? { fileSize: normalized.fileSize ?? normalized.size }
           : {}),
+
+        // AIOPlugins custom formatting
         name,
         description,
         title: description,
-        size: description
+        size: description,
+
+        // Suppress original plugin presentation metadata
+        quality: undefined,
+        resolution: undefined,
+        visualTags: undefined,
+        encode: undefined,
+        audioTags: undefined,
+        audioChannels: undefined,
+        languages: undefined,
+        subtitles: undefined,
+        releaseGroup: undefined,
+        network: undefined,
+        editions: undefined,
+        duration: undefined,
+        bitrate: undefined,
+        folderSize: undefined,
+        seeders: undefined,
       };
       const sourceStream = { ...normalized };
       return {
