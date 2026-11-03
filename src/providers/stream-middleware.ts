@@ -312,6 +312,16 @@ export function wrapPluginStreams(
     const result = await originalGetStreams.apply(this, args);
     if (!Array.isArray(result)) return result;
 
+    const stripDecorativeCharacters = value => {
+      if (typeof value !== "string") return value;
+
+      return value
+        .replace(/\\p{Extended_Pictographic}/gu, "")
+        .replace(/[\\u200B-\\u200F\\uFE0E\\uFE0F\\u2060\\uFEFF]/g, "")
+        .replace(/\\s{2,}/g, " ")
+        .trim();
+    };
+
     const getValue = (stream, path) => {
       if (path === "title") return stream.title ?? stream.name ?? "";
 
@@ -497,6 +507,14 @@ export function wrapPluginStreams(
       .map((stream, index) => {
         const normalized = { ...stream };
 
+        // Remove decorative emoji from provider-supplied display text.
+        // Unicode letters from all languages are preserved.
+        for (const key of ["name", "title", "description"]) {
+          if (typeof normalized[key] === "string") {
+            normalized[key] = stripDecorativeCharacters(normalized[key]);
+          }
+        }
+
         let name = stringify(normalized.name ?? normalized.title ?? "");
 
         try {
@@ -586,61 +604,10 @@ export function wrapPluginStreams(
       return comparison * direction || left.index - right.index;
     });
 
-    // Hide provider metadata only after formatting, filtering and sorting.
-    // Keep the custom-formatted fields and playback-related fields intact.
-    const presentationFields = [
-      "filename",
-      "date",
-      "resolution",
-      "quality",
-      "year",
-      "seasons",
-      "episodes",
-      "seasonEpisode",
-      "seasonPack",
-      "formattedSeasons",
-      "formattedEpisodes",
-      "seadexBest",
-      "seadex",
-      "rseMatched",
-      "regexMatched",
-      "visualTags",
-      "encode",
-      "duration",
-      "editions",
-      "proper",
-      "repack",
-      "regraded",
-      "uncensored",
-      "unrated",
-      "upscaled",
-      "audioTags",
-      "audioChannels",
-      "audioTracks",
-      "languages",
-      "subtitles",
-      "subtitleTracks",
-      "dubbed",
-      "subbed",
-      "fileSize",
-      "folderSize",
-      "bitrate",
-      "seeders",
-      "age",
-      "releaseGroup",
-      "container",
-      "extension",
-      "indexer",
-      "network",
-      "cached",
-      "library",
-      "private"
-    ];
-
     return streams.map(item => {
       const output = { ...item.stream };
 
-      // Remove provider metadata that Nuvio can display independently.
+      // Hide only the provider quality label.
       delete output.quality;
 
       return output;
