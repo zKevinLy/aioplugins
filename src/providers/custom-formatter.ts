@@ -912,5 +912,8 @@ export function renderAioStreamsFormat(
     return output;
   };
 
-  return renderTemplate(template, context);
+  return renderTemplate(template, context)
+    .split(/\r?\n/)
+    .filter(line => line.trim().length > 0)
+    .join("\n");
 }
