@@ -641,7 +641,6 @@ export function wrapPluginStreams(
       const output = { ...item.stream };
 
       // Remove provider metadata that Nuvio can display independently.
-      delete output.quality;
       delete output.resolution;
 
       return output;
