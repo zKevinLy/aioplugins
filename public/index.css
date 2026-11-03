@@ -399,6 +399,7 @@ input:focus, textarea:focus, select:focus, .search:focus {
 }
 
 select { cursor: pointer; }
+select:disabled { cursor: not-allowed; opacity: .5; }
 textarea { resize: vertical; line-height: 1.6; }
 .field { margin-bottom: 16px; }
 
@@ -927,6 +928,28 @@ textarea { resize: vertical; line-height: 1.6; }
 .filter-remove { white-space: nowrap; }
 .filter-empty { margin: 0 0 12px; }
 
+/* Value editor: preset dropdown, or number input with a unit label (GB, min) */
+.filter-value-cell {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.filter-value-cell > select,
+.filter-value-cell > input:not([type="hidden"]) {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.filter-unit {
+  flex: 0 0 auto;
+  min-width: 28px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .sort-controls {
   display: grid;
   grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
@@ -1279,7 +1302,7 @@ textarea { resize: vertical; line-height: 1.6; }
   .middleware-tab { flex: 0 0 auto; }
 
   .filter-rule { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  .filter-rule .filter-value { grid-column: 1; }
+  .filter-rule .filter-value-cell { grid-column: 1; }
   .filter-rule .filter-remove { grid-column: 2; grid-row: 2; }
   .sort-controls { grid-template-columns: 1fr; gap: 0; }
 

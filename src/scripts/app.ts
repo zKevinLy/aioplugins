@@ -397,6 +397,40 @@ function parseProfileBackup(value: unknown): ProfileBackup {
       ]
     };
 
+    // Preset values and display units for fields where free typing makes no sense.
+    // Keys must match the field keys returned by /api/config. Fields not listed here
+    // keep the plain text/number input. If the server sends `options` on a field,
+    // that takes priority over this map.
+    interface FieldMeta {
+      options?: string[];                       // ordered best -> worst when ranked
+      ranked?: boolean;
+      unit?: { label: string; factor: number }; // display unit -> stored number
+    }
+
+    const fieldMeta: Record<string, FieldMeta> = {
+      resolution: { ranked: true, options: ["2160p", "1440p", "1080p", "720p", "576p", "480p"] },
+      quality: {
+        ranked: true,
+        options: ["BluRay REMUX", "BluRay", "WEB-DL", "WEBRip", "HDRip", "HDTV", "DVDRip", "SCR", "TS", "CAM"]
+      },
+      encode: { ranked: true, options: ["AV1", "HEVC", "AVC", "VP9"] },
+      visualTags: { options: ["DV", "HDR10+", "HDR10", "HDR", "10bit", "IMAX", "3D"] },
+      audioTags: { options: ["Atmos", "TrueHD", "DTS-HD MA", "DTS:X", "DTS", "DD+", "DD", "FLAC", "Opus", "AAC"] },
+      audioChannels: { options: ["7.1", "5.1", "2.0"] },
+      languages: { options: ["English", "Italian", "Spanish", "French", "German", "Japanese", "Korean", "Hindi", "Multi"] },
+      subtitles: { options: ["English", "Italian", "Spanish", "French", "German", "Japanese", "Korean", "Hindi"] },
+      container: { options: ["mkv", "mp4", "avi"] },
+      type: { options: ["http", "debrid", "usenet", "p2p"] },
+      size: { unit: { label: "GB", factor: 1e9 } },
+      duration: { unit: { label: "min", factor: 60_000 } }
+    };
+
+    function metaFor(fieldKey: string): FieldMeta {
+      const field = streamFields.find((entry) => entry.key === fieldKey) as
+        (StreamFieldDefinition & FieldMeta) | undefined;
+      return { ...fieldMeta[fieldKey], ...(field?.options ? { options: field.options } : {}) };
+    }
+
     function populateFieldSelect(select: HTMLSelectElement, includeProviderOrder = false) {
       const options = [];
       if (includeProviderOrder) {
@@ -415,7 +449,16 @@ function parseProfileBackup(value: unknown): ProfileBackup {
 
     function operatorsForField(fieldKey: string): OperatorOption[] {
       const field = streamFields.find((entry) => entry.key === fieldKey);
-      return field ? filterOperatorOptions[field.type] : filterOperatorOptions.text;
+      if (!field) return filterOperatorOptions.text;
+
+      if (metaFor(fieldKey).options?.length && (field.type === "text" || field.type === "list")) {
+        const presence: OperatorOption[] = [["exists", "Has a value"], ["missing", "Is empty"]];
+        return field.type === "list"
+          ? [["contains", "Includes"], ["notContains", "Excludes"], ...presence]
+          : [["equals", "Is"], ["notEquals", "Is not"], ...presence];
+      }
+
+      return filterOperatorOptions[field.type];
     }
 
     function readFilterRows(includeIncomplete = false): StreamFilter[] {
@@ -424,13 +467,68 @@ function parseProfileBackup(value: unknown): ProfileBackup {
         return {
           field: row.querySelector<HTMLSelectElement>(".filter-field")?.value ?? "",
           operator: isStreamFilterOperator(operatorValue) ? operatorValue : "contains",
-          value: row.querySelector<HTMLInputElement>(".filter-value")?.value.trim() ?? ""
+          value: row.querySelector<HTMLInputElement | HTMLSelectElement>(".filter-value")?.value.trim() ?? ""
         };
       }).filter((rule) =>
         includeIncomplete ||
         ["exists", "missing", "isTrue", "isFalse"].includes(rule.operator) ||
         Boolean(rule.value)
       );
+    }
+
+    // Builds the right value input for a field: a dropdown for preset values, a
+    // unit-aware number box for size/duration, or the plain input otherwise.
+    function createValueEditor(fieldKey: string, current: string): HTMLElement {
+      const field = streamFields.find((entry) => entry.key === fieldKey);
+      const { options, unit } = metaFor(fieldKey);
+      const cell = document.createElement("div");
+      cell.className = "filter-value-cell";
+
+      if (options?.length) {
+        const select = document.createElement("select");
+        select.className = "filter-value";
+        select.append(new Option("Select…", ""));
+        for (const item of options) select.append(new Option(item, item));
+        // Keep a previously saved value visible even if it isn't in the preset list.
+        if (current && !options.includes(current)) select.append(new Option(current, current));
+        select.value = current;
+        cell.append(select);
+        return cell;
+      }
+
+      const stored = document.createElement("input");
+      stored.className = "filter-value";
+
+      if (unit && field?.type === "number") {
+        // The visible box is in friendly units; the hidden input keeps the raw number.
+        stored.type = "hidden";
+        stored.value = current;
+
+        const shown = document.createElement("input");
+        shown.type = "number";
+        shown.min = "0";
+        shown.step = "any";
+        shown.placeholder = "Value";
+        shown.value = current ? String(+(Number(current) / unit.factor).toFixed(3)) : "";
+        shown.addEventListener("input", () => {
+          const n = Number(shown.value);
+          stored.value = shown.value && Number.isFinite(n) ? String(Math.round(n * unit.factor)) : "";
+        });
+
+        const label = document.createElement("span");
+        label.className = "filter-unit";
+        label.textContent = unit.label;
+
+        cell.append(shown, label, stored);
+        return cell;
+      }
+
+      stored.type = field?.type === "number" ? "number" : "text";
+      stored.step = "any";
+      stored.placeholder = "Value";
+      stored.value = current;
+      cell.append(stored);
+      return cell;
     }
 
     function renderFilterRules(rules: StreamFilter[]) {
@@ -466,19 +564,11 @@ function parseProfileBackup(value: unknown): ProfileBackup {
           ? rule.operator
           : operators[0]?.[0] || "contains";
 
-        const value = document.createElement("input");
-        value.className = "filter-value";
-        value.type = streamFields.find((entry) => entry.key === rule.field)?.type === "number"
-          ? "number"
-          : "text";
-        value.step = "any";
-        value.placeholder = "Value";
-        value.value = rule.value || "";
+        const valueCell = createValueEditor(rule.field, rule.value || "");
 
         const updateValueVisibility = () => {
           const noValue = ["exists", "missing", "isTrue", "isFalse"].includes(operator.value);
-          value.hidden = noValue;
-          value.disabled = noValue;
+          valueCell.style.display = noValue ? "none" : "";
         };
         updateValueVisibility();
 
@@ -507,15 +597,35 @@ function parseProfileBackup(value: unknown): ProfileBackup {
           renderFilterRules(nextRules);
         });
 
-        row.append(field, operator, value, remove);
+        row.append(field, operator, valueCell, remove);
         container.append(row);
       });
+    }
+
+    // Relabels the sort direction dropdown to match the selected field's kind.
+    function updateSortDirectionLabels() {
+      const key = $<HTMLSelectElement>("#stream-sort-field").value;
+      const direction = $<HTMLSelectElement>("#stream-sort-direction");
+      const field = streamFields.find((entry) => entry.key === key);
+      const meta = metaFor(key);
+
+      let labels: [desc: string, asc: string] = ["Descending", "Ascending"];
+      if (field?.type === "number") labels = ["Highest first", "Lowest first"];
+      else if (field?.type === "boolean") labels = ["Yes first", "No first"];
+      else if (meta.ranked) labels = ["Best first", "Worst first"];
+      else if (field) labels = ["Z → A", "A → Z"];
+
+      for (const option of direction.options) {
+        option.textContent = option.value === "desc" ? labels[0] : labels[1];
+      }
+      direction.disabled = !key;
     }
 
     function setMiddlewareSettings(value: unknown) {
       const settings = isRecord(value) ? value : {};
       $<HTMLSelectElement>("#stream-sort-field").value = typeof settings.sortField === "string" ? settings.sortField : "";
       $<HTMLSelectElement>("#stream-sort-direction").value = settings.sortDirection === "asc" ? "asc" : "desc";
+      updateSortDirectionLabels();
       renderFilterRules(Array.isArray(settings.filters) ? settings.filters.filter(isStreamFilter) : []);
       $<HTMLTextAreaElement>("#stream-name-format").value = typeof settings.nameFormat === "string" && settings.nameFormat.trim()
         ? settings.nameFormat
@@ -1265,6 +1375,7 @@ function parseProfileBackup(value: unknown): ProfileBackup {
     });
     ["#stream-name-format", "#stream-description-format", "#formatter-filename", "#formatter-stream-data", "#formatter-metadata"]
       .forEach((selector) => $(selector).addEventListener("input", scheduleFormatterPreview));
+    $("#stream-sort-field").addEventListener("change", updateSortDirectionLabels);
     $("#apply-format-preset").addEventListener("click", () => {
       const preset = $<HTMLSelectElement>("#format-preset").value;
       $<HTMLTextAreaElement>("#stream-description-format").value = streamFormatPresets[preset] || defaultDescriptionFormat;
@@ -1274,7 +1385,11 @@ function parseProfileBackup(value: unknown): ProfileBackup {
       const filters = readFilterRows(true);
       const firstField = streamFields[0];
       if (!firstField) return;
-      filters.push({ field: firstField.key, operator: "contains", value: "" });
+      filters.push({
+        field: firstField.key,
+        operator: operatorsForField(firstField.key)[0]?.[0] ?? "contains",
+        value: ""
+      });
       renderFilterRules(filters);
     });
     $("#insert-format-field").addEventListener("click", () => {
