@@ -1,0 +1,65 @@
+<!-- Authentication -->
+<section id="auth-view" class="auth" hidden>
+  <div class="panel auth-card">
+    <div id="auth-tabs" class="auth-tabs" role="tablist" aria-label="Account">
+      <button id="login-tab" class="view-tab" type="button" role="tab" aria-selected="true">Log in</button>
+      <button id="register-tab" class="view-tab" type="button" role="tab" aria-selected="false">Create account</button>
+    </div>
+
+    <form id="login-form" class="panel-body">
+      <p class="view-intro">Enter the UUID and password you saved when you created your account.</p>
+
+      <div class="field">
+        <label for="login-uuid">UUID</label>
+        <input id="login-uuid" type="text" autocomplete="username" spellcheck="false"
+          placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" required>
+      </div>
+
+      <div class="field">
+        <label for="login-password">Password</label>
+        <input id="login-password" type="password" autocomplete="current-password" required>
+      </div>
+
+      <button class="button button-primary button-wide" type="submit">Log in</button>
+    </form>
+
+    <form id="register-form" class="panel-body" hidden>
+      <p class="view-intro">We'll generate a UUID for you. You'll use it with your password to log in.</p>
+
+      <div class="field">
+        <label for="register-password">Password</label>
+        <input id="register-password" type="password" autocomplete="new-password"
+          placeholder="At least 8 characters" required>
+      </div>
+
+      <div class="field">
+        <label for="register-confirm">Confirm password</label>
+        <input id="register-confirm" type="password" autocomplete="new-password" required>
+      </div>
+
+      <button class="button button-primary button-wide" type="submit">Create account</button>
+    </form>
+
+    <div id="new-account" class="panel-body" hidden>
+      <p><strong>Your account is ready.</strong></p>
+      <p class="view-intro">Save this UUID somewhere safe. You'll need it and your password to log in.</p>
+
+      <div class="uuid-row">
+        <span class="uuid-row-label">UUID</span>
+        <code id="new-uuid"></code>
+        <button id="copy-new-uuid" class="button button-small" type="button">Copy</button>
+      </div>
+
+      <label class="check">
+        <input id="saved-ack" type="checkbox">
+        I've saved my UUID and password
+      </label>
+
+      <button id="continue" class="button button-primary button-wide" type="button" disabled>
+        Continue
+      </button>
+    </div>
+
+    <p id="auth-status" class="status" role="status" aria-live="polite"></p>
+  </div>
+</section>

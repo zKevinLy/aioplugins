@@ -7,6 +7,7 @@ import {
   timingSafeEqual
 } from "node:crypto";
 import type { Database } from "./lib/db.js";
+import { HttpError } from "./lib/http-error.js";
 import type { SavedSourceSelection } from "./providers/remote.js";
 import {
   DEFAULT_STREAM_MIDDLEWARE,
@@ -14,11 +15,8 @@ import {
   type StreamMiddlewareSettings
 } from "./providers/stream-middleware.js";
 
-export class HttpError extends Error {
-  constructor(readonly status: number, message: string) {
-    super(message);
-  }
-}
+// Re-exported so existing imports from "./users.js" keep working.
+export { HttpError };
 
 export interface User {
   id: string;
@@ -296,6 +294,17 @@ export async function deleteUser(
   await db.run("DELETE FROM users WHERE id = ?", [userId]);
 }
 
+// ---------- stored JSON ----------
+
+function parseSources(raw: string | null | undefined): SavedSourceSelection[] {
+  try {
+    const value: unknown = JSON.parse(raw || "[]");
+    return Array.isArray(value) ? (value as SavedSourceSelection[]) : [];
+  } catch {
+    return [];
+  }
+}
+
 // ---------- profiles ----------
 
 export interface Profile {
@@ -317,29 +326,17 @@ export async function getProfiles(
   }>(
     `SELECT id, name, sources, updated_at
        FROM profiles
-       WHERE user_id = ?`,
+       WHERE user_id = ?
+       ORDER BY updated_at DESC, name`,
     [userId]
   );
 
-  return rows.map(row => {
-    let sources: SavedSourceSelection[] = [];
-
-    try {
-      const parsed: unknown = JSON.parse(row.sources || "[]");
-      if (Array.isArray(parsed)) {
-        sources = parsed as SavedSourceSelection[];
-      }
-    } catch {
-      sources = [];
-    }
-
-    return {
-      id: row.id,
-      name: row.name,
-      sources,
-      updatedAt: row.updated_at
-    };
-  });
+  return rows.map(row => ({
+    id: row.id,
+    name: row.name,
+    sources: parseSources(row.sources),
+    updatedAt: row.updated_at
+  }));
 }
 
 export async function saveProfileAndSources(
@@ -486,15 +483,7 @@ export async function getSources(
     [userId]
   );
 
-  try {
-    const value: unknown = JSON.parse(row?.sources ?? "[]");
-
-    return Array.isArray(value)
-      ? (value as SavedSourceSelection[])
-      : [];
-  } catch {
-    return [];
-  }
+  return parseSources(row?.sources);
 }
 
 export async function getUserConfig(
@@ -509,14 +498,7 @@ export async function getUserConfig(
     [userId]
   );
 
-  let sources: SavedSourceSelection[] = [];
-
-  try {
-    const value: unknown = JSON.parse(row?.sources ?? "[]");
-    if (Array.isArray(value)) sources = value as SavedSourceSelection[];
-  } catch {
-    sources = [];
-  }
+  const sources = parseSources(row?.sources);
 
   let middleware = DEFAULT_STREAM_MIDDLEWARE;
 

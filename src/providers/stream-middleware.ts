@@ -5,21 +5,55 @@ import {
   DEFAULT_STREAM_NAME_FORMAT
 } from "../lib/default-stream-format.js";
 
-export type StreamFieldType = "text" | "number" | "boolean" | "list";
+export type StreamFieldType = "text" | "number" | "boolean" | "list" | "date";
+
+export interface StreamFieldOption {
+  /** Value stored in the saved filter (for numbers: the plain number). */
+  value: string;
+  /** Text shown in the dropdown. */
+  label: string;
+}
+
+export interface StreamFieldUnit {
+  /** Unit shown next to the input, e.g. "GB". */
+  label: string;
+  /** How many stored units make one displayed unit. */
+  factor: number;
+}
 
 export interface StreamFieldDefinition {
   key: string;
   label: string;
   type: StreamFieldType;
+  /** Preset values offered instead of free typing. */
+  options?: StreamFieldOption[];
+  /** True when `options` are ordered best to worst, which also drives sorting. */
+  ranked?: boolean;
+  /** Friendly display unit for numbers stored in a smaller base unit. */
+  unit?: StreamFieldUnit;
+  /** Dedicated picker the UI should use instead of a plain input. */
+  picker?: "year";
 }
+
+const same = (...values: string[]): StreamFieldOption[] =>
+  values.map(value => ({ value, label: value }));
+
+const RESOLUTION_OPTIONS: StreamFieldOption[] = [2160, 1440, 1080, 720, 576, 480]
+  .map(value => ({ value: String(value), label: `${value}p` }));
 
 export const STREAM_FIELD_CATALOG: StreamFieldDefinition[] = [
   { key: "title", label: "Title", type: "text" },
   { key: "filename", label: "Filename", type: "text" },
-  { key: "date", label: "Release date", type: "text" },
-  { key: "resolution", label: "Resolution", type: "number" },
-  { key: "quality", label: "Quality", type: "text" },
-  { key: "year", label: "Year", type: "number" },
+  { key: "date", label: "Release date", type: "date" },
+  { key: "resolution", label: "Resolution", type: "number", ranked: true, options: RESOLUTION_OPTIONS },
+  {
+    key: "quality",
+    label: "Quality",
+    type: "text",
+    ranked: true,
+    options: same("BluRay REMUX", "BluRay", "WEB-DL", "WEBRip", "HDRip", "HDTV", "DVDRip", "SCR", "TS", "CAM")
+  },
+  { key: "year", label: "Year", type: "number", picker: "year" },
   { key: "seasons", label: "Seasons", type: "list" },
   { key: "episodes", label: "Episodes", type: "list" },
   { key: "seasonEpisode", label: "Season and episode", type: "list" },
@@ -30,9 +64,9 @@ export const STREAM_FIELD_CATALOG: StreamFieldDefinition[] = [
   { key: "seadex", label: "SeaDex", type: "list" },
   { key: "rseMatched", label: "Release match", type: "list" },
   { key: "regexMatched", label: "Regex match", type: "text" },
-  { key: "visualTags", label: "Visual tags", type: "list" },
-  { key: "encode", label: "Encode", type: "text" },
-  { key: "duration", label: "Duration", type: "number" },
+  { key: "visualTags", label: "Visual tags", type: "list", options: same("DV", "HDR10+", "HDR10", "HDR", "10bit", "IMAX", "3D") },
+  { key: "encode", label: "Encode", type: "text", ranked: true, options: same("AV1", "HEVC", "AVC", "VP9") },
+  { key: "duration", label: "Duration", type: "number", unit: { label: "min", factor: 60_000 } },
   { key: "editions", label: "Editions", type: "list" },
   { key: "proper", label: "Proper", type: "boolean" },
   { key: "repack", label: "Repack", type: "boolean" },
@@ -40,21 +74,36 @@ export const STREAM_FIELD_CATALOG: StreamFieldDefinition[] = [
   { key: "uncensored", label: "Uncensored", type: "boolean" },
   { key: "unrated", label: "Unrated", type: "boolean" },
   { key: "upscaled", label: "Upscaled", type: "boolean" },
-  { key: "audioTags", label: "Audio tags", type: "list" },
-  { key: "audioChannels", label: "Audio channels", type: "list" },
+  {
+    key: "audioTags",
+    label: "Audio tags",
+    type: "list",
+    options: same("Atmos", "TrueHD", "DTS-HD MA", "DTS:X", "DTS", "DD+", "DD", "FLAC", "Opus", "AAC")
+  },
+  { key: "audioChannels", label: "Audio channels", type: "list", options: same("7.1", "5.1", "2.0") },
   { key: "audioTracks", label: "Audio tracks", type: "list" },
-  { key: "languages", label: "Languages", type: "list" },
-  { key: "subtitles", label: "Subtitles", type: "list" },
+  {
+    key: "languages",
+    label: "Languages",
+    type: "list",
+    options: same("English", "Italian", "Spanish", "French", "German", "Japanese", "Korean", "Hindi", "Multi")
+  },
+  {
+    key: "subtitles",
+    label: "Subtitles",
+    type: "list",
+    options: same("English", "Italian", "Spanish", "French", "German", "Japanese", "Korean", "Hindi")
+  },
   { key: "subtitleTracks", label: "Subtitle tracks", type: "list" },
   { key: "dubbed", label: "Dubbed", type: "boolean" },
   { key: "subbed", label: "Subbed", type: "boolean" },
-  { key: "size", label: "File size", type: "number" },
-  { key: "folderSize", label: "Folder size", type: "number" },
+  { key: "size", label: "File size", type: "number", unit: { label: "GB", factor: 1e9 } },
+  { key: "folderSize", label: "Folder size", type: "number", unit: { label: "GB", factor: 1e9 } },
   { key: "bitrate", label: "Bitrate", type: "number" },
   { key: "seeders", label: "Seeders", type: "number" },
   { key: "age", label: "Age", type: "text" },
   { key: "releaseGroup", label: "Release group", type: "text" },
-  { key: "container", label: "Container", type: "text" },
+  { key: "container", label: "Container", type: "text", options: same("mkv", "mp4", "avi") },
   { key: "extension", label: "Extension", type: "text" },
   { key: "indexer", label: "Indexer", type: "text" },
   { key: "network", label: "Network", type: "text" },
@@ -63,7 +112,7 @@ export const STREAM_FIELD_CATALOG: StreamFieldDefinition[] = [
   { key: "service.id", label: "Service", type: "text" },
   { key: "service.shortName", label: "Service short name", type: "text" },
   { key: "library", label: "In library", type: "boolean" },
-  { key: "type", label: "Stream type", type: "text" },
+  { key: "type", label: "Stream type", type: "text", options: same("http", "debrid", "usenet", "p2p") },
   { key: "proxied", label: "Proxied", type: "boolean" },
   { key: "private", label: "Private", type: "boolean" },
   { key: "message", label: "Message", type: "text" },
@@ -120,12 +169,68 @@ const LEGACY_DEFAULT_STREAM_FORMAT = PREVIOUS_DEFAULT_STREAM_FORMAT.replace(
 const MAX_FORMAT_LENGTH = 3000;
 const MAX_FILTERS = 30;
 
+const PRESENCE_OPERATORS: StreamFilterOperator[] = ["exists", "missing", "isTrue", "isFalse"];
+const DATE_OPERATORS: StreamFilterOperator[] = ["equals", "notEquals", "gt", "gte", "lt", "lte"];
+
 function allowedOperators(type: StreamFieldType): StreamFilterOperator[] {
   if (type === "number") {
     return ["equals", "notEquals", "gt", "gte", "lt", "lte", "exists", "missing"];
   }
   if (type === "boolean") return ["isTrue", "isFalse", "exists", "missing"];
+  if (type === "date") {
+    // contains/notContains are accepted so filters saved when dates were
+    // plain text keep working.
+    return [...DATE_OPERATORS, "contains", "notContains", "exists", "missing"];
+  }
   return ["contains", "notContains", "equals", "notEquals", "exists", "missing"];
+}
+
+function isIsoDate(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  const date = new Date(Date.UTC(year, month - 1, day));
+
+  return date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day;
+}
+
+function parseNumberValue(fieldKey: string, text: string): number | null {
+  if (!text) return null;
+
+  if (fieldKey === "resolution") {
+    // Accept what the UI used to store ("1080p", "4K") as well as plain numbers.
+    const pixels = /^(\d{3,4})p$/i.exec(text);
+    if (pixels) return Number(pixels[1]);
+    if (/^(4k|uhd)$/i.test(text)) return 2160;
+  }
+
+  const parsed = Number(text);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/** Returns the canonical stored value, or null when the filter is unusable. */
+function normalizeFilterValue(
+  field: StreamFieldDefinition,
+  operator: StreamFilterOperator,
+  value: unknown
+): string | null {
+  if (PRESENCE_OPERATORS.includes(operator)) return "";
+
+  const text = typeof value === "string" ? value.trim().slice(0, 100) : "";
+
+  if (field.type === "number") {
+    const parsed = parseNumberValue(field.key, text);
+    return parsed === null ? null : String(parsed);
+  }
+
+  if (field.type === "date" && DATE_OPERATORS.includes(operator)) {
+    return isIsoDate(text) ? text : null;
+  }
+
+  return text;
 }
 
 export function normalizeStreamMiddlewareSettings(
@@ -182,17 +287,10 @@ export function normalizeStreamMiddlewareSettings(
 
       if (!field || !allowedOperators(field.type).includes(operator)) return [];
 
-      if (
-        field.type === "number" &&
-        !["exists", "missing"].includes(operator) &&
-        !Number.isFinite(Number(filter.value))
-      ) return [];
+      const value = normalizeFilterValue(field, operator, filter.value);
+      if (value === null) return [];
 
-      return [{
-        field: field.key,
-        operator,
-        value: typeof filter.value === "string" ? filter.value.slice(0, 100) : ""
-      }];
+      return [{ field: field.key, operator, value }];
     })
     .slice(0, MAX_FILTERS);
 
@@ -292,6 +390,16 @@ export function wrapPluginStreams(
     Object.fromEntries(STREAM_FIELD_CATALOG.map(field => [field.key, field.type]))
   );
 
+  // Ranked text fields (quality, encode) sort by their position in the
+  // preset list rather than alphabetically.
+  const fieldRanks = JSON.stringify(
+    Object.fromEntries(
+      STREAM_FIELD_CATALOG
+        .filter(field => field.ranked && field.type !== "number" && field.options)
+        .map(field => [field.key, field.options!.map(option => option.value)])
+    )
+  );
+
   return `${source}
 ;(() => {
   const config = ${settings};
@@ -299,6 +407,8 @@ export function wrapPluginStreams(
   const __name = (target) => target;
   const renderAioStreamsFormat = ${formatterSource};
   const fieldTypes = ${fieldTypes};
+  const fieldRanks = ${fieldRanks};
+  const dateOperators = ["equals", "notEquals", "gt", "gte", "lt", "lte"];
 
   const plugin = typeof module !== "undefined" && module.exports
     ? module.exports
@@ -365,6 +475,44 @@ export function wrapPluginStreams(
     const hasValue = value =>
       value !== "" && value != null && (!Array.isArray(value) || value.length > 0);
 
+    // Whole days since the epoch, or null when the value is not a date.
+    const dayNumber = value => {
+      if (value == null || value === "") return null;
+
+      let milliseconds = NaN;
+
+      if (value instanceof Date) milliseconds = value.getTime();
+      else if (typeof value === "number") {
+        milliseconds = value >= 1e11 ? value : value >= 1e9 ? value * 1000 : NaN;
+      } else {
+        const text = String(value).trim();
+        const parts = text.match(/(\\d{4})[-./](\\d{1,2})[-./](\\d{1,2})/);
+
+        milliseconds = parts
+          ? Date.UTC(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3]))
+          : Date.parse(text);
+      }
+
+      return Number.isFinite(milliseconds) ? Math.floor(milliseconds / 864e5) : null;
+    };
+
+    const rankScore = (field, value) => {
+      const order = fieldRanks[field];
+      const normalize = text => String(text).toLowerCase().replace(/[^a-z0-9+]/g, "");
+      let best = 0;
+
+      for (const item of Array.isArray(value) ? value : [value]) {
+        const key = normalize(item);
+        if (!key) continue;
+
+        let index = order.findIndex(entry => normalize(entry) === key);
+        if (index === -1) index = order.findIndex(entry => key.includes(normalize(entry)));
+        if (index !== -1) best = Math.max(best, order.length - index);
+      }
+
+      return best;
+    };
+
     const prepareFormatterStream = stream => {
       const prepared = { ...stream };
 
@@ -419,6 +567,20 @@ export function wrapPluginStreams(
 
       if (filter.operator === "isFalse") {
         return value === false || value === 0 || String(value).toLowerCase() === "false";
+      }
+
+      if (type === "date" && dateOperators.includes(filter.operator)) {
+        const expected = dayNumber(filter.value);
+        if (expected === null) return true;
+
+        const actual = dayNumber(value);
+        if (actual === null) return filter.operator === "notEquals";
+        if (filter.operator === "equals") return actual === expected;
+        if (filter.operator === "notEquals") return actual !== expected;
+        if (filter.operator === "gt") return actual > expected;
+        if (filter.operator === "gte") return actual >= expected;
+        if (filter.operator === "lt") return actual < expected;
+        return actual <= expected;
       }
 
       if (type === "number") {
@@ -581,25 +743,29 @@ export function wrapPluginStreams(
 
       const direction = config.sortDirection === "asc" ? 1 : -1;
 
-      const comparison = fieldTypes[config.sortField] === "number"
-        ? numericValue(left.source, config.sortField) -
-          numericValue(right.source, config.sortField)
-        : fieldTypes[config.sortField] === "boolean"
-          ? Number(
-              leftValue === true ||
-              leftValue === 1 ||
-              String(leftValue).toLowerCase() === "true"
-            ) -
-            Number(
-              rightValue === true ||
-              rightValue === 1 ||
-              String(rightValue).toLowerCase() === "true"
-            )
-          : stringify(leftValue).localeCompare(
-              stringify(rightValue),
-              undefined,
-              { numeric: true, sensitivity: "base" }
-            );
+      const sortType = fieldTypes[config.sortField];
+      const isTrue = value =>
+        value === true || value === 1 || String(value).toLowerCase() === "true";
+
+      let comparison;
+
+      if (fieldRanks[config.sortField] && sortType !== "number") {
+        comparison = rankScore(config.sortField, leftValue) -
+          rankScore(config.sortField, rightValue);
+      } else if (sortType === "number") {
+        comparison = numericValue(left.source, config.sortField) -
+          numericValue(right.source, config.sortField);
+      } else if (sortType === "date") {
+        comparison = (dayNumber(leftValue) ?? 0) - (dayNumber(rightValue) ?? 0);
+      } else if (sortType === "boolean") {
+        comparison = Number(isTrue(leftValue)) - Number(isTrue(rightValue));
+      } else {
+        comparison = stringify(leftValue).localeCompare(
+          stringify(rightValue),
+          undefined,
+          { numeric: true, sensitivity: "base" }
+        );
+      }
 
       return comparison * direction || left.index - right.index;
     });

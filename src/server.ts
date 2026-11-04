@@ -2,13 +2,15 @@
 import { randomUUID } from "node:crypto";
 
 import type { Database } from "./lib/db.js";
+import { HttpError } from "./lib/http-error.js";
 import type { Platform } from "./lib/platform.js";
 
 import {
   getRemotePluginFile,
   getPluginRepositoryManifest,
   inspectGitHubSource,
-  resolveSelectedSources
+  resolveSelectedSources,
+  type SavedSourceSelection
 } from "./providers/remote.js";
 import { renderAioStreamsFormat } from "./providers/custom-formatter.js";
 import {
@@ -17,7 +19,6 @@ import {
 } from "./providers/stream-middleware.js";
 
 import {
-  HttpError,
   createSession,
   deleteUser,
   destroySession,
@@ -254,16 +255,59 @@ function publicUser(user: User) {
   };
 }
 
+// What the browser may know about a saved source. The cached provider
+// entries (filenames, logos, ...) stay on the server.
+function publicSources(
+  sources: SavedSourceSelection[],
+  includeCommit: boolean
+) {
+  return sources.map(({ repository, ref, providerIds, commit }) => ({
+    repository,
+    ref,
+    providerIds,
+    ...(includeCommit ? { commit } : {})
+  }));
+}
+
+async function loadProfiles(userId: string, db: Database) {
+  const profiles = await getProfiles(userId, db);
+
+  return profiles.map(({ id, name, sources }) => ({
+    id,
+    name,
+    sources: publicSources(sources, true)
+  }));
+}
+
+// Everything the UI needs right after sign-in, in one round trip, so it can
+// start loading plugin sources immediately instead of chaining requests.
+async function loadWorkspace(userId: string, db: Database) {
+  const [{ sources, middleware }, profiles] = await Promise.all([
+    getUserConfig(userId, db),
+    loadProfiles(userId, db)
+  ]);
+
+  return {
+    sources: publicSources(sources, false),
+    middleware,
+    fields: STREAM_FIELD_CATALOG,
+    profiles
+  };
+}
+
 async function startSession(
   user: User,
   db: Database,
   status = 200
 ): Promise<Response> {
-  const { token, maxAgeSeconds } = await createSession(user.id, db);
+  const [{ token, maxAgeSeconds }, workspace] = await Promise.all([
+    createSession(user.id, db),
+    loadWorkspace(user.id, db)
+  ]);
 
   return sendJson(
     status,
-    { user: publicUser(user) },
+    { user: publicUser(user), workspace },
     {
       "set-cookie": sessionCookie(token, maxAgeSeconds)
     }
@@ -286,8 +330,11 @@ async function handleApi(
   if (pathname === "/api/session" && method === "GET") {
     const user = await userFromSession(sessionToken, db);
 
+    if (!user) return sendJson(200, { user: null });
+
     return sendJson(200, {
-      user: user ? publicUser(user) : null
+      user: publicUser(user),
+      workspace: await loadWorkspace(user.id, db)
     });
   }
 
@@ -346,20 +393,9 @@ async function handleApi(
   }
 
   if (pathname === "/api/config" && method === "GET") {
-    const { sources, middleware } = await getUserConfig(user.id, db);
-    const selectedSources = sources.map(
-      ({ repository, ref, providerIds }) => ({
-        repository,
-        ref,
-        providerIds
-      })
-    );
+    const { sources, middleware, fields } = await loadWorkspace(user.id, db);
 
-    return sendJson(200, {
-      sources: selectedSources,
-      middleware,
-      fields: STREAM_FIELD_CATALOG
-    });
+    return sendJson(200, { sources, middleware, fields });
   }
 
   if (pathname === "/api/formatter/preview" && method === "POST") {
@@ -453,7 +489,7 @@ async function handleApi(
 
   if (pathname === "/api/profiles" && method === "GET") {
     return sendJson(200, {
-      profiles: await getProfiles(user.id, db)
+      profiles: await loadProfiles(user.id, db)
     });
   }
 
@@ -470,14 +506,15 @@ async function handleApi(
     const body = await readJsonBody(request);
 
     const profileId =
-      typeof body.id === "string" && body.id
+      typeof body.id === "string" &&
+      /^[A-Za-z0-9_-]{1,100}$/.test(body.id)
         ? body.id
         : randomUUID();
 
     const name =
-      typeof body.name === "string"
-        ? body.name
-        : "Default Profile";
+      (typeof body.name === "string"
+        ? body.name.trim().slice(0, 100)
+        : "") || "Default Profile";
 
     const { sources, plugins } = await resolveSelectedSources(body.sources);
 

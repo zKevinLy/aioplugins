@@ -1,0 +1,32 @@
+<!-- Plugin catalog -->
+<section class="panel" aria-labelledby="catalog-heading">
+  <div class="panel-head">
+    <div>
+      <h2 id="catalog-heading">Available plugins</h2>
+      <p class="panel-subtitle">Select the providers you want to include.</p>
+    </div>
+
+    <div class="catalog-tools">
+      <input id="search" class="search" type="search"
+        placeholder="Search plugins" aria-label="Search plugins">
+      <button id="select-filtered" class="button button-small" type="button"
+        aria-controls="catalog"
+        title="Select all enabled plugins matching the search across all sources"
+        disabled>
+        Select all
+      </button>
+    </div>
+  </div>
+
+  <div id="catalog" class="catalog-empty">
+    <strong>Loading your plugin sources...</strong>
+    <p>Your suggested sources will appear here automatically.</p>
+  </div>
+
+  <div class="actionbar">
+    <span id="selection-count" class="selection-count">No plugins selected</span>
+    <button id="go-save" class="button button-primary" type="button" disabled>
+      Continue to review →
+    </button>
+  </div>
+</section>

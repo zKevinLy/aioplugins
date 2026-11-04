@@ -1,21 +1,16 @@
+---
+import ManifestPanel from './ManifestPanel.astro';
+import ProfilesPanel from './ProfilesPanel.astro';
+---
           <!-- STEP 2: Review and install -->
           <section id="save-view" class="view" hidden>
-            <div class="step-heading">
-              <div>
-                <h2>Review your plugin setup</h2>
-                <p class="view-intro">Your selected plugins will be included in your private Nuvio repository.</p>
-              </div>
 
-              <button id="back-to-plugins" class="button button-small" type="button">
-                ← Back to plugins
-              </button>
-            </div>
 
             <section class="panel save-card" aria-labelledby="review-heading">
               <div class="panel-head">
                 <div>
                   <h2 id="review-heading">Your selection</h2>
-                  <p class="panel-subtitle">Check your plugins before saving.</p>
+                  <p class="panel-subtitle">These plugins and your filter, sorting, and formatter settings will be saved together.</p>
                 </div>
                 <span id="review-count" class="source-summary">0 plugins</span>
               </div>
@@ -34,15 +29,15 @@
             <section class="panel save-card" aria-labelledby="save-heading">
               <div class="panel-head">
                 <div>
-                  <h2 id="save-heading">Save your setup</h2>
-                  <p class="panel-subtitle">Generate your personal Nuvio plugin repository.</p>
+                  <h2 id="save-heading">Save &amp; Install</h2>
+                  <p class="panel-subtitle">Save your selected plugins and all filter, sorting, and formatter settings together.</p>
                 </div>
               </div>
 
               <div class="panel-body">
                 <p id="save-status" class="status" role="status" aria-live="polite"></p>
                 <button id="apply" class="button button-primary button-wide" type="button" disabled>
-                  Save Plugin Setup
+                  Save &amp; Install
                 </button>
               </div>
             </section>
@@ -63,7 +58,7 @@
                   <div class="copy-row">
                     <button id="plugin-url" class="addon-url" type="button"
                       title="Copy plugin repository URL">
-                      Save your setup to generate a link.
+                      Choose Save &amp; Install to generate your link.
                     </button>
 
                     <button id="copy-plugin-url" class="button" type="button" disabled>
@@ -80,7 +75,7 @@
                 <div class="install-instructions">
                   <h3>How to install</h3>
                   <ol>
-                    <li>Save your plugin setup above.</li>
+                    <li>Choose <strong>Save &amp; Install</strong> to save your plugins and middleware settings together.</li>
                     <li>Copy your private repository URL.</li>
                     <li>Open Nuvio and go to its plugin source settings.</li>
                     <li>Add your copied URL as a plugin source.</li>
@@ -89,43 +84,8 @@
               </div>
             </section>
 
-            <details class="panel optional-settings">
-              <summary>Profiles</summary>
-              <div class="panel-body">
-                <p class="view-intro">
-                  Save different plugin combinations and switch between them whenever you want.
-                </p>
+            <ProfilesPanel />
 
-                <div class="field">
-                  <label for="profile-select">Load a saved profile</label>
-                  <div class="field-row">
-                    <select id="profile-select"></select>
-                    <button id="delete-profile" class="button button-small button-danger" type="button">
-                      Delete
-                    </button>
-                  </div>
-                </div>
+            <ManifestPanel />
 
-                <form id="save-profile-form">
-                  <div class="field">
-                    <label for="profile-name">Save current selection as a profile</label>
-                    <input id="profile-name" type="text" placeholder="Profile name" required />
-                  </div>
-                  <button id="save-new-profile" class="button button-small" type="submit">
-                    Save profile
-                  </button>
-                </form>
-              </div>
-            </details>
-
-            <details class="panel optional-settings">
-              <summary>Advanced settings &amp; manifest</summary>
-              <div class="panel-body">
-                <div class="manifest-title">
-                  <h3>Generated Nuvio manifest</h3>
-                  <a id="open-manifest" href="#" target="_blank" rel="noreferrer">Open JSON</a>
-                </div>
-                <pre id="manifest-preview" class="manifest-preview">Save your setup to generate your Nuvio manifest.</pre>
-              </div>
-            </details>
           </section>

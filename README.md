@@ -1,50 +1,179 @@
 # AIOPlugins
 
-Build personalized Nuvio plugin repositories by selecting plugins from multiple GitHub sources. AIOPlugins combines Nuvio manifest entries and serves each selected plugin file under an account-specific repository URL without running provider code.
+Build personalized Nuvio plugin repositories by selecting plugins from
+multiple GitHub sources.
+
+AIOPlugins combines selected Nuvio manifest entries and serves the
+corresponding provider files through an account-specific repository URL.
+It acts as a builder and delivery layer: **AIOPlugins does not run
+provider code.** When Nuvio requests a selected provider file,
+AIOPlugins retrieves it from the pinned upstream commit and returns it
+to Nuvio. Nuvio runs the plugin in its own plugin runtime.
+
+AIOPlugins is an independent community project. It is not affiliated
+with, sponsored by, or endorsed by Nuvio, upstream plugin developers, or
+the third-party services that providers may interact with.
+
+## Contents
+
+-   [How it works](#how-it-works)
+-   [Accounts, profiles, and repository
+    URLs](#accounts-profiles-and-repository-urls)
+-   [Sources and execution](#sources-and-execution)
+-   [Manifest and stream processing](#manifest-and-stream-processing)
+-   [Architecture](#architecture)
+-   [Run locally](#run-locally)
+-   [Deploy to Cloudflare](#deploy-to-cloudflare)
+-   [Security and privacy notes](#security-and-privacy-notes)
+-   [Upstream sources and third-party
+    licenses](#upstream-sources-and-third-party-licenses)
+-   [Disclaimer](#disclaimer)
+-   [License](#license)
 
 ## How it works
 
-1. Create an account with a password of at least 8 characters. You receive a UUID; the UUID and password are your login. Keep both.
-2. Enter an HTTPS GitHub repository URL (and optionally a branch or tag; the default is `main`). AIOPlugins resolves it to an exact commit and reads the `manifest.json` at the repository root.
-3. Select the plugins you want and apply. The selected providers' manifest metadata is saved with your setup; their JavaScript is fetched from the pinned commit when Nuvio requests it.
-4. Your account gets a Nuvio repository URL of the form `/u/<uuid>/<token>/manifest.json`. Add it to Nuvio's plugin source settings.
+1.  **Create an account.** Choose a password of at least 8 characters.
+    AIOPlugins assigns your account a UUID. Your UUID and password are
+    used to log in; keep them safe.
+2.  **Add a GitHub source.** Enter an HTTPS GitHub repository URL and,
+    optionally, a branch or tag. If you do not specify one, AIOPlugins
+    uses `main`.
+3.  **Review the source.** AIOPlugins resolves the selected branch or
+    tag to an exact commit and reads the repository's root
+    `manifest.json`.
+4.  **Choose plugins.** Select the plugins you want from the source
+    manifest, then apply your selection.
+5.  **Add your repository to Nuvio.** AIOPlugins creates an
+    account-specific repository URL. Add that URL in Nuvio's plugin
+    source settings.
 
-The token in that URL is a bearer credential: anyone who has the URL can load your manifest and plugin files, so share it only with people who should have access. Your password is required to delete the account.
+AIOPlugins does not require you to clone repositories locally.
 
-Sources are pinned to a commit. If a source repository changes, nothing updates until you inspect and apply it again while logged in.
+## Accounts, profiles, and repository URLs
 
-You can also save named **profiles** (stored source selections). Saving a profile makes that selection the one your install link serves.
+Each account receives a UUID and can save named **profiles** containing
+source selections. Applying or saving a profile makes that selection the
+one served by the account's install URL.
 
-No repository clone is needed. The combined manifest uses the Nuvio `scrapers` format and rewrites each `filename` to a file served by this app.
+Repository URLs follow this format:
+
+``` text
+/u/<uuid>/<token>/manifest.json
+```
+
+The token in this URL is a **bearer credential**. Anyone who has the
+complete URL can access the generated manifest and the selected provider
+files it references. Treat the URL like a password and share it only
+with people you intend to grant access.
+
+Your account password is required to delete your account. Keep your
+login details safe.
+
+Sources are pinned to exact commits. Changes made later in an upstream
+repository do not automatically change your configured source. To use an
+update, review the source again and apply it while logged in.
 
 ## Sources and execution
 
-The picker accepts HTTPS GitHub repository URLs with either a top-level array manifest or an object containing `scrapers`. When Nuvio requests a generated `filename` URL, AIOPlugins fetches that selected JavaScript file from GitHub and formats it without executing or persisting it. Nuvio runs the returned code in its own plugin runtime. Review sources before building a link because the selected plugin code will execute in Nuvio.
+The source picker accepts HTTPS GitHub repository URLs. Supported
+manifests contain either a top-level array or an object with a
+`scrapers` array.
 
-Limits: manifests and commit feeds up to 2 MB, provider files up to 8 MB, request bodies up to 1 MB. Requests to GitHub use a 15 second timeout and only the hosts `github.com` and `raw.githubusercontent.com` are contacted.
+When Nuvio requests a generated provider-file URL, AIOPlugins fetches
+the selected JavaScript file from the configured GitHub repository at
+the pinned commit, applies the middleware formatting, and returns the
+file. Provider JavaScript is not executed by AIOPlugins and is not
+stored in the AIOPlugins database.
 
-Source metadata such as plugin names, descriptions, supported types, logos, and settings flags is preserved in the combined manifest. Nuvio continues to render and store each plugin's native settings. AIOPlugins wraps each selected plugin's `getStreams` result at request time. A shared typed field catalog drives field-based filters and sorting. The custom formatter follows the [AIOStreams formatter syntax](https://docs.aiostreams.viren070.me/reference/custom-formatter/) for nested optional groups, conditional branches and chaining, field references, string/number/array modifiers, track-list modifiers, and date/duration patterns. Common release fields (media title, year, season/episode, resolution, source quality, codec, languages, audio, release group, container, and size) are inferred from provider filename/name/title fields when recognizable. `{addon.name}` resolves to the selected plugin's manifest name; other AIOStreams-only `metadata`, `user`, `addon`, and `config` values are unavailable. Service details and probed media tracks are only available when supplied by the provider. Results are handled in memory by Nuvio and are never stored by AIOPlugins.
+**Nuvio executes the returned provider code in its own plugin runtime.**
+Selecting a source therefore means trusting the code that source
+provides. Review upstream repositories and their code before adding them
+to a profile or sharing an install URL. AIOPlugins does not claim to
+audit, verify, maintain, or endorse third-party provider code.
 
-The formatter has separate stream name and description templates. The short name is written to `name`; the detailed description is written to `description`, `title`, and `size` because Nuvio's local-plugin runtime uses `size` for its visible stream details. Parsed byte counts are preserved in `fileSize`. Filtering and sorting continue to use provider metadata, not the formatted display text.
+AIOPlugins currently contacts only these GitHub hosts:
 
-Accounts carry per-person GUID/password configuration links. Nuvio still owns plugin execution, plugin setting storage, debrid services, and playback. AIOPlugins middleware only processes the array returned by each plugin's `getStreams` method.
+-   `github.com`
+-   `raw.githubusercontent.com`
+
+Request limits:
+
+  Resource                                 Limit
+  --------------------------------- ------------
+  Manifest files and commit feeds           2 MB
+  Provider JavaScript files                 8 MB
+  Request bodies                            1 MB
+  GitHub request timeout              15 seconds
+
+## Manifest and stream processing
+
+The combined manifest uses Nuvio's `scrapers` format. AIOPlugins
+preserves source metadata such as plugin names, descriptions, supported
+types, logos, and settings flags, and rewrites each selected `filename`
+to a file served by AIOPlugins.
+
+Nuvio continues to render and store each plugin's native settings.
+AIOPlugins wraps each selected plugin's `getStreams` result at request
+time. Results are processed in memory and are not stored by AIOPlugins.
+
+### Filtering, sorting, and formatting
+
+A shared typed field catalog drives field-based filtering and sorting.
+
+The custom formatter follows the [AIOStreams formatter
+syntax](https://docs.aiostreams.viren070.me/reference/custom-formatter/)
+for:
+
+-   Nested optional groups
+-   Conditional branches and chaining
+-   Field references
+-   String, number, and array modifiers
+-   Track-list modifiers
+-   Date and duration patterns
+
+Common release fields are inferred from provider filename, name, or
+title fields when recognizable. These include media title, year, season
+and episode, resolution, source quality, codec, languages, audio,
+release group, container, and size.
+
+`{addon.name}` resolves to the selected plugin's manifest name. Other
+AIOStreams-only values---including `metadata`, `user`, `addon`, and
+`config`---are unavailable. Service details and probed media tracks are
+available only when supplied by the provider.
+
+The formatter has separate stream-name and description templates:
+
+-   The short name is written to `name`.
+-   The detailed description is written to `description`, `title`, and
+    `size`, because Nuvio's local-plugin runtime uses `size` for its
+    visible stream details.
+-   Parsed byte counts are preserved in `fileSize`.
+-   Filtering and sorting use provider metadata, not the formatted
+    display text.
+
+AIOPlugins middleware processes the array returned by each plugin's
+`getStreams` method. Nuvio remains responsible for plugin execution,
+plugin setting storage, debrid services, and playback.
 
 ## Architecture
 
-The UI is a static Astro site. Astro builds the page and its browser module into `dist/site`; the Cloudflare Worker serves those assets and owns the API. Cloudflare is currently the only hosting adapter.
+The UI is a static Astro site. Astro builds the page and browser module
+into `dist/site`; the Cloudflare Worker serves those assets and owns the
+API. Cloudflare is currently the only hosting adapter.
 
-```
+``` text
 src/
 ├── pages/index.astro         Main page composed from view components
 ├── components/               Plugin setup, middleware, review, and account views
 ├── scripts/app.js            Browser interactions and API calls
 ├── index.ts                  Wrangler entry point (re-exports the Cloudflare worker)
-├── server.ts                 Routing, sessions, rate limiting: handleRequest(request, platform)
+├── server.ts                 Routing, sessions, rate limiting:
+│                             handleRequest(request, platform)
 ├── users.ts                  Accounts, sessions, profiles, per-user source config
 ├── providers/remote.ts       GitHub discovery, validation, and live provider fetching
 ├── lib/
-│   ├── db.ts                 Contract: Database (first, all, run, atomic batch)
-│   └── platform.ts           Contract: Platform (db, static assets, client IP)
+│   ├── db.ts                 Database contract (first, all, run, atomic batch)
+│   └── platform.ts           Platform contract (db, static assets, client IP)
 └── adapters/cloudflare/      The only place Cloudflare APIs appear
     ├── worker.ts             Workers entry (ExportedHandler)
     ├── platform.ts           Builds a Platform from Wrangler bindings
@@ -52,72 +181,234 @@ src/
     └── env.ts                Binding types: DB, ASSETS, GITHUB_TOKEN
 ```
 
-Astro is only the UI/build layer; it does not replace the Worker backend. Everything outside `src/adapters/` is platform-independent and compiles without Cloudflare types. To host somewhere else, implement `Database` and `Platform` for the new environment and add an entry file that calls `handleRequest(request, platform)`; `server.ts`, `users.ts`, and `providers/remote.ts` do not change.
+Astro is the UI and build layer; it does not replace the Worker backend.
+Code outside `src/adapters/` is platform-independent and compiles
+without Cloudflare types.
 
-Rust is possible, but it would be a separate backend implementation, not an Astro feature. On Cloudflare it would need to run as a WebAssembly Worker or as a separately hosted service; either option would require rebuilding the current D1, session, and routing integration. The current backend is mostly database and network I/O, so Rust is unlikely to simplify it or improve performance meaningfully. The `Database` and `Platform` contracts leave room for a Rust-backed service later if a measured workload or deployment requirement justifies that extra boundary.
+To host the application on another platform, implement the `Database`
+and `Platform` contracts for that environment and add an entry file that
+calls `handleRequest(request, platform)`. The existing `server.ts`,
+`users.ts`, and `providers/remote.ts` do not need to change.
 
-The application's SQL is written for SQLite with `?` placeholders. An adapter for another engine may need to translate placeholders (for example `?` to `$1`) and use 64-bit integer columns, because timestamps are stored as `Date.now()` values.
+Rust could be used for a separate backend implementation, but it is not
+an Astro feature. On Cloudflare, it would need to run as a WebAssembly
+Worker or as a separately hosted service, and either approach would
+require rebuilding the current D1, session, and routing integration. The
+current backend is primarily database and network I/O, so Rust is
+unlikely to simplify it or meaningfully improve performance without a
+measured need.
+
+The `Database` and `Platform` contracts leave room for a different
+backend later if a workload or deployment requirement justifies that
+additional boundary.
+
+The application's SQL is written for SQLite and uses `?` placeholders.
+An adapter for another database engine may need to translate
+placeholders (for example, `?` to `$1`) and use 64-bit integer columns,
+because timestamps are stored as `Date.now()` values.
 
 ## Run locally
 
-Requirements: Node.js 22.23.4 or newer and npm.
+### Requirements
 
-```sh
+-   Node.js 22.23.4 or newer
+-   npm
+
+### Install and start
+
+``` sh
 npm install
 npm run dev
 ```
 
-`npm run dev` builds the Astro site and runs `wrangler dev`, which serves the Worker locally with a local D1 database and the generated static assets. Open the URL Wrangler prints (port 8787 by default). Run `npm run build:site` after UI changes while the dev server is already running. `npm run build` builds both the Astro site and TypeScript Worker; `npm test` does that build before running the test suite.
+`npm run dev` builds the Astro site and runs `wrangler dev`, which
+serves the Worker locally with a local D1 database and the generated
+static assets. Open the URL printed by Wrangler (port `8787` by
+default).
+
+After UI changes, run `npm run build:site` while the development server
+is already running.
+
+Available project commands:
+
+  -----------------------------------------------------------------------
+  Command                             Purpose
+  ----------------------------------- -----------------------------------
+  `npm run dev`                       Build the site and start the local
+                                      Wrangler development server
+
+  `npm run build:site`                Build the Astro site
+
+  `npm run build`                     Build the Astro site and TypeScript
+                                      Worker
+
+  `npm test`                          Build the project, then run the
+                                      test suite
+
+  `npm run typecheck`                 Run TypeScript type checking
+  -----------------------------------------------------------------------
+
+### Local Worker bindings
 
 The Worker expects these bindings in your Wrangler configuration:
 
-| Binding | Type | Purpose |
-| --- | --- | --- |
-| `DB` | D1 database | Accounts, sessions, profiles, and source selections |
-| `ASSETS` | Static assets | Astro output in `dist/site`; `/` serves the generated `index.html` and the Worker forwards bundled assets |
+  -----------------------------------------------------------------------
+  Binding                 Type                    Purpose
+  ----------------------- ----------------------- -----------------------
+  `DB`                    D1 database             Accounts, sessions,
+                                                  profiles, and source
+                                                  selections
 
-It also needs the `nodejs_compat` compatibility flag because it uses `node:crypto`. `GITHUB_TOKEN` is declared as an optional binding but is not currently used.
+  `ASSETS`                Static assets           Astro output in
+                                                  `dist/site`; `/` serves
+                                                  the generated
+                                                  `index.html` and the
+                                                  Worker forwards bundled
+                                                  assets
+  -----------------------------------------------------------------------
 
-The database needs these tables: `users`, `user_config`, `profiles`, and `sessions`. Apply your schema to the local D1 database before first use (see your migrations).
+The Worker also requires the `nodejs_compat` compatibility flag because
+it uses `node:crypto`.
 
-Type-check with `npm run typecheck`.
+`GITHUB_TOKEN` is declared as an optional binding but is not currently
+used.
 
-## Deploying to Cloudflare
+The database needs these tables:
 
-1. Create a D1 database and put its ID in your Wrangler configuration under the `DB` binding.
-2. Apply the schema to the remote database.
-3. Configure the `ASSETS` binding and the `nodejs_compat` flag.
-4. Add the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets, and configure the `prod` GitHub Actions environment.
+-   `users`
+-   `user_config`
+-   `profiles`
+-   `sessions`
 
-Pull requests run the test suite on Node.js 22 and 24. Every push to `main` runs the same checks; after they pass, GitHub creates a release and tag, applies remote D1 migrations, and deploys the Worker.
+Apply your schema to the local D1 database before first use. See the
+project's migrations.
 
-Provider JavaScript is not stored in D1. The selected source references and provider manifest metadata are stored so the install manifest can be built without contacting GitHub; provider files are fetched live from their pinned commits when requested.
+## Deploy to Cloudflare
 
-## Releases
+1.  Create a D1 database and add its ID to your Wrangler configuration
+    under the `DB` binding.
+2.  Apply the schema to the remote database.
+3.  Configure the `ASSETS` binding and enable the `nodejs_compat`
+    compatibility flag.
+4.  Add the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`
+    repository secrets.
+5.  Configure the GitHub Actions `prod` environment.
 
-Every successful push to `main` creates a GitHub Release and matching `vX.Y.Z` tag, then deploys that revision. The tag is the deployed app version; `package.json` is not used as the release version after the initial fallback. If a push contains multiple commits, the highest applicable bump is used. Releases follow [Conventional Commits](https://www.conventionalcommits.org/):
+Pull requests run the test suite on Node.js 22 and 24. Every push to
+`main` runs the same checks. After the checks pass, GitHub creates a
+release and tag, applies remote D1 migrations, and deploys the Worker.
 
-| Commit message | Effect |
-| --- | --- |
-| `feat: add profile export` | minor bump |
-| `feat!: change install URL format` or a `BREAKING CHANGE:` footer | major bump, including before 1.0.0 |
-| Any other commit, including `fix:`, `chore:`, `docs:`, and `test:` | patch bump |
+Provider JavaScript is not stored in D1. The database stores selected
+source references and provider manifest metadata so the install manifest
+can be built without contacting GitHub. Provider files are fetched live
+from their pinned commits when Nuvio requests them.
 
-GitHub generates release notes for each tag. `CHANGELOG.md` is not automatically rewritten by the release workflow.
+## Security and privacy notes
 
-## Security notes
+The following describes the application's current implementation. It is
+not a guarantee that the service is free from vulnerabilities or that
+every deployment is configured securely.
 
-- Passwords are hashed with scrypt and a per-user salt. Sessions are stored as SHA-256 hashes and expire after 30 days; the session cookie is `HttpOnly`, `Secure`, and `SameSite=Strict`.
-- Login attempts are throttled per account and client, and sensitive routes are rate limited per client IP. The client IP comes from Cloudflare's `cf-connecting-ip` header. Rate-limit and lockout counters are kept in memory per running instance, so they are not shared across Worker instances.
-- Responses carry `nosniff`, frame-deny, and referrer-policy headers. The manifest and plugin routes allow cross-origin reads so Nuvio can load them.
+-   Passwords are hashed with scrypt and a per-user salt.
+-   Sessions are stored as SHA-256 hashes and expire after 30 days.
+-   The session cookie is `HttpOnly`, `Secure`, and `SameSite=Strict`.
+-   Login attempts are throttled per account and client.
+-   Sensitive routes are rate limited per client IP.
+-   The client IP is read from Cloudflare's `cf-connecting-ip` header.
+-   Rate-limit and lockout counters are held in memory per running
+    Worker instance; they are not shared across Worker instances.
+-   Responses include `nosniff`, frame-deny, and referrer-policy
+    headers.
+-   Manifest and provider-file routes allow cross-origin reads so Nuvio
+    can load them.
 
-## Upstream sources
+### Protect your account and install URL
 
-- [Yoru's Nuvio providers](https://github.com/yoruix/nuvio-providers)
-- [All-in-One Nuvio](https://github.com/NuvioPlugin/All-in-One-Nuvio)
+Your password and account-specific repository URL protect different
+things:
 
-Selected repository, commit, provider IDs, and manifest metadata are stored with your account. Provider JavaScript is fetched from the pinned Git commit when Nuvio requests it, formatted, and returned without being stored in the database. Serving providers therefore depends on GitHub being available. Yoru's repository is GPL-3.0. All-in-One's README states GPL-3.0, but its main branch did not contain a `LICENSE` file when last checked; confirm its license before redistributing selected plugin files. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+-   Your password is used to access your account and is required to
+    delete it.
+-   The token embedded in your repository URL grants access to the
+    generated manifest and the provider files it references.
 
-## License and disclaimer
+Do not publish or share your repository URL publicly unless you intend
+to make that profile accessible to anyone who obtains it. If you believe
+a URL has been exposed, take appropriate steps to protect your account
+and update the affected configuration.
 
-The builder source is GPL-3.0-only. This does not grant rights to upstream providers, third-party services, or media. The project is independent and is not affiliated with or endorsed by Nuvio, Yoru, All-in-One, or any third-party service. You are responsible for choosing sources and complying with applicable laws and service terms. The software is provided without warranty.
+For privacy details, consult the service's Privacy Policy if one is
+published for the deployment you use.
+
+## Upstream sources and third-party licenses
+
+AIOPlugins can combine sources from third-party GitHub repositories. The
+upstream projects and their contributors retain their respective rights
+in their code and other materials. AIOPlugins does not grant users
+rights to third-party content.
+
+Known upstream sources include:
+
+-   [Yoru's Nuvio providers](https://github.com/yoruix/nuvio-providers)
+-   [All-in-One Nuvio](https://github.com/NuvioPlugin/All-in-One-Nuvio)
+
+Selected repository, commit, provider IDs, and manifest metadata are
+stored with your account. Provider JavaScript is fetched from the pinned
+Git commit when Nuvio requests it, formatted, and returned without being
+stored in the database. Serving provider files therefore depends on
+GitHub being available.
+
+Yoru's repository is licensed under GPL-3.0. The All-in-One repository's
+README states GPL-3.0, but its main branch did not contain a `LICENSE`
+file when last checked. **Verify the current license and applicable
+redistribution terms before using or redistributing files from any
+upstream repository.** Repository metadata or a README statement should
+not be treated as a substitute for checking the actual license and the
+rights applicable to the files you use.
+
+See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for additional
+notices.
+
+If you are a rights holder and believe material accessible through
+AIOPlugins infringes your rights, use the project's published contact or
+reporting channel to submit a notice identifying the material and the
+basis for your request. A public deployment should publish a monitored
+contact address and a clear process for receiving rights-related
+notices. Do not assume that this README, by itself, establishes
+eligibility for any legal safe harbor.
+
+## Disclaimer
+
+AIOPlugins is an independent tool for organizing and combining
+third-party Nuvio plugin sources. It is not affiliated with, sponsored
+by, or endorsed by Nuvio, Yoru, All-in-One, or any third-party developer
+or service.
+
+AIOPlugins does not create, own, maintain, audit, or endorse third-party
+plugins. Users choose the sources they add. AIOPlugins retrieves
+selected provider files from their pinned upstream commits and serves
+those files to Nuvio; **Nuvio executes the returned code in its own
+plugin runtime.** Users should review sources before selecting them and
+are responsible for their use of third-party software and services,
+including compliance with applicable laws, licenses, and terms.
+
+Third-party repositories, providers, and services may change, become
+unavailable, or impose their own requirements. AIOPlugins does not
+guarantee the accuracy, safety, legality, availability, or continued
+operation of third-party content or services.
+
+The software is provided "as is" and without warranties, express or
+implied, to the extent permitted by applicable law. This README is
+informational and is not legal advice. The disclaimer does not replace
+any terms, privacy notice, or other policies that may apply to a
+deployed service.
+
+## License
+
+The AIOPlugins builder source is licensed under **GPL-3.0-only**. See
+the repository's license file for the full license text.
+
+This project license applies to the AIOPlugins source code only. It does
+not grant rights to upstream providers, third-party services, logos,
+trademarks, or media, and it does not override the licenses or terms
+that apply to those materials.

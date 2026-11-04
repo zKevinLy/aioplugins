@@ -130,6 +130,10 @@ before(() => {
     const url = new URL(input);
 
     if (url.hostname === "github.com" && url.pathname.endsWith(".atom")) {
+      if (url.pathname.startsWith("/missing/")) {
+        return new Response("Not Found", { status: 404 });
+      }
+
       if (temporaryAtomFailures > 0) {
         temporaryAtomFailures--;
         return new Response("Temporarily unavailable", { status: 503 });
@@ -862,6 +866,145 @@ test("keeps partial provider metadata useful without inventing fields", () => {
   assert.equal(stream.resolution, undefined);
   assert.match(label, /🎬 Doctor X: Mafia In White/);
   assert.match(label, /🎞️ E06/);
+});
+
+function runWrapped(source, settings) {
+  const module = { exports: {} };
+  new Function("module", "exports", wrapPluginStreams(source, settings))(module, module.exports);
+  return module.exports;
+}
+
+test("reports source problems with specific messages and status codes", async () => {
+  const post = (repository) => testFetch("/api/discover", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ repository, ref: "main" })
+  });
+
+  const invalid = await post("not a url");
+  assert.equal(invalid.status, 400);
+  assert.match((await invalid.json()).error, /valid GitHub repository URL/);
+
+  const notGitHub = await post("https://example.com/owner/repo");
+  assert.equal(notGitHub.status, 400);
+
+  const missing = await post("https://github.com/missing/repo");
+  assert.equal(missing.status, 404);
+  assert.match((await missing.json()).error, /not found/i);
+});
+
+test("returns the saved workspace with the session so the UI can load in one request", async () => {
+  const session = await testFetch("/api/session").then((response) => response.json());
+
+  assert.ok(session.user);
+  assert.ok(Array.isArray(session.workspace.sources));
+  assert.ok(Array.isArray(session.workspace.profiles));
+  assert.ok(session.workspace.middleware);
+  assert.equal(
+    session.workspace.fields.find((field) => field.key === "date").type,
+    "date"
+  );
+
+  const resolution = session.workspace.fields.find((field) => field.key === "resolution");
+  assert.deepEqual(resolution.options[0], { value: "2160", label: "2160p" });
+
+  for (const profile of session.workspace.profiles) {
+    for (const source of profile.sources) {
+      assert.equal(source.providers, undefined, "cached provider entries stay on the server");
+    }
+  }
+});
+
+test("normalizes date and numeric filters picked in the UI", () => {
+  const settings = normalizeStreamMiddlewareSettings({
+    filters: [
+      { field: "date", operator: "gte", value: "2023-06-01" },
+      { field: "date", operator: "lt", value: "2023-02-31" },
+      { field: "date", operator: "lt", value: "not a date" },
+      { field: "date", operator: "contains", value: "2023" },
+      { field: "resolution", operator: "gte", value: "1080p" },
+      { field: "resolution", operator: "gte", value: "" },
+      { field: "year", operator: "lte", value: "abc" }
+    ]
+  });
+
+  assert.deepEqual(settings.filters, [
+    { field: "date", operator: "gte", value: "2023-06-01" },
+    { field: "date", operator: "contains", value: "2023" },
+    { field: "resolution", operator: "gte", value: "1080" }
+  ]);
+});
+
+test("filters and sorts streams by release date", async () => {
+  const source = `module.exports = { getStreams: async () => [
+    { title: "Old", date: "2021-03-04" },
+    { title: "New", date: "2024-01-15" },
+    { title: "Middle", date: "2023-06-01" },
+    { title: "Undated" }
+  ] };`;
+  const titles = async (settings) => {
+    const streams = await runWrapped(source, {
+      ...DEFAULT_STREAM_MIDDLEWARE,
+      format: "{stream.title}",
+      ...settings
+    }).getStreams({});
+    return streams.map((stream) => stream.description);
+  };
+
+  assert.deepEqual(
+    await titles({ filters: [{ field: "date", operator: "gte", value: "2023-06-01" }] }),
+    ["New", "Middle"]
+  );
+  assert.deepEqual(
+    await titles({ filters: [{ field: "date", operator: "lt", value: "2023-06-01" }] }),
+    ["Old"]
+  );
+  assert.deepEqual(
+    await titles({ filters: [{ field: "date", operator: "equals", value: "2024-01-15" }] }),
+    ["New"]
+  );
+  assert.deepEqual(
+    await titles({ sortField: "date", sortDirection: "desc" }),
+    ["New", "Middle", "Old", "Undated"]
+  );
+  assert.deepEqual(
+    await titles({ sortField: "date", sortDirection: "asc" }),
+    ["Old", "Middle", "New", "Undated"]
+  );
+});
+
+test("filters by resolution values chosen from the dropdown", async () => {
+  const source = `module.exports = { getStreams: async () => [
+    { title: "A 720p" }, { title: "B 1080p" }, { title: "C 2160p" }
+  ] };`;
+  const streams = await runWrapped(source, {
+    ...DEFAULT_STREAM_MIDDLEWARE,
+    filters: [{ field: "resolution", operator: "gte", value: "1080p" }],
+    format: "{stream.title}"
+  }).getStreams({});
+
+  assert.deepEqual(streams.map((stream) => stream.description), ["B", "C"]);
+});
+
+test("sorts ranked fields by quality rather than alphabetically", async () => {
+  const source = `module.exports = { getStreams: async () => [
+    { title: "A", quality: "CAM" },
+    { title: "B", quality: "BluRay REMUX" },
+    { title: "C", quality: "WEB-DL" },
+    { title: "D", quality: "HDTV" }
+  ] };`;
+  const sorted = async (sortDirection) => {
+    const streams = await runWrapped(source, {
+      ...DEFAULT_STREAM_MIDDLEWARE,
+      sortField: "quality",
+      sortDirection,
+      format: "{stream.title}"
+    }).getStreams({});
+    return streams.map((stream) => stream.description);
+  };
+
+  assert.deepEqual(await sorted("desc"), ["B", "C", "D", "A"]);
+  assert.deepEqual(await sorted("asc"), ["A", "D", "C", "B"]);
 });
 
 test("keeps named profiles and sources manageable", async () => {

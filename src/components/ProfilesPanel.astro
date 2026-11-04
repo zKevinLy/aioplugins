@@ -1,0 +1,28 @@
+<details class="panel optional-settings">
+  <summary>Profiles</summary>
+  <div class="panel-body">
+    <p class="view-intro">
+      Save different plugin combinations and switch between them whenever you want.
+    </p>
+
+    <div class="field">
+      <label for="profile-select">Load a saved profile</label>
+      <div class="field-row">
+        <select id="profile-select"></select>
+        <button id="delete-profile" class="button button-small button-danger" type="button">
+          Delete
+        </button>
+      </div>
+    </div>
+
+    <form id="save-profile-form">
+      <div class="field">
+        <label for="profile-name">Save current selection as a profile</label>
+        <input id="profile-name" type="text" placeholder="Profile name" required />
+      </div>
+      <button id="save-new-profile" class="button button-small" type="submit">
+        Save profile
+      </button>
+    </form>
+  </div>
+</details>

@@ -1,5 +1,6 @@
 
 import { createHash } from "node:crypto";
+import { HttpError } from "../lib/http-error.js";
 import {
   normalizeStreamMiddlewareSettings,
   wrapPluginStreams
@@ -12,7 +13,7 @@ const MAX_JSON_BYTES = 2 * 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 15_000;
 const GITHUB_MAX_ATTEMPTS = 2;
 const GITHUB_RETRY_DELAY_MS = 250;
-const STREAM_MIDDLEWARE_VERSION = "15";
+const STREAM_MIDDLEWARE_VERSION = "16";
 
 const GITHUB_RAW = "https://raw.githubusercontent.com";
 const GITHUB_WEB = "https://github.com";
@@ -67,7 +68,7 @@ function parseRepository(value: string): GitHubRepository {
   try {
     url = new URL(value);
   } catch {
-    throw new Error("Enter a valid GitHub repository URL");
+    throw new HttpError(400, "Enter a valid GitHub repository URL");
   }
 
   if (
@@ -79,7 +80,7 @@ function parseRepository(value: string): GitHubRepository {
     url.search ||
     url.hash
   ) {
-    throw new Error("Only HTTPS GitHub repository URLs are supported");
+    throw new HttpError(400, "Only HTTPS GitHub repository URLs are supported");
   }
 
   const pathname = url.pathname
@@ -89,7 +90,8 @@ function parseRepository(value: string): GitHubRepository {
   const parts = pathname.split("/").filter(Boolean);
 
   if (parts.length !== 2) {
-    throw new Error(
+    throw new HttpError(
+      400,
       "Enter a GitHub repository URL, not a file or organization URL"
     );
   }
@@ -102,7 +104,7 @@ function parseRepository(value: string): GitHubRepository {
     repo === "." ||
     repo === ".."
   ) {
-    throw new Error("Invalid GitHub repository name");
+    throw new HttpError(400, "Invalid GitHub repository name");
   }
 
   return {
@@ -131,7 +133,7 @@ function validateRef(value: string): string {
         part.endsWith(".lock")
     )
   ) {
-    throw new Error("Invalid GitHub branch or tag name");
+    throw new HttpError(400, "Invalid GitHub branch or tag name");
   }
 
   return ref;
@@ -139,7 +141,7 @@ function validateRef(value: string): string {
 
 function validateCommit(value: string): string {
   if (!/^[a-f0-9]{40}$/i.test(value)) {
-    throw new Error("GitHub returned an invalid commit identifier");
+    throw new HttpError(502, "GitHub returned an invalid commit identifier");
   }
 
   return value;
@@ -147,7 +149,7 @@ function validateCommit(value: string): string {
 
 function safeProviderPath(value: unknown): string {
   if (typeof value !== "string" || !value.trim()) {
-    throw new Error("Provider manifest has no filename");
+    throw new HttpError(422, "Provider manifest has no filename");
   }
 
   const normalized = value.replace(/\\/g, "/");
@@ -165,7 +167,8 @@ function safeProviderPath(value: unknown): string {
     ) ||
     !normalized.endsWith(".js")
   ) {
-    throw new Error(
+    throw new HttpError(
+      422,
       `Unsafe provider filename in manifest: ${value}`
     );
   }
@@ -181,7 +184,7 @@ function manifestEntries(value: unknown): ProviderEntry[] {
       : undefined;
 
   if (!Array.isArray(entries)) {
-    throw new Error("Unsupported GitHub provider manifest format");
+    throw new HttpError(422, "Unsupported GitHub provider manifest format");
   }
 
   return entries.filter(
@@ -217,7 +220,7 @@ async function readLimitedResponse(
   errorMessage: string
 ): Promise<string> {
   if (!response.body) {
-    throw new Error("GitHub returned an empty response");
+    throw new HttpError(502, "GitHub returned an empty response");
   }
 
   const reader = response.body.getReader();
@@ -234,7 +237,7 @@ async function readLimitedResponse(
 
       if (totalBytes > maxBytes) {
         await reader.cancel();
-        throw new Error(errorMessage);
+        throw new HttpError(502, errorMessage);
       }
 
       chunks.push(value);
@@ -298,7 +301,12 @@ async function githubFetch(
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
       });
     } catch (error) {
-      if (attempt === GITHUB_MAX_ATTEMPTS) throw error;
+      if (attempt === GITHUB_MAX_ATTEMPTS) {
+        throw new HttpError(
+          502,
+          "Could not reach GitHub. Please try again in a moment."
+        );
+      }
 
       await new Promise(resolve =>
         setTimeout(resolve, GITHUB_RETRY_DELAY_MS)
@@ -321,13 +329,13 @@ async function githubFetch(
     }
 
     if (response.status >= 300 && response.status < 400) {
-      throw new Error("GitHub returned an unexpected redirect");
+      throw new HttpError(502, "GitHub returned an unexpected redirect");
     }
 
     return response;
   }
 
-  throw new Error("GitHub request exhausted retry attempts");
+  throw new HttpError(502, "GitHub request exhausted retry attempts");
 }
 
 async function fetchAtomCommit(
@@ -345,8 +353,18 @@ async function fetchAtomCommit(
 
   const response = await githubFetch(url, "github.com");
 
+  if (response.status === 404) {
+    await response.body?.cancel();
+    throw new HttpError(
+      404,
+      "Repository or branch not found. Check the URL and the branch or tag name."
+    );
+  }
+
   if (!response.ok) {
-    throw new Error(
+    await response.body?.cancel();
+    throw new HttpError(
+      502,
       `GitHub commit feed request failed (${response.status})`
     );
   }
@@ -372,7 +390,8 @@ async function fetchAtomCommit(
     }
   }
 
-  throw new Error(
+  throw new HttpError(
+    404,
     "Could not find a commit SHA in the GitHub commit feed. Check that the repository and branch exist."
   );
 }
@@ -381,7 +400,8 @@ async function fetchJson(url: string): Promise<unknown> {
   const parsed = new URL(url);
 
   if (parsed.hostname !== "raw.githubusercontent.com") {
-    throw new Error(
+    throw new HttpError(
+      400,
       "Blocked request to an unapproved GitHub host"
     );
   }
@@ -391,8 +411,18 @@ async function fetchJson(url: string): Promise<unknown> {
     "raw.githubusercontent.com"
   );
 
+  if (response.status === 404) {
+    await response.body?.cancel();
+    throw new HttpError(
+      404,
+      "No manifest.json was found in this repository at the selected branch or tag."
+    );
+  }
+
   if (!response.ok) {
-    throw new Error(
+    await response.body?.cancel();
+    throw new HttpError(
+      502,
       `GitHub manifest request failed (${response.status})`
     );
   }
@@ -406,7 +436,7 @@ async function fetchJson(url: string): Promise<unknown> {
   try {
     return JSON.parse(text) as unknown;
   } catch {
-    throw new Error("GitHub returned invalid JSON");
+    throw new HttpError(422, "The repository's manifest.json is not valid JSON");
   }
 }
 
@@ -417,7 +447,9 @@ async function fetchText(url: string): Promise<string> {
   );
 
   if (!response.ok) {
-    throw new Error(
+    await response.body?.cancel();
+    throw new HttpError(
+      502,
       `GitHub file request failed (${response.status})`
     );
   }
@@ -611,7 +643,7 @@ export async function resolveSelectedSources(
   plugins: number;
 }> {
   if (!Array.isArray(value)) {
-    throw new Error("Selections must be a list");
+    throw new HttpError(400, "Selections must be a list");
   }
 
   const selections = value
@@ -621,7 +653,7 @@ export async function resolveSelectedSources(
         typeof item !== "object" ||
         Array.isArray(item)
       ) {
-        throw new Error("Invalid source selection");
+        throw new HttpError(400, "Invalid source selection");
       }
 
       const candidate = item as Record<string, unknown>;
@@ -636,7 +668,8 @@ export async function resolveSelectedSources(
             id.length <= 200
         )
       ) {
-        throw new Error(
+        throw new HttpError(
+          400,
           "Each source requires a repository URL and valid provider ID list"
         );
       }
@@ -671,61 +704,67 @@ export async function resolveSelectedSources(
     }
   }
 
-  const saved: SavedSourceSelection[] = [];
-  let plugins = 0;
-
-  for (const selection of selections) {
-    const source = await loadSource(
-      selection.repository,
-      selection.ref
-    );
-
-    if (
-      selection.commit &&
-      selection.commit !== source.commit
-    ) {
-      throw new Error(
-        `The source changed after discovery. Review the new commit for ${source.url} before applying.`
+  // Sources are independent, so resolve them concurrently.
+  const saved = await Promise.all(
+    selections.map(async (selection): Promise<SavedSourceSelection> => {
+      const source = await loadSource(
+        selection.repository,
+        selection.ref
       );
-    }
 
-    const selectedEntries = source.entries.filter(
-      (entry): entry is ProviderEntry & { id: string } =>
-        typeof entry.id === "string" &&
-        selection.providerIds.includes(entry.id)
-    );
-
-    if (
-      selectedEntries.length !== selection.providerIds.length
-    ) {
-      throw new Error(
-        `One or more selected IDs were not found in ${source.url}`
-      );
-    }
-
-    const providers: SelectedProviderEntry[] = selectedEntries.map(entry => {
-      if (entry.enabled === false) {
-        throw new Error(
-          `Provider "${String(entry.id)}" is disabled in its manifest`
+      if (
+        selection.commit &&
+        selection.commit !== source.commit
+      ) {
+        throw new HttpError(
+          409,
+          `The source changed after discovery. Review the new commit for ${source.url} before applying.`
         );
       }
 
+      const selectedEntries = source.entries.filter(
+        (entry): entry is ProviderEntry & { id: string } =>
+          typeof entry.id === "string" &&
+          selection.providerIds.includes(entry.id)
+      );
+
+      if (
+        selectedEntries.length !== selection.providerIds.length
+      ) {
+        throw new HttpError(
+          409,
+          `One or more selected plugins are no longer available in ${source.url}. Refresh the source and review your selection.`
+        );
+      }
+
+      const providers: SelectedProviderEntry[] = selectedEntries.map(entry => {
+        if (entry.enabled === false) {
+          throw new HttpError(
+            400,
+            `Provider "${String(entry.id)}" is disabled in its manifest`
+          );
+        }
+
+        return {
+          ...entry,
+          id: entry.id,
+          filename: safeProviderPath(entry.filename)
+        };
+      });
+
       return {
-        ...entry,
-        id: entry.id,
-        filename: safeProviderPath(entry.filename)
+        ...selection,
+        repository: source.url,
+        commit: source.commit,
+        providers
       };
-    });
+    })
+  );
 
-    saved.push({
-      ...selection,
-      repository: source.url,
-      commit: source.commit,
-      providers
-    });
-
-    plugins += selectedEntries.length;
-  }
+  const plugins = saved.reduce(
+    (total, source) => total + source.providerIds.length,
+    0
+  );
 
   return {
     sources: saved,
