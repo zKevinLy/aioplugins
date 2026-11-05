@@ -214,7 +214,7 @@ test("builds a combined Nuvio manifest and serves selected files without executi
   const home = await testFetch("/").then((response) => response.text());
   assert.match(home, /AIOPlugins/);
 
-  const appScriptPath = [...home.matchAll(/src="([^"]+\\.js)"/g)]
+  const appScriptPath = [...home.matchAll(/src="([^"]+\.js)"/g)]
     .map((match) => match[1])
     .find((src) => src?.startsWith("/_astro/"));
   assert.ok(appScriptPath, "Astro-generated app script should be present in the page");
