@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
+import { resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { after, before, test } from "node:test";
 import { handleRequest } from "../dist/server.js";
@@ -163,18 +165,29 @@ before(() => {
     db,
     assets: {
       fetch: async (request) => {
-        const pathname = new URL(request.url).pathname;
-        const filePath = pathname === "/index.html"
-          ? "../dist/site/index.html"
-          : `../dist/site${pathname}`;
+        const pathname = decodeURIComponent(new URL(request.url).pathname);
+        const siteRoot = resolve(fileURLToPath(new URL("../dist/site/", import.meta.url)));
+        const filePath = resolve(siteRoot, `.${pathname}`);
+
+        // Resolve only files inside Astro's generated static output.
+        if (filePath !== siteRoot && !filePath.startsWith(`${siteRoot}${sep}`)) {
+          return new Response("Not found", { status: 404 });
+        }
 
         try {
-          return new Response(readFileSync(new URL(filePath, import.meta.url)), {
-            headers: {
-              "content-type": pathname.endsWith(".html")
-                ? "text/html; charset=utf-8"
-                : "application/octet-stream"
-            }
+          const extension = filePath.split(".").pop()?.toLowerCase();
+          const contentType = {
+            html: "text/html; charset=utf-8",
+            js: "application/javascript; charset=utf-8",
+            css: "text/css; charset=utf-8",
+            json: "application/json; charset=utf-8",
+            svg: "image/svg+xml",
+            png: "image/png",
+            ico: "image/x-icon"
+          }[extension] || "application/octet-stream";
+
+          return new Response(readFileSync(filePath), {
+            headers: { "content-type": contentType }
           });
         } catch {
           return new Response("Not found", { status: 404 });
@@ -201,8 +214,10 @@ test("builds a combined Nuvio manifest and serves selected files without executi
   const home = await testFetch("/").then((response) => response.text());
   assert.match(home, /AIOPlugins/);
 
-  const appScriptPath = home.match(/src="([^"]+\.js)"/)?.[1];
-  assert.ok(appScriptPath, "Astro app script should be present in the page");
+  const appScriptPath = [...home.matchAll(/src="([^"]+\\.js)"/g)]
+    .map((match) => match[1])
+    .find((src) => src?.startsWith("/_astro/"));
+  assert.ok(appScriptPath, "Astro-generated app script should be present in the page");
   const appScript = await testFetch(appScriptPath);
   assert.equal(appScript.status, 200);
   assert.ok((await appScript.text()).length > 0);

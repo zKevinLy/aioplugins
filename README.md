@@ -403,6 +403,30 @@ informational and is not legal advice. The disclaimer does not replace
 any terms, privacy notice, or other policies that may apply to a
 deployed service.
 
+## Project layout
+
+The application source of truth lives under `src/`. Keep runtime and
+browser TypeScript modules there rather than adding duplicate modules at
+the repository root.
+
+- `src/adapters/cloudflare/` — Cloudflare Worker entry point, D1 adapter,
+  environment bindings, and platform construction.
+- `src/components/` — Astro UI components.
+- `src/lib/` — shared database, platform, and HTTP utilities.
+- `src/pages/` — Astro pages and routes.
+- `src/providers/` — upstream source discovery and stream formatting.
+- `src/scripts/` — browser application, grouped into components, core
+  utilities, services, and state.
+- `tests/` — Node test suite.
+- `migrations/` — ordered D1 SQL migrations.
+- `public/` — static assets copied into the Astro site output.
+
+The repository root is reserved for project configuration, package
+metadata, documentation, licensing, and Wrangler-generated type
+declarations. The old root-level TypeScript copies were removed because
+the active implementations already live under `src/` and the Worker
+entry point in `wrangler.toml` targets `src/index.ts`.
+
 ## License
 
 The AIOPlugins builder source is licensed under **GPL-3.0-only**. See
