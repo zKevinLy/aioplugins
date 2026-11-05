@@ -2,7 +2,6 @@
 // the session bar and the footer.
 
 import { $ } from "../core/dom.js";
-import { isRecord } from "../core/guards.js";
 import type { AppView, MiddlewareTab } from "../core/types.js";
 import { signOut } from "../services/session.js";
 import { runSave } from "./saveFlow.js";
@@ -16,7 +15,8 @@ const VIEW_SECTIONS: Record<AppView, string> = {
   middleware: "#middleware-view",
   save: "#save-view",
   account: "#account-view",
-  about: "#about-view"
+  about: "#about-view",
+  support: "#support-view"
 };
 
 const NAV_ITEMS: Record<string, string> = {
@@ -26,7 +26,8 @@ const NAV_ITEMS: Record<string, string> = {
   formatting: "#formatting-tab",
   save: "#save-tab",
   account: "#account-nav",
-  about: "#about-nav"
+  about: "#about-nav",
+  support: "#support-nav"
 };
 
 type PageText = { title: string; description: string };
@@ -46,7 +47,11 @@ const PAGES: Record<Exclude<AppView, "middleware">, PageText> = {
   },
   about: {
     title: "About AIOPlugins",
-    description: "Learn about the project, find its source code, and support its hosting costs."
+    description: "Learn about the project, find its source code, and how it works."
+  },
+  support: {
+    title: "Support the project",
+    description: "Choose a way to support AIOPlugins and help keep the project running."
   }
 };
 
@@ -55,23 +60,6 @@ const MIDDLEWARE_PAGES: Record<MiddlewareTab, PageText> = {
   sorting: { title: "Sort streams", description: "Choose the order of each provider's results." },
   formatting: { title: "Format stream details", description: "Surface stream metadata in displayed titles." }
 };
-
-async function showAppVersion(): Promise<void> {
-  try {
-    const response = await fetch("/version.json", { cache: "no-store" });
-    if (!response.ok) return;
-
-    const data: unknown = await response.json();
-
-    if (isRecord(data) && typeof data.version === "string" && data.version.trim()) {
-      const badge = $("#app-version");
-      badge.textContent = data.version;
-      badge.hidden = false;
-    }
-  } catch {
-    // Version information is optional.
-  }
-}
 
 function renderView(): void {
   const { view, tab } = viewStore.get();
@@ -101,9 +89,7 @@ function renderSession(): void {
   $("#auth-view").hidden = signedIn || !sessionReady.get();
   $("#app-view").hidden = !signedIn;
   $("#session-bar").hidden = !signedIn;
-  $("#server-state").hidden = signedIn;
 
-  if (user) $("#session-id").textContent = `${user.id.slice(0, 8)}…`;
 }
 
 function refreshIcons(): void {
@@ -116,8 +102,6 @@ function refreshIcons(): void {
 export function mountAppShell(): void {
   const year = document.querySelector<HTMLElement>("#copyright-year");
   if (year) year.textContent = String(new Date().getFullYear());
-
-  void showAppVersion();
 
   userStore.subscribe(renderSession);
   sessionReady.subscribe(renderSession);
@@ -133,6 +117,8 @@ export function mountAppShell(): void {
   $("#account-menu").addEventListener("click", () => showView("account"));
   $("#account-nav").addEventListener("click", () => showView("account"));
   $("#about-nav").addEventListener("click", () => showView("about"));
+  $("#support-nav").addEventListener("click", () => showView("support"));
+  $("#support-shortcut").addEventListener("click", () => showView("support"));
   $("#logout").addEventListener("click", () => void signOut());
 
   const quickSave = $<HTMLButtonElement>("#quick-save");

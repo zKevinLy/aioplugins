@@ -1,7 +1,10 @@
 <!-- Primary application navigation -->
 <aside class="sidebar" id="app-sidebar" aria-label="Application sidebar">
   <div class="sidebar-top">
-    <span class="sidebar-brand">Navigation</span>
+    <div class="sidebar-brand-lockup" aria-label="AIOPlugins">
+      <img class="sidebar-logo" src="/logo.png" alt="" width="42" height="31">
+      <span class="sidebar-wordmark">AIOPlugins</span>
+    </div>
     <button id="sidebar-toggle" class="sidebar-toggle" type="button"
       aria-label="Collapse sidebar" aria-expanded="true" aria-controls="app-sidebar"
       title="Collapse sidebar">
@@ -64,16 +67,11 @@
         <i class="nav-icon" data-lucide="info" aria-hidden="true"></i>
         <span class="nav-label">About</span>
       </button>
+      <button id="support-nav" class="nav-item support-nav-item" type="button" title="Support the project" aria-label="Support the project">
+        <i class="nav-icon" data-lucide="heart-handshake" aria-hidden="true"></i>
+        <span class="nav-label">Support the project</span>
+      </button>
     </nav>
   </div>
 
-  <a class="sidebar-sponsor" aria-label="Sponsor AIOPlugins" href="https://github.com/sponsors/zKevinLy"
-    target="_blank" rel="noopener noreferrer" title="Sponsor AIOPlugins">
-    <span class="sponsor-icon"><i data-lucide="heart" aria-hidden="true"></i></span>
-    <span class="sponsor-copy">
-      <strong>Support the project</strong>
-      <small>Servers aren't free. Help keep it running.</small>
-    </span>
-    <i class="sponsor-arrow" data-lucide="external-link" aria-hidden="true"></i>
-  </a>
 </aside>

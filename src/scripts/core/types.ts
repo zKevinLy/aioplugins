@@ -98,6 +98,6 @@ export interface ProfileBackup {
   middleware?: unknown;
 }
 
-export type AppView = "configure" | "middleware" | "save" | "account" | "about";
+export type AppView = "configure" | "middleware" | "save" | "account" | "about" | "support";
 export type MiddlewareTab = "filters" | "sorting" | "formatting";
 export type StatusKind = "" | "success" | "error";

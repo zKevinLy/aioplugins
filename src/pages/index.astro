@@ -1,6 +1,7 @@
 ---
 import AccountSettings from '../components/AccountSettings.astro';
 import AboutPage from '../components/AboutPage.astro';
+import SupportPage from '../components/SupportPage.astro';
 import AuthView from '../components/AuthView.astro';
 import MiddlewareSettings from '../components/MiddlewareSettings.astro';
 import PluginSetup from '../components/PluginSetup.astro';
@@ -26,38 +27,6 @@ import Sidebar from '../components/Sidebar.astro';
 </head>
 <body>
   <main class="shell">
-    <header class="topbar">
-      <div class="brand">
-        <img class="brand-mark" src="/logo.png" alt="AIOPlugins logo" width="40" height="29">
-        <div>
-          <p class="eyebrow">Nuvio plugin manager</p>
-          <div class="brand-title">
-            <h1>AIOPlugins</h1>
-            <span id="app-version" class="version-badge" hidden></span>
-          </div>
-        </div>
-      </div>
-
-      <div id="server-state" class="server-state">Running on this computer</div>
-
-      <div id="session-bar" class="session-bar" hidden>
-        <code id="session-id" title="Your UUID"></code>
-        <button id="quick-save" class="button button-small header-icon-button" type="button"
-          aria-label="Quick save" title="Quick save" disabled>
-          <i data-lucide="save" aria-hidden="true"></i>
-        </button>
-        <button id="account-menu" class="button button-small header-icon-button" type="button"
-          aria-label="Account" title="Account">
-          <i data-lucide="user-round" aria-hidden="true"></i>
-        </button>
-        <button id="logout" class="button button-small header-icon-button" type="button"
-          aria-label="Log out" title="Log out">
-          <i data-lucide="log-out" aria-hidden="true"></i>
-        </button>
-      </div>
-      <span id="quick-save-status" class="quick-save-feedback" role="status" aria-live="polite"></span>
-    </header>
-
     <AuthView />
 
     <!-- Main application -->
@@ -70,9 +39,30 @@ import Sidebar from '../components/Sidebar.astro';
         <div class="app-main">
 
           <section class="intro">
-            <div>
+            <div class="intro-copy">
               <h2 id="page-title">Choose your plugins</h2>
               <p id="page-description">Select plugin sources and choose the providers you want to use.</p>
+            </div>
+            <div class="intro-actions">
+              <span id="quick-save-status" class="quick-save-feedback" role="status" aria-live="polite"></span>
+              <div id="session-bar" class="session-bar" hidden>
+                <button id="support-shortcut" class="button button-small header-icon-button support-header-button" type="button"
+                  aria-label="Support the project" title="Support the project">
+                  <i data-lucide="heart-handshake" aria-hidden="true"></i>
+                </button>
+                <button id="quick-save" class="button button-small header-icon-button" type="button"
+                  aria-label="Quick save" title="Quick save" disabled>
+                  <i data-lucide="save" aria-hidden="true"></i>
+                </button>
+                <button id="account-menu" class="button button-small header-icon-button" type="button"
+                  aria-label="Account" title="Account">
+                  <i data-lucide="user-round" aria-hidden="true"></i>
+                </button>
+                <button id="logout" class="button button-small header-icon-button" type="button"
+                  aria-label="Log out" title="Log out">
+                  <i data-lucide="log-out" aria-hidden="true"></i>
+                </button>
+              </div>
             </div>
           </section>
 
@@ -81,6 +71,7 @@ import Sidebar from '../components/Sidebar.astro';
           <ReviewInstall />
           <AccountSettings />
           <AboutPage />
+          <SupportPage />
 
         </div>
       </div>
