@@ -1697,6 +1697,72 @@ textarea { resize: vertical; line-height: 1.6; }
 .sidebar.is-collapsed .support-nav-item { border-color: transparent; background: transparent; }
 .sidebar.is-collapsed .support-nav-item:hover,
 .sidebar.is-collapsed .support-nav-item.active { border-color: rgb(240 162 122 / 38%); background: rgb(240 162 122 / 15%); }
+
+
+/* Project independence notice: blue information treatment, distinct from the coral support UI. */
+.about-page-disclaimer {
+  margin-top: 24px;
+  padding: 18px 20px;
+  border: 1px solid rgb(127 176 255 / 34%);
+  border-left: 4px solid var(--accent);
+  border-radius: 10px;
+  background: linear-gradient(110deg, rgb(127 176 255 / 11%), rgb(127 176 255 / 4%));
+}
+.about-disclaimer-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.about-disclaimer-icon {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgb(127 176 255 / 30%);
+  border-radius: 9px;
+  background: rgb(127 176 255 / 13%);
+  color: var(--accent-hover);
+}
+.about-disclaimer-icon svg {
+  width: 19px;
+  height: 19px;
+  stroke-width: 2;
+}
+.about-disclaimer-heading > div { min-width: 0; }
+.about-disclaimer-eyebrow {
+  margin: 0 0 2px;
+  color: var(--accent-hover);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .11em;
+  line-height: 1.35;
+  text-transform: uppercase;
+}
+.about-page-disclaimer strong {
+  color: var(--ink-strong);
+  font-size: 14px;
+  font-weight: 700;
+}
+.about-page-disclaimer > p {
+  margin: 12px 0 0;
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.75;
+}
+
+/* Use the same Lucide external-link icon on source cards as on the About page. */
+.quick-source-link .about-link-arrow {
+  width: 15px;
+  height: 15px;
+  color: var(--muted);
+  stroke-width: 2;
+}
+.quick-source-link:hover .about-link-arrow,
+.quick-source-link:focus-visible .about-link-arrow {
+  color: var(--accent-hover);
+}
+
 /* Enlarge generated Lucide icons in the top-right actions */
 .intro-actions .header-icon-button > svg {
   width: 20px !important;
