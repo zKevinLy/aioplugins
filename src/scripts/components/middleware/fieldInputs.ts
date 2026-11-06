@@ -5,11 +5,12 @@
 import type {
   StreamFieldDefinition,
   StreamFieldOption,
-  StreamFilterOperator
+  StreamFilterOperator,
+  UnknownFilterAction
 } from "../../../providers/stream-middleware.js";
 import { el } from "../../core/dom.js";
 
-export type OperatorOption = [StreamFilterOperator, string];
+type OperatorOption = [StreamFilterOperator, string];
 
 const PRESENCE: OperatorOption[] = [["exists", "Has a value"], ["missing", "Is empty"]];
 
@@ -59,6 +60,15 @@ export function operatorsFor(field: StreamFieldDefinition | undefined): Operator
         ? [["equals", "Is"], ["notEquals", "Is not"], ...PRESENCE]
         : TEXT_OPERATORS;
   }
+}
+
+/**
+ * What a filter does with a stream whose field is unknown when the rule makes
+ * no explicit choice. Mirrors the server: "does not equal" and "does not
+ * contain" keep such streams, every other operator removes them.
+ */
+export function defaultUnknownAction(operator: string): UnknownFilterAction {
+  return operator === "notEquals" || operator === "notContains" ? "keep" : "drop";
 }
 
 function yearOptions(): StreamFieldOption[] {

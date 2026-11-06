@@ -42,7 +42,7 @@ interface RemotePluginFile {
   originalFilename: string;
 }
 
-export interface SourceSelection {
+interface SourceSelection {
   repository: string;
   ref: string;
   providerIds: string[];

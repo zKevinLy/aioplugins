@@ -13,6 +13,7 @@ import {
   type SavedSourceSelection
 } from "./providers/remote.js";
 import { renderAioStreamsFormat } from "./providers/custom-formatter.js";
+import { removeUnknownPlaceholders } from "./providers/unknown-values.js";
 import {
   DEFAULT_STREAM_MIDDLEWARE,
   STREAM_FIELD_CATALOG
@@ -26,6 +27,7 @@ import {
   getUserConfig,
   loginUser,
   registerUser,
+  rerollInstallToken,
   saveProfileAndSources,
   saveUserConfig,
   deleteProfile,
@@ -419,7 +421,9 @@ async function handleApi(
       throw new HttpError(400, "Metadata sample must be a JSON object");
     }
 
-    const stream = { ...(body.stream as Record<string, unknown>) };
+    // Same placeholder handling as the generated plugin wrapper, so the
+    // preview matches what Nuvio will show.
+    const stream = removeUnknownPlaceholders(body.stream as Record<string, unknown>);
     const metadata = (body.metadata || {}) as Record<string, unknown>;
     const name = renderAioStreamsFormat(nameFormat, { ...stream }, "AIOPlugins", { metadata });
     const description = renderAioStreamsFormat(
@@ -534,6 +538,25 @@ async function handleApi(
     }
 
     return sendJson(200, { success: true });
+  }
+
+  if (pathname === "/api/account/token" && method === "POST") {
+    const limited = enforceRateLimit(
+      clientIp,
+      "reroll-token",
+      5,
+      15 * 60 * 1000
+    );
+
+    if (limited) return limited;
+
+    const body = await readJsonBody(request);
+
+    return sendJson(200, {
+      user: publicUser(
+        await rerollInstallToken(user.id, body.password, db, clientIp)
+      )
+    });
   }
 
   if (pathname === "/api/account" && method === "DELETE") {

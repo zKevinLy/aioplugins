@@ -1,7 +1,7 @@
 import { createStore } from "../core/store.js";
 import type { AppView, MiddlewareTab } from "../core/types.js";
 
-export interface ViewState {
+interface ViewState {
   view: AppView;
   /** Which middleware panel shows when `view` is "middleware". */
   tab: MiddlewareTab;

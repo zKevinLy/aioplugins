@@ -25,7 +25,7 @@ export interface SourceRequest {
   providerIds?: readonly string[];
 }
 
-export interface LoadedEntry {
+interface LoadedEntry {
   source: DiscoveredSource;
   request: SourceRequest;
 }
@@ -76,7 +76,7 @@ function repositoryName(repository: string): string {
   return repository.split("/").filter(Boolean).slice(-1)[0] ?? repository;
 }
 
-export interface LoadSourcesResult {
+interface LoadSourcesResult {
   /** Successfully loaded sources, in the order they were requested. */
   loaded: LoadedEntry[];
   /** Human-readable reasons for the sources that failed. */

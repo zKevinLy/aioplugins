@@ -7,5 +7,3 @@ export const DEFAULT_STREAM_DESCRIPTION_FORMAT = String.raw`{?🎬 {stream.title
 {?🏷️ {stream.releaseGroup} ?}{?📡 {stream.indexer} ?}{?🎭 {stream.network}?}
 {service.cached["⚡Ready "||"❌ Not Ready "]}{service.id::exists["({service.shortName}) "||""]}{stream.library["📌 Library "||""]}{stream.type::=Usenet["📰 Usenet "||""]}{stream.type::=p2p["⚠️ P2P "||""]}{stream.type::=http["💻 Web Link "||""]}{stream.type::=youtube["▶️ Youtube "||""]}{stream.type::=live["📺 Live "||""]}{stream.proxied["🔒 Proxied "||""]}{stream.private["🔑 Private "||""]}🔍{addon.name}
 {?ℹ️ {stream.message}?}`;
-
-export const DEFAULT_STREAM_FORMAT = DEFAULT_STREAM_DESCRIPTION_FORMAT;

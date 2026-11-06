@@ -1,9 +1,9 @@
 // A tiny observable value. Components share state through stores instead of
 // reaching into each other's DOM.
 
-export type Listener<T> = (value: T) => void;
+type Listener<T> = (value: T) => void;
 
-export interface Store<T> {
+interface Store<T> {
   get(): T;
   set(next: T): void;
   update(change: (current: T) => T): void;

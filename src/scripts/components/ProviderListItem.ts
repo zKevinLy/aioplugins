@@ -1,4 +1,4 @@
-export interface ProviderListItemData {
+interface ProviderListItemData {
   id: string;
   name: string;
   description: string;
@@ -6,7 +6,7 @@ export interface ProviderListItemData {
   types: string[];
 }
 
-export interface ProviderListItemOptions {
+interface ProviderListItemOptions {
   checked: boolean;
   disabled?: boolean;
   onChange: (checked: boolean) => void;

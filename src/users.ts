@@ -15,15 +15,12 @@ import {
   type StreamMiddlewareSettings
 } from "./providers/stream-middleware.js";
 
-// Re-exported so existing imports from "./users.js" keep working.
-export { HttpError };
-
 export interface User {
   id: string;
   installToken: string;
 }
 
-export const MIN_PASSWORD_LENGTH = 8;
+const MIN_PASSWORD_LENGTH = 8;
 const MAX_PASSWORD_LENGTH = 200;
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const MAX_FAILED_LOGINS = 10;
@@ -199,6 +196,15 @@ function toUser(row: UserRow): User {
   };
 }
 
+// 256 bits from the platform's CSPRNG (43 base64url characters). More would add
+// nothing: 128 bits already makes guessing infeasible. Older accounts keep the
+// 192-bit token they were issued until it is rerolled.
+const INSTALL_TOKEN_BYTES = 32;
+
+function newInstallToken(): string {
+  return randomBytes(INSTALL_TOKEN_BYTES).toString("base64url");
+}
+
 export async function registerUser(
   password: unknown,
   db: Database
@@ -206,7 +212,7 @@ export async function registerUser(
   assertPassword(password);
 
   const id = randomUUID();
-  const installToken = randomBytes(24).toString("base64url");
+  const installToken = newInstallToken();
   const passwordHash = await hashPassword(password);
 
   const now = Date.now();
@@ -294,6 +300,39 @@ export async function deleteUser(
   await db.run("DELETE FROM users WHERE id = ?", [userId]);
 }
 
+/**
+ * Replaces the install token, so the previous install link stops working at
+ * once. The password is required because anything already installed from the
+ * old link has to be reinstalled.
+ */
+export async function rerollInstallToken(
+  userId: string,
+  password: unknown,
+  db: Database,
+  clientKey?: string
+): Promise<User> {
+  let row: UserRow;
+
+  try {
+    row = await verifyCredentials(userId, password, db, clientKey);
+  } catch (error) {
+    if (error instanceof HttpError && error.status === 401) {
+      throw new HttpError(401, "Incorrect password");
+    }
+
+    throw error;
+  }
+
+  const installToken = newInstallToken();
+
+  await db.run("UPDATE users SET install_token = ? WHERE id = ?", [
+    installToken,
+    row.id
+  ]);
+
+  return { id: row.id, installToken };
+}
+
 // ---------- stored JSON ----------
 
 function parseSources(raw: string | null | undefined): SavedSourceSelection[] {
@@ -307,7 +346,7 @@ function parseSources(raw: string | null | undefined): SavedSourceSelection[] {
 
 // ---------- profiles ----------
 
-export interface Profile {
+interface Profile {
   id: string;
   name: string;
   sources: SavedSourceSelection[];
@@ -473,18 +512,6 @@ export async function userFromInstallLink(
 }
 
 // ---------- per-user config ----------
-
-export async function getSources(
-  userId: string,
-  db: Database
-): Promise<SavedSourceSelection[]> {
-  const row = await db.first<{ sources: string }>(
-    "SELECT sources FROM user_config WHERE user_id = ?",
-    [userId]
-  );
-
-  return parseSources(row?.sources);
-}
 
 export async function getUserConfig(
   userId: string,

@@ -4,7 +4,7 @@ import { createStore } from "../core/store.js";
 export const savingStore = createStore(false);
 
 /** The install URL and manifest JSON shown after saving. */
-export interface ManifestPreview {
+interface ManifestPreview {
   text: string;
   pluginCount: number;
 }

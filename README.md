@@ -66,8 +66,16 @@ complete URL can access the generated manifest and the selected provider
 files it references. Treat the URL like a password and share it only
 with people you intend to grant access.
 
-Your account password is required to delete your account. Keep your
-login details safe.
+New tokens are 256 random bits from the platform's cryptographic random
+number generator (43 URL-safe characters); accounts created earlier keep
+their original 192-bit token until it is rerolled. If a link may have been
+shared or leaked, use **Account settings → Install link → Generate new
+link**. The old link stops working immediately, so anything installed in
+Nuvio from it must be updated with the new one. Rerolling asks for your
+password.
+
+Your account password is required to delete your account or reroll your
+install link. Keep your login details safe.
 
 Sources are pinned to exact commits. Changes made later in an upstream
 repository do not automatically change your configured source. To use an
@@ -119,6 +127,28 @@ time. Results are processed in memory and are not stored by AIOPlugins.
 ### Filtering, sorting, and formatting
 
 A shared typed field catalog drives field-based filtering and sorting.
+
+**Stacked sorting.** Sorting is a list of up to five levels. Each level has
+a field, a direction, and a choice of where streams with an unknown value
+go (first or last, whichever way the level sorts). A level only orders
+streams that the levels above it left tied, and streams still tied after
+the last level keep the provider's own order. Settings saved with the
+older single sort field are read as one level.
+
+**Unknown values.** Providers do not always supply every field. A value
+counts as unknown when it is missing, empty, or a placeholder such as
+`Unknown`, `N/A`, `None`, or `-`; free-text fields (title, name,
+description, filename, message, url) are exempt, so a title that is
+literally "None" stays a title. The same rule applies everywhere:
+
+-   Each filter can keep or remove streams whose value is unknown. If a
+    rule makes no choice, "does not equal" and "does not contain" keep
+    them and every other operator removes them, as before.
+-   "Has a value" and "Is empty" use the same rule.
+-   The formatter treats placeholders as missing, so `::exists` is false,
+    optional groups disappear, and values can be inferred from the
+    filename instead. The editor can insert a token that is left blank,
+    skipped with its spacing, or replaced by a label of your choice.
 
 The custom formatter follows the [AIOStreams formatter
 syntax](https://docs.aiostreams.viren070.me/reference/custom-formatter/)
@@ -328,14 +358,14 @@ Your password and account-specific repository URL protect different
 things:
 
 -   Your password is used to access your account and is required to
-    delete it.
+    delete it or to reroll your install link.
 -   The token embedded in your repository URL grants access to the
     generated manifest and the provider files it references.
 
 Do not publish or share your repository URL publicly unless you intend
 to make that profile accessible to anyone who obtains it. If you believe
-a URL has been exposed, take appropriate steps to protect your account
-and update the affected configuration.
+a URL has been exposed, generate a new install link from Account
+settings and update the affected configuration.
 
 For privacy details, consult the service's Privacy Policy if one is
 published for the deployment you use.

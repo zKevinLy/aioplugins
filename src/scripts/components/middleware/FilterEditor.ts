@@ -2,10 +2,14 @@
 
 import type { StreamFilter } from "../../../providers/stream-middleware.js";
 import { $, el } from "../../core/dom.js";
-import { isStreamFilterOperator, VALUELESS_OPERATORS } from "../../core/guards.js";
+import {
+  isStreamFilterOperator,
+  UNKNOWN_AWARE_OPERATORS,
+  VALUELESS_OPERATORS
+} from "../../core/guards.js";
 import { middlewareStore } from "../../state/middleware.js";
 import { fieldsStore, findField } from "../../state/workspace.js";
-import { createValueEditor, operatorsFor } from "./fieldInputs.js";
+import { createValueEditor, defaultUnknownAction, operatorsFor } from "./fieldInputs.js";
 
 // The array currently drawn. Edits that keep this array do not redraw, so
 // typing in a value box never loses focus.
@@ -41,6 +45,28 @@ function renderRule(rule: StreamFilter, index: number, rules: StreamFilter[]): H
   };
   syncValueVisibility();
 
+  // What happens to a stream that has no value for this field. "Has a value"
+  // and "Is empty" already answer that, so the choice is hidden for them.
+  const unknownSelect = el("select", { className: "filter-unknown-select" });
+  unknownSelect.append(new Option("Remove the stream", "drop"), new Option("Keep the stream", "keep"));
+  const unknownControl = el(
+    "label",
+    { className: "filter-unknown" },
+    el("span", { text: "If the value is unknown" }),
+    unknownSelect
+  );
+
+  const syncUnknown = () => {
+    unknownControl.hidden = UNKNOWN_AWARE_OPERATORS.includes(operatorSelect.value);
+    unknownSelect.value = rule.unknown ?? defaultUnknownAction(operatorSelect.value);
+  };
+  syncUnknown();
+
+  unknownSelect.addEventListener("change", () => {
+    rule.unknown = unknownSelect.value === "keep" ? "keep" : "drop";
+    commit(rules, false);
+  });
+
   fieldSelect.addEventListener("change", () => {
     const next = rules.map((entry, position) => {
       if (position !== index) return entry;
@@ -58,6 +84,7 @@ function renderRule(rule: StreamFilter, index: number, rules: StreamFilter[]): H
   operatorSelect.addEventListener("change", () => {
     if (isStreamFilterOperator(operatorSelect.value)) rule.operator = operatorSelect.value;
     syncValueVisibility();
+    syncUnknown();
     commit(rules, false);
   });
 
@@ -70,7 +97,15 @@ function renderRule(rule: StreamFilter, index: number, rules: StreamFilter[]): H
     commit(rules.filter((_, position) => position !== index), true);
   });
 
-  return el("div", { className: "filter-rule" }, fieldSelect, operatorSelect, valueCell, remove);
+  return el(
+    "div",
+    { className: "filter-rule" },
+    fieldSelect,
+    operatorSelect,
+    valueCell,
+    remove,
+    unknownControl
+  );
 }
 
 function renderRules(): void {

@@ -81,6 +81,22 @@ function schedulePreview(): void {
   timer = setTimeout(() => void renderPreview(), PREVIEW_DELAY_MS);
 }
 
+/**
+ * The template text for one field. A fallback label uses the same
+ * `::exists[...||...]` form as the default name template; a skipped token sits
+ * in an optional group, which disappears with its spacing when empty.
+ */
+function tokenFor(key: string, mode: string, label: string): string {
+  const token = `{stream.${key}}`;
+
+  if (mode === "skip") return `{?${token} ?}`;
+  if (mode !== "label") return token;
+
+  // Characters that would end the label early or start new syntax.
+  const safe = label.replace(/["{}\[\]|\r\n]/g, "").trim() || "Unknown";
+  return `{stream.${key}::exists["${token}"||"${safe}"]}`;
+}
+
 function syncTemplates(): void {
   const { nameFormat, descriptionFormat } = middlewareStore.get();
 
@@ -128,13 +144,23 @@ export function mountFormatterEditor(): void {
     middlewareStore.update((settings) => ({ ...settings, descriptionFormat: template }));
   });
 
+  const unknownMode = $<HTMLSelectElement>("#format-unknown");
+  unknownMode.addEventListener("change", () => {
+    $("#format-unknown-label-field").hidden = unknownMode.value !== "label";
+  });
+
   $("#insert-format-field").addEventListener("click", () => {
     const target = $<HTMLSelectElement>("#format-target").value;
     const editor = target === "stream-name-format" ? nameEditor() : descriptionEditor();
     const start = editor.selectionStart ?? editor.value.length;
     const end = editor.selectionEnd ?? start;
 
-    editor.setRangeText(`{stream.${formatField.value}}`, start, end, "end");
+    const token = tokenFor(
+      formatField.value,
+      unknownMode.value,
+      $<HTMLInputElement>("#format-unknown-label").value
+    );
+    editor.setRangeText(token, start, end, "end");
     editor.focus();
     editor.dispatchEvent(new Event("input"));
   });

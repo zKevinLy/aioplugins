@@ -5,7 +5,7 @@ import { profilesStore } from "../state/workspace.js";
 import { refreshManifest } from "./manifest.js";
 import { loadSources } from "./sources.js";
 
-export async function reloadProfiles(): Promise<void> {
+async function reloadProfiles(): Promise<void> {
   const { profiles } = await withTransientRetry(() => api<ProfilesResponse>("/api/profiles"));
   profilesStore.set(profiles);
 }

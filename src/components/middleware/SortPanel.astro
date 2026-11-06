@@ -2,24 +2,12 @@
   <div class="panel-head">
     <div>
       <h2 id="sorting-heading">Stream order</h2>
-      <p class="panel-subtitle">Sort each provider's results before Nuvio displays them.</p>
+      <p class="panel-subtitle">Sort each provider's results before Nuvio displays them. Each level only orders streams that the levels above it left tied.</p>
     </div>
   </div>
   <div class="panel-body">
-    <div class="sort-controls">
-      <div class="field">
-        <label for="stream-sort-field">Sort field</label>
-        <select id="stream-sort-field">
-          <option value="">Provider order</option>
-        </select>
-      </div>
-      <div class="field">
-        <label for="stream-sort-direction">Direction</label>
-        <select id="stream-sort-direction">
-          <option value="desc">Descending</option>
-          <option value="asc">Ascending</option>
-        </select>
-      </div>
-    </div>
+    <div id="sort-levels" class="sort-levels"></div>
+    <button id="add-stream-sort" class="button button-small" type="button">Add sort</button>
+    <p class="field-hint">Streams that tie on every level keep the provider's order. A value is unknown when the provider left it out or wrote a placeholder such as Unknown or N/A; unknown streams go to the end you choose, whichever direction the level sorts.</p>
   </div>
 </section>

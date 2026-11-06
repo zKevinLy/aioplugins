@@ -1022,6 +1022,280 @@ test("sorts ranked fields by quality rather than alphabetically", async () => {
   assert.deepEqual(await sorted("asc"), ["A", "D", "C", "B"]);
 });
 
+test("migrates a single saved sort and normalizes stacked sorts", () => {
+  assert.deepEqual(
+    normalizeStreamMiddlewareSettings({ sortField: "size", sortDirection: "asc" }).sorts,
+    [{ field: "size", direction: "asc", unknown: "last" }]
+  );
+  assert.deepEqual(normalizeStreamMiddlewareSettings({}).sorts, []);
+  assert.deepEqual(normalizeStreamMiddlewareSettings({ sortField: "nope" }).sorts, []);
+
+  // Saved levels win over the old single-sort keys.
+  const stacked = normalizeStreamMiddlewareSettings({
+    sortField: "size",
+    sorts: [
+      { field: "resolution", direction: "desc", unknown: "first" },
+      { field: "resolution", direction: "asc" },
+      { field: "bogus", direction: "asc" },
+      { field: "seeders", direction: "sideways" }
+    ]
+  });
+  assert.deepEqual(stacked.sorts, [
+    { field: "resolution", direction: "desc", unknown: "first" },
+    { field: "seeders", direction: "desc", unknown: "last" }
+  ]);
+
+  const many = normalizeStreamMiddlewareSettings({
+    sorts: ["resolution", "size", "seeders", "year", "quality", "encode", "title"]
+      .map((field) => ({ field, direction: "asc" }))
+  });
+  assert.equal(many.sorts.length, 5);
+});
+
+test("breaks ties with stacked sorts and falls back to provider order", async () => {
+  const source = `module.exports = { getStreams: async () => [
+    { title: "A", resolution: "1080p", size: 3000 },
+    { title: "B", resolution: "2160p", size: 9000 },
+    { title: "C", resolution: "1080p", size: 1000 },
+    { title: "D", resolution: "1080p", size: 1000 },
+    { title: "E", resolution: "720p", size: 500 }
+  ] };`;
+  const titles = async (sorts) => {
+    const streams = await runWrapped(source, {
+      ...DEFAULT_STREAM_MIDDLEWARE,
+      sorts,
+      format: "{stream.title}"
+    }).getStreams({});
+    return streams.map((stream) => stream.description).join("");
+  };
+
+  assert.equal(await titles([]), "ABCDE");
+  assert.equal(await titles([{ field: "resolution", direction: "desc" }]), "BACDE");
+  // C and D tie on both levels, so they stay in the provider's order.
+  assert.equal(
+    await titles([
+      { field: "resolution", direction: "desc" },
+      { field: "size", direction: "asc" }
+    ]),
+    "BCDAE"
+  );
+  assert.equal(
+    await titles([
+      { field: "resolution", direction: "desc" },
+      { field: "size", direction: "desc" }
+    ]),
+    "BACDE"
+  );
+});
+
+test("places unknown sort values first or last at every level", async () => {
+  const source = `module.exports = { getStreams: async () => [
+    { title: "A", resolution: "720p", seeders: 1 },
+    { title: "B", seeders: 5 },
+    { title: "C", resolution: "Unknown", seeders: 9 },
+    { title: "D", resolution: "1080p", seeders: 2 }
+  ] };`;
+  const titles = async (sorts) => {
+    const streams = await runWrapped(source, {
+      ...DEFAULT_STREAM_MIDDLEWARE,
+      sorts,
+      format: "{stream.title}"
+    }).getStreams({});
+    return streams.map((stream) => stream.description).join("");
+  };
+
+  // B and C are both unknown, so they tie on resolution and seeders decides.
+  assert.equal(
+    await titles([
+      { field: "resolution", direction: "desc", unknown: "last" },
+      { field: "seeders", direction: "desc" }
+    ]),
+    "DACB"
+  );
+  // Unknowns stay last even when the order is reversed.
+  assert.equal(
+    await titles([
+      { field: "resolution", direction: "asc", unknown: "last" },
+      { field: "seeders", direction: "desc" }
+    ]),
+    "ADCB"
+  );
+  assert.equal(
+    await titles([
+      { field: "resolution", direction: "desc", unknown: "first" },
+      { field: "seeders", direction: "asc" }
+    ]),
+    "BCDA"
+  );
+});
+
+test("treats placeholder text such as Unknown as a missing value", async () => {
+  const source = `module.exports = { getStreams: async () => [
+    { title: "Known", quality: "WEB-DL" },
+    { title: "Placeholder", quality: "Unknown" },
+    { title: "Blank", quality: "  " },
+    { title: "Inferred 1080p", resolution: "N/A" }
+  ] };`;
+  const run = (settings) =>
+    runWrapped(source, { ...DEFAULT_STREAM_MIDDLEWARE, format: "{stream.title}", ...settings })
+      .getStreams({})
+      .then((streams) => streams.map((stream) => stream.description));
+
+  assert.deepEqual(
+    await run({ filters: [{ field: "quality", operator: "missing", value: "" }] }),
+    ["Placeholder", "Blank", "Inferred"]
+  );
+  assert.deepEqual(
+    await run({ filters: [{ field: "quality", operator: "exists", value: "" }] }),
+    ["Known"]
+  );
+  // A placeholder resolution falls back to the number found in the title.
+  assert.deepEqual(
+    await run({ filters: [{ field: "resolution", operator: "gte", value: "1080" }] }),
+    ["Inferred"]
+  );
+  // Free-text fields keep what the provider wrote.
+  const titled = await runWrapped(
+    `module.exports = { getStreams: async () => [{ title: "None" }] };`,
+    { ...DEFAULT_STREAM_MIDDLEWARE, filters: [{ field: "title", operator: "exists", value: "" }] }
+  ).getStreams({});
+  assert.equal(titled.length, 1);
+});
+
+test("lets each filter keep or drop streams with unknown values", async () => {
+  const source = `module.exports = { getStreams: async () => [
+    { title: "Hi", resolution: "1080p", quality: "WEB-DL" },
+    { title: "Lo", resolution: "480p", quality: "CAM" },
+    { title: "Unk" }
+  ] };`;
+  const run = async (filter) => {
+    const streams = await runWrapped(source, {
+      ...DEFAULT_STREAM_MIDDLEWARE,
+      filters: [filter],
+      format: "{stream.title}"
+    }).getStreams({});
+    return streams.map((stream) => stream.description).join(",");
+  };
+
+  // Without a choice, the operator keeps its previous behavior.
+  assert.equal(await run({ field: "resolution", operator: "gte", value: "720" }), "Hi");
+  assert.equal(await run({ field: "quality", operator: "notEquals", value: "CAM" }), "Hi,Unk");
+  assert.equal(await run({ field: "quality", operator: "notContains", value: "cam" }), "Hi,Unk");
+  assert.equal(await run({ field: "quality", operator: "equals", value: "CAM" }), "Lo");
+
+  // An explicit choice overrides it.
+  assert.equal(
+    await run({ field: "resolution", operator: "gte", value: "720", unknown: "keep" }),
+    "Hi,Unk"
+  );
+  assert.equal(
+    await run({ field: "quality", operator: "notEquals", value: "CAM", unknown: "drop" }),
+    "Hi"
+  );
+  assert.equal(
+    await run({ field: "resolution", operator: "lt", value: "720", unknown: "keep" }),
+    "Lo,Unk"
+  );
+});
+
+test("keeps the unknown choice on filters it applies to", () => {
+  const settings = normalizeStreamMiddlewareSettings({
+    filters: [
+      { field: "resolution", operator: "gte", value: "1080", unknown: "keep" },
+      { field: "quality", operator: "exists", value: "", unknown: "keep" },
+      { field: "quality", operator: "equals", value: "CAM", unknown: "maybe" }
+    ]
+  });
+
+  assert.deepEqual(settings.filters, [
+    { field: "resolution", operator: "gte", value: "1080", unknown: "keep" },
+    { field: "quality", operator: "exists", value: "" },
+    { field: "quality", operator: "equals", value: "CAM" }
+  ]);
+});
+
+test("formats unknown values with a fallback, or skips them", async () => {
+  const source = `module.exports = { getStreams: async () => [
+    { title: "Known", quality: "WEB-DL" },
+    { title: "Placeholder", quality: "Unknown" },
+    { title: "Missing" }
+  ] };`;
+  const run = async (format) => {
+    const streams = await runWrapped(source, {
+      ...DEFAULT_STREAM_MIDDLEWARE,
+      format
+    }).getStreams({});
+    return streams.map((stream) => stream.description);
+  };
+
+  assert.deepEqual(
+    await run('{stream.title}: {stream.quality::exists["{stream.quality}"||"Unrated"]}'),
+    ["Known: WEB-DL", "Placeholder: Unrated", "Missing: Unrated"]
+  );
+  assert.deepEqual(
+    await run("{stream.title}{? · {stream.quality}?}"),
+    ["Known · WEB-DL", "Placeholder", "Missing"]
+  );
+
+  const preview = await testFetch("/api/formatter/preview", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      descriptionFormat: '{stream.quality::exists["{stream.quality}"||"Unrated"]}',
+      stream: { quality: "Unknown" }
+    })
+  }).then((response) => response.json());
+  assert.equal(preview.description, "Unrated");
+});
+
+test("issues 256-bit install tokens and lets the owner reroll them", async () => {
+  const savedCookie = cookieJar;
+  cookieJar = "";
+
+  try {
+    const headers = { "content-type": "application/json", "cf-connecting-ip": "198.51.100.77" };
+    const post = (path, body) =>
+      testFetch(path, { method: "POST", headers, body: JSON.stringify(body) });
+    const tokenOf = (installPath) => installPath.split("/")[3];
+    const password = "RerollPassword!1";
+
+    const registered = await post("/api/register", { password }).then((response) => response.json());
+    const first = registered.user;
+
+    // 32 random bytes encode to 43 base64url characters.
+    assert.match(tokenOf(first.installPath), /^[A-Za-z0-9_-]{43}$/);
+    assert.equal((await testFetch(first.installPath)).status, 200);
+
+    // A wrong password changes nothing and does not end the session.
+    const refused = await post("/api/account/token", { password: "wrong password" });
+    assert.equal(refused.status, 401);
+    assert.equal((await testFetch(first.installPath)).status, 200);
+    assert.ok((await testFetch("/api/session").then((response) => response.json())).user);
+
+    const rerolled = await post("/api/account/token", { password });
+    assert.equal(rerolled.status, 200);
+    const second = (await rerolled.json()).user;
+
+    assert.equal(second.id, first.id);
+    assert.match(tokenOf(second.installPath), /^[A-Za-z0-9_-]{43}$/);
+    assert.notEqual(tokenOf(second.installPath), tokenOf(first.installPath));
+
+    // The old link stops working at once; the new one works.
+    assert.notEqual((await testFetch(first.installPath)).status, 200);
+    assert.equal((await testFetch(second.installPath)).status, 200);
+
+    // The session reports the new link too.
+    const session = await testFetch("/api/session").then((response) => response.json());
+    assert.equal(session.user.installPath, second.installPath);
+
+    // Rerolling needs a signed-in session.
+    cookieJar = "";
+    assert.equal((await post("/api/account/token", { password })).status, 401);
+  } finally {
+    cookieJar = savedCookie;
+  }
+});
+
 test("keeps named profiles and sources manageable", async () => {
   const profilesRes = await testFetch("/api/profiles").then((response) => response.json());
   assert.ok(Array.isArray(profilesRes.profiles));

@@ -34,11 +34,24 @@
               <option value="stream-description-format" selected>Description</option>
             </select>
           </div>
+          <div class="field">
+            <label for="format-unknown">If the value is unknown</label>
+            <select id="format-unknown">
+              <option value="blank" selected>Leave it blank</option>
+              <option value="skip">Skip it and its spacing</option>
+              <option value="label">Show a label instead</option>
+            </select>
+          </div>
+          <div id="format-unknown-label-field" class="field" hidden>
+            <label for="format-unknown-label">Label</label>
+            <input id="format-unknown-label" type="text" value="Unknown" maxlength="40" spellcheck="false">
+          </div>
           <div class="field formatter-action">
             <label aria-hidden="true">&nbsp;</label>
             <button id="insert-format-field" class="button button-small" type="button">Insert token</button>
           </div>
         </div>
+        <p class="field-hint">Providers do not always supply every field. The unknown option controls what the inserted token shows when the provider left the field out or wrote a placeholder such as Unknown or N/A.</p>
         <div class="field">
           <label for="stream-name-format">Name template</label>
           <textarea id="stream-name-format" rows="3" spellcheck="false"></textarea>

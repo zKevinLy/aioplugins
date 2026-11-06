@@ -2,7 +2,8 @@
 
 import type {
   StreamFieldDefinition,
-  StreamFilter
+  StreamFilter,
+  StreamSort
 } from "../../providers/stream-middleware.js";
 
 export interface PublicUser {
@@ -46,8 +47,7 @@ export interface SavedProfile {
 /** Stream middleware settings as the editor works with them. */
 export interface MiddlewareSettings {
   filters: StreamFilter[];
-  sortField: string;
-  sortDirection: "asc" | "desc";
+  sorts: StreamSort[];
   nameFormat: string;
   descriptionFormat: string;
 }

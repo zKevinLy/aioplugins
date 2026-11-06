@@ -1,7 +1,11 @@
 // Runtime checks for data that crosses a trust boundary (server JSON,
 // imported files, saved settings).
 
-import type { StreamFilter, StreamFilterOperator } from "../../providers/stream-middleware.js";
+import type {
+  StreamFilter,
+  StreamFilterOperator,
+  StreamSort
+} from "../../providers/stream-middleware.js";
 import type { ProfileBackup, SavedSource } from "./types.js";
 
 const FILTER_OPERATORS: readonly string[] = [
@@ -13,6 +17,9 @@ const FILTER_OPERATORS: readonly string[] = [
 export const VALUELESS_OPERATORS: readonly string[] = [
   "exists", "missing", "isTrue", "isFalse"
 ];
+
+/** Operators that already test for unknown values, so a keep/drop choice adds nothing. */
+export const UNKNOWN_AWARE_OPERATORS: readonly string[] = ["exists", "missing"];
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -31,7 +38,15 @@ export function isStreamFilter(value: unknown): value is StreamFilter {
     typeof value.field === "string" &&
     typeof value.operator === "string" &&
     isStreamFilterOperator(value.operator) &&
-    typeof value.value === "string";
+    typeof value.value === "string" &&
+    (value.unknown === undefined || value.unknown === "keep" || value.unknown === "drop");
+}
+
+export function isStreamSort(value: unknown): value is StreamSort {
+  return isRecord(value) &&
+    typeof value.field === "string" &&
+    (value.direction === "asc" || value.direction === "desc") &&
+    (value.unknown === "first" || value.unknown === "last");
 }
 
 export function parseJsonRecord(value: string, message: string): Record<string, unknown> {

@@ -8,6 +8,7 @@ import { setStatus } from "../core/status.js";
 import { exportBackup, importBackup } from "../services/backup.js";
 import { leaveWorkspace } from "../services/session.js";
 import { userStore } from "../state/session.js";
+import type { PublicUser } from "../core/types.js";
 import { showView } from "../state/view.js";
 
 async function onImport(input: HTMLInputElement): Promise<void> {
@@ -36,7 +37,39 @@ async function onImport(input: HTMLInputElement): Promise<void> {
 export function mountAccountPanel(): void {
   userStore.subscribe((user) => {
     $("#account-uuid").textContent = user?.id ?? "";
-    if (!user) $<HTMLInputElement>("#delete-password").value = "";
+    if (!user) {
+      $<HTMLInputElement>("#delete-password").value = "";
+      $<HTMLInputElement>("#reroll-password").value = "";
+    }
+  });
+
+  $("#reroll-token").addEventListener("click", async () => {
+    const input = $<HTMLInputElement>("#reroll-password");
+
+    if (!input.value) {
+      setStatus("account", "Enter your password to generate a new install link.", "error");
+      return;
+    }
+
+    if (!confirm("Generate a new install link? The current link will stop working immediately.")) return;
+
+    try {
+      const { user } = await api<{ user: PublicUser }>("/api/account/token", {
+        password: input.value
+      });
+
+      input.value = "";
+      userStore.set(user);
+      setStatus("account", "");
+      setStatus(
+        "review",
+        "New install link generated. The previous link no longer works; update the URL in Nuvio.",
+        "success"
+      );
+      showView("save");
+    } catch (error) {
+      setStatus("account", errorMessage(error), "error");
+    }
   });
 
   $("#copy-uuid").addEventListener("click", async () => {

@@ -1,5 +1,7 @@
 
 import { renderAioStreamsFormat } from "./custom-formatter.js";
+import { isUnknownValue, removeUnknownPlaceholders } from "./unknown-values.js";
+import { MAX_FILTERS, MAX_SORTS } from "../lib/middleware-limits.js";
 import {
   DEFAULT_STREAM_DESCRIPTION_FORMAT,
   DEFAULT_STREAM_NAME_FORMAT
@@ -133,16 +135,34 @@ export type StreamFilterOperator =
   | "exists"
   | "missing";
 
+/** What a filter does with a stream whose field is unknown. */
+export type UnknownFilterAction = "keep" | "drop";
+
 export interface StreamFilter {
   field: string;
   operator: StreamFilterOperator;
   value: string;
+  /**
+   * Keep or drop streams where the field is unknown. When omitted, the
+   * operator decides: negative operators ("does not equal", "does not
+   * contain") keep them and every other operator drops them.
+   */
+  unknown?: UnknownFilterAction;
+}
+
+/** Where streams with an unknown value are placed within one sort level. */
+export type UnknownSortPlacement = "first" | "last";
+
+/** One level of a stacked sort. Later levels break ties in earlier ones. */
+export interface StreamSort {
+  field: string;
+  direction: "asc" | "desc";
+  unknown: UnknownSortPlacement;
 }
 
 export interface StreamMiddlewareSettings {
   filters: StreamFilter[];
-  sortField: string;
-  sortDirection: "asc" | "desc";
+  sorts: StreamSort[];
   nameFormat: string;
   descriptionFormat: string;
   format: string;
@@ -151,8 +171,7 @@ export interface StreamMiddlewareSettings {
 
 export const DEFAULT_STREAM_MIDDLEWARE: StreamMiddlewareSettings = {
   filters: [],
-  sortField: "",
-  sortDirection: "desc",
+  sorts: [],
   nameFormat: DEFAULT_STREAM_NAME_FORMAT,
   descriptionFormat: DEFAULT_STREAM_DESCRIPTION_FORMAT,
   format: DEFAULT_STREAM_DESCRIPTION_FORMAT,
@@ -167,9 +186,12 @@ const LEGACY_DEFAULT_STREAM_FORMAT = PREVIOUS_DEFAULT_STREAM_FORMAT.replace(
 );
 
 const MAX_FORMAT_LENGTH = 3000;
-const MAX_FILTERS = 30;
 
+// Operators that never take a typed value.
 const PRESENCE_OPERATORS: StreamFilterOperator[] = ["exists", "missing", "isTrue", "isFalse"];
+// Operators that already ask about unknown values directly, so "keep or
+// drop unknowns" would have nothing to add.
+const UNKNOWN_AWARE_OPERATORS: StreamFilterOperator[] = ["exists", "missing"];
 const DATE_OPERATORS: StreamFilterOperator[] = ["equals", "notEquals", "gt", "gte", "lt", "lte"];
 
 function allowedOperators(type: StreamFieldType): StreamFilterOperator[] {
@@ -290,7 +312,17 @@ export function normalizeStreamMiddlewareSettings(
       const value = normalizeFilterValue(field, operator, filter.value);
       if (value === null) return [];
 
-      return [{ field: field.key, operator, value }];
+      const unknown: UnknownFilterAction | undefined =
+        filter.unknown === "keep" ? "keep" :
+        filter.unknown === "drop" ? "drop" :
+        undefined;
+
+      return [{
+        field: field.key,
+        operator,
+        value,
+        ...(unknown && !UNKNOWN_AWARE_OPERATORS.includes(operator) ? { unknown } : {})
+      }];
     })
     .slice(0, MAX_FILTERS);
 
@@ -301,18 +333,43 @@ export function normalizeStreamMiddlewareSettings(
     title: "title"
   };
 
+  // Settings saved before stacked sorts had a single sortField/sortDirection.
+  // They are read as one level when no levels were saved.
   const requestedSortField = typeof candidate.sortField === "string"
     ? candidate.sortField
     : legacySortFields[String(candidate.sortBy)] || "";
 
-  const sortField = fields.has(requestedSortField) ? requestedSortField : "";
-
-  const sortDirection =
+  const legacyDirection =
     candidate.sortDirection === "asc" || candidate.sortDirection === "desc"
       ? candidate.sortDirection
       : candidate.sortBy === "title"
         ? "asc"
-        : DEFAULT_STREAM_MIDDLEWARE.sortDirection;
+        : "desc";
+
+  const rawSorts: unknown[] =
+    Array.isArray(candidate.sorts) && candidate.sorts.length > 0
+      ? candidate.sorts
+      : [{ field: requestedSortField, direction: legacyDirection }];
+
+  const sorts: StreamSort[] = [];
+
+  for (const raw of rawSorts) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+
+    const level = raw as Record<string, unknown>;
+    const field = fields.get(String(level.field));
+
+    // Sorting twice by the same field can never change the order.
+    if (!field || sorts.some(sort => sort.field === field.key)) continue;
+
+    sorts.push({
+      field: field.key,
+      direction: level.direction === "asc" ? "asc" : "desc",
+      unknown: level.unknown === "first" ? "first" : "last"
+    });
+
+    if (sorts.length === MAX_SORTS) break;
+  }
 
   const requestedNameFormat = typeof candidate.nameFormat === "string"
     ? candidate.nameFormat.trim()
@@ -368,8 +425,7 @@ export function normalizeStreamMiddlewareSettings(
 
   return {
     filters,
-    sortField,
-    sortDirection,
+    sorts,
     nameFormat,
     descriptionFormat,
     format: descriptionFormat,
@@ -385,6 +441,8 @@ export function wrapPluginStreams(
   const settings = JSON.stringify(normalizeStreamMiddlewareSettings(value));
   const formattedAddonName = JSON.stringify(addonName);
   const formatterSource = renderAioStreamsFormat.toString();
+  const unknownValueSource = isUnknownValue.toString();
+  const removeUnknownSource = removeUnknownPlaceholders.toString();
 
   const fieldTypes = JSON.stringify(
     Object.fromEntries(STREAM_FIELD_CATALOG.map(field => [field.key, field.type]))
@@ -406,6 +464,8 @@ export function wrapPluginStreams(
   const addonName = ${formattedAddonName};
   const __name = (target) => target;
   const renderAioStreamsFormat = ${formatterSource};
+  ${unknownValueSource}
+  ${removeUnknownSource}
   const fieldTypes = ${fieldTypes};
   const fieldRanks = ${fieldRanks};
   const dateOperators = ["equals", "notEquals", "gt", "gte", "lt", "lte"];
@@ -437,7 +497,7 @@ export function wrapPluginStreams(
 
       if (path === "resolution") {
         const explicit = stream.resolution ?? stream.quality;
-        if (explicit) return explicit;
+        if (explicit && !isUnknownValue(explicit, "resolution")) return explicit;
 
         const match = String(stream.title ?? stream.name ?? "")
           .match(/(?:2160|1440|1080|720|576|480|360|240|144)p|4k|uhd|qhd|fhd|hd/i);
@@ -472,8 +532,8 @@ export function wrapPluginStreams(
       return 0;
     };
 
-    const hasValue = value =>
-      value !== "" && value != null && (!Array.isArray(value) || value.length > 0);
+    // "Unknown", "N/A" and similar placeholders count as missing, like empty values.
+    const hasValue = (value, field) => !isUnknownValue(value, field);
 
     // Whole days since the epoch, or null when the value is not a date.
     const dayNumber = value => {
@@ -514,7 +574,7 @@ export function wrapPluginStreams(
     };
 
     const prepareFormatterStream = stream => {
-      const prepared = { ...stream };
+      const prepared = removeUnknownPlaceholders(stream);
 
       try {
         if (prepared.service && typeof prepared.service === "object") {
@@ -554,12 +614,19 @@ export function wrapPluginStreams(
       return Number(match[1]) * factor;
     };
 
+    // Whether a stream whose field is unknown passes this filter.
+    const unknownOutcome = filter =>
+      filter.unknown
+        ? filter.unknown === "keep"
+        : filter.operator === "notEquals" || filter.operator === "notContains";
+
     const filterMatches = (stream, filter) => {
       const value = getValue(stream, filter.field);
       const type = fieldTypes[filter.field] || "text";
 
-      if (filter.operator === "exists") return hasValue(value);
-      if (filter.operator === "missing") return !hasValue(value);
+      if (filter.operator === "exists") return hasValue(value, filter.field);
+      if (filter.operator === "missing") return !hasValue(value, filter.field);
+      if (!hasValue(value, filter.field)) return unknownOutcome(filter);
 
       if (filter.operator === "isTrue") {
         return value === true || value === 1 || String(value).toLowerCase() === "true";
@@ -574,7 +641,7 @@ export function wrapPluginStreams(
         if (expected === null) return true;
 
         const actual = dayNumber(value);
-        if (actual === null) return filter.operator === "notEquals";
+        if (actual === null) return unknownOutcome(filter);
         if (filter.operator === "equals") return actual === expected;
         if (filter.operator === "notEquals") return actual !== expected;
         if (filter.operator === "gt") return actual > expected;
@@ -588,7 +655,6 @@ export function wrapPluginStreams(
         const expected = Number(filter.value);
 
         if (!Number.isFinite(expected)) return true;
-        if (!hasValue(value)) return filter.operator === "notEquals";
         if (filter.operator === "equals") return actual === expected;
         if (filter.operator === "notEquals") return actual !== expected;
         if (filter.operator === "gt") return actual > expected;
@@ -729,32 +795,31 @@ export function wrapPluginStreams(
         config.filters.every(filter => filterMatches(item.source, filter))
       );
 
-    streams.sort((left, right) => {
-      if (!config.sortField) return left.index - right.index;
+    const isTrue = value =>
+      value === true || value === 1 || String(value).toLowerCase() === "true";
 
-      const leftValue = getValue(left.source, config.sortField);
-      const rightValue = getValue(right.source, config.sortField);
+    // Orders two streams by one sort level; 0 means this level cannot tell them apart.
+    const compareBySort = (left, right, sort) => {
+      const leftValue = getValue(left.source, sort.field);
+      const rightValue = getValue(right.source, sort.field);
+      const leftKnown = hasValue(leftValue, sort.field);
+      const rightKnown = hasValue(rightValue, sort.field);
 
-      if (!hasValue(leftValue)) {
-        return hasValue(rightValue) ? 1 : left.index - right.index;
+      // Unknown values sit at one end whichever way the sort runs, and tie with
+      // each other so the next level can order them.
+      if (!leftKnown || !rightKnown) {
+        if (leftKnown === rightKnown) return 0;
+        return leftKnown === (sort.unknown === "first") ? 1 : -1;
       }
 
-      if (!hasValue(rightValue)) return -1;
-
-      const direction = config.sortDirection === "asc" ? 1 : -1;
-
-      const sortType = fieldTypes[config.sortField];
-      const isTrue = value =>
-        value === true || value === 1 || String(value).toLowerCase() === "true";
-
+      const sortType = fieldTypes[sort.field];
       let comparison;
 
-      if (fieldRanks[config.sortField] && sortType !== "number") {
-        comparison = rankScore(config.sortField, leftValue) -
-          rankScore(config.sortField, rightValue);
+      if (fieldRanks[sort.field] && sortType !== "number") {
+        comparison = rankScore(sort.field, leftValue) - rankScore(sort.field, rightValue);
       } else if (sortType === "number") {
-        comparison = numericValue(left.source, config.sortField) -
-          numericValue(right.source, config.sortField);
+        comparison = numericValue(left.source, sort.field) -
+          numericValue(right.source, sort.field);
       } else if (sortType === "date") {
         comparison = (dayNumber(leftValue) ?? 0) - (dayNumber(rightValue) ?? 0);
       } else if (sortType === "boolean") {
@@ -767,7 +832,18 @@ export function wrapPluginStreams(
         );
       }
 
-      return comparison * direction || left.index - right.index;
+      return (comparison || 0) * (sort.direction === "asc" ? 1 : -1);
+    };
+
+    // Each level only breaks ties left by the levels before it; streams still
+    // tied after the last level keep the provider's own order.
+    streams.sort((left, right) => {
+      for (const sort of config.sorts) {
+        const result = compareBySort(left, right, sort);
+        if (result !== 0) return result;
+      }
+
+      return left.index - right.index;
     });
 
     return streams.map(item => {

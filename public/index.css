@@ -876,7 +876,8 @@ textarea { resize: vertical; line-height: 1.6; }
 .formatter-action button { width: 100%; }
 
 .formatter-insert {
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) 120px;
+  /* Field, target, unknown handling, optional label, button: wrap as space allows. */
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 12px;
 }
 
@@ -1043,11 +1044,32 @@ textarea { resize: vertical; line-height: 1.6; }
   font-weight: 600;
 }
 
-.sort-controls {
-  display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
-  gap: 16px;
+.filter-unknown {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: -4px;
+  color: var(--muted);
+  font-size: 12px;
 }
+
+.filter-rule .filter-unknown-select { min-height: 32px; width: auto; padding-block: 4px; font-size: 12px; }
+
+.sort-levels { display: grid; gap: 12px; margin-bottom: 16px; }
+.sort-empty { margin: 0 0 12px; }
+
+.sort-level {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.sort-level select { min-height: 40px; }
+.sort-level-label { color: var(--muted); font-size: 12px; font-weight: 600; }
+.sort-level-actions { display: flex; gap: 6px; }
+.sort-level-actions .button { white-space: nowrap; }
 
 .step-heading {
   display: flex;
@@ -1462,7 +1484,6 @@ textarea { resize: vertical; line-height: 1.6; }
   .panel-body, .middleware-panel .panel-body,
   .workspace > .panel:first-child .panel-body { padding: 16px; }
   .field-row { grid-template-columns: minmax(0, 1fr) 96px; }
-  .formatter-insert { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 96px; }
   .formatter-preview { padding: 16px; }
   .formatter-preview-line { grid-template-columns: 1fr; gap: 4px; }
   .output-body { grid-template-columns: 1fr; gap: 20px; padding: 16px; }
@@ -1482,7 +1503,12 @@ textarea { resize: vertical; line-height: 1.6; }
   .filter-rule { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .filter-rule .filter-value-cell { grid-column: 1; }
   .filter-rule .filter-remove { grid-column: 2; grid-row: 2; }
-  .sort-controls { grid-template-columns: 1fr; gap: 0; }
+  .filter-unknown { flex-direction: column; align-items: stretch; gap: 6px; margin-top: 0; }
+  .filter-rule .filter-unknown-select { width: 100%; }
+  .sort-level { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .sort-level-label { grid-column: 1 / -1; }
+  .sort-level .sort-field { grid-column: 1 / -1; }
+  .sort-level-actions { grid-column: 1 / -1; }
 
   .backup-row { align-items: flex-start; flex-wrap: wrap; }
   .delete-controls { width: 100%; display: flex; gap: 8px; }
@@ -1497,7 +1523,6 @@ textarea { resize: vertical; line-height: 1.6; }
   .nav-item { padding: 8px 10px; }
   .nav-tag { display: none; }
   .field-row { grid-template-columns: 1fr; }
-  .formatter-insert { grid-template-columns: 1fr 1fr; }
   .formatter-insert .formatter-action { grid-column: 1 / -1; }
   .field-row .field:last-child { margin-bottom: 0; }
   .uuid-row { grid-template-columns: 1fr auto; }

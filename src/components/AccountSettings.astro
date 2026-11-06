@@ -36,6 +36,24 @@
             </section>
 
             <section class="panel save-card">
+              <div class="panel-head"><h2>Install link</h2></div>
+              <div class="panel-body">
+                <p class="view-intro">
+                  Your install link contains a random 256-bit secret. If you shared it or think it leaked,
+                  generate a new one. The old link stops working immediately, so anything already installed
+                  in Nuvio must be updated with the new link.
+                </p>
+                <div class="delete-controls">
+                  <input id="reroll-password" type="password" autocomplete="current-password"
+                    placeholder="Confirm your password" aria-label="Confirm password to generate a new install link">
+                  <button id="reroll-token" class="button button-small" type="button">
+                    Generate new link
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel save-card">
               <div class="panel-head"><h2>Delete account</h2></div>
               <div class="panel-body">
                 <p class="view-intro">
