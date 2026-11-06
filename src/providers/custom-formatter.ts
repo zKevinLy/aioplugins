@@ -66,8 +66,23 @@ export function renderAioStreamsFormat(
     ]
       .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
       .map(value => value.trim());
-    const markerPattern = /\bS\d{1,2}(?:[ ._-]*E\d{1,3})?\b|\b(?:episode|ep)\s*0*\d{1,3}\b|\bE0*\d{1,3}\b|\b(?:2160p?|1440p?|1080[pi]?|720[pi]?|576p?|480[pi]?|360p?|240p?|144p?|4k|uhd|qhd|fhd|hdtv|web[ ._-]?(?:dl|rip)|blu[ ._-]?ray|brrip|bdrip|dvdrip|hdrip|remux|h\.?264|h\.?265|x264|x265|hevc|avc|av1|aac|eac3|ddp|ac3|dts|truehd|flac|opus|hdr10\+?|dolby[ ._-]?vision|\b(?:19|20)\d{2})\b/i;
-    const raw = candidates[0] ?? "";
+    const markerPattern = /\bS\d{1,2}(?:[ ._-]*E\d{1,3})?\b|\b(?:season\s*0*\d{1,2}|episode|ep)\s*0*\d{1,3}\b|\bE0*\d{1,3}\b|\b(?:2160p?|1440p?|1080[pi]?|720[pi]?|576p?|480[pi]?|360p?|240p?|144p?|4k|uhd|qhd|fhd|hdtv|web[ ._-]?(?:dl|rip)|blu[ ._-]?ray|brrip|bdrip|dvdrip|hdrip|remux|h\.?264|h\.?265|x264|x265|hevc|avc|av1|aac|eac3|ddp|ac3|dts|truehd|flac|opus|hdr10\+?|dolby[ ._-]?vision|proper|repack|internal|limited|uncut|dubbed?|subbed?|multi|dual[ ._-]?audio|\b(?:19|20)\d{2})\b/i;
+    // Prefer an actual release filename over short provider labels such as
+    // "FHD". Some providers put that label in `filename` while the useful
+    // media filename is supplied through `title` or behaviorHints.filename.
+    const filenameLike = (value: string): boolean =>
+      /\.(?:mkv|mp4|avi|mov|m4v|webm|ts|m2ts)(?:[?#]|$)/i.test(value) ||
+      /\bS\d{1,2}(?:[ ._-]*E\d{1,3})?\b|\b(?:19|20)\d{2}\b/i.test(value);
+    const rawCandidate = candidates.find(filenameLike) ?? candidates[0] ?? "";
+    // Providers are inconsistent about whether `filename` is a basename,
+    // a path, or a URL. Parse only the actual final path segment so folders
+    // and query strings can never leak into the display title.
+    let raw = rawCandidate.split(/[?#]/, 1)[0]!.replace(/\\/g, "/").split("/").pop() ?? rawCandidate;
+    try {
+      raw = decodeURIComponent(raw);
+    } catch {
+      // Keep the original basename when a provider supplies malformed escapes.
+    }
     const sizeMatch = raw.match(/(?:^|\s)(\d+(?:\.\d+)?)\s*(B|KB|MB|GB|TB)\s*$/i);
     const unitFactors: Record<string, number> = {
       B: 1, KB: 1e3, MB: 1e6, GB: 1e9, TB: 1e12

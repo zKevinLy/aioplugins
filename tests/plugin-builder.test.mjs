@@ -750,6 +750,30 @@ test("extracts filename metadata from Nuvio behavior hints before provider label
   );
 });
 
+test("extracts a clean title from provider filename paths and URL-encoded basenames", () => {
+  const stream = {
+    behaviorHints: {
+      filename: "/cache/series/The.Flash.S02E03.1080p.WEB-DL.H264.mkv?token=private"
+    }
+  };
+
+  assert.equal(
+    renderAioStreamsFormat("{stream.title}", stream),
+    "The Flash"
+  );
+
+  const encoded = {
+    filename: "https://cdn.example.test/files/The%20Flash%20S02E03%201080p%20WEB-DL.mkv?download=1"
+  };
+  assert.equal(renderAioStreamsFormat("{stream.title}", encoded), "The Flash");
+
+  const providerLabel = {
+    filename: "FHD",
+    title: "The.Flash.2014.S02E03.1080p.WEB-DL.mkv"
+  };
+  assert.equal(renderAioStreamsFormat("{stream.title}", providerLabel), "The Flash");
+});
+
 test("extracts shared media fields from provider filenames before formatting", async () => {
   const stream = {
     name: "4KHDHub - PixelDrain 1080p",

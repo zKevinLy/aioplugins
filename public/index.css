@@ -1576,6 +1576,9 @@ textarea { resize: vertical; line-height: 1.6; }
     align-items: center;
     gap: 10px;
     padding: 12px 8px;
+    /* The icon-only rail is deliberately compact; it should never become
+       its own scroll container or show a stray scrollbar when collapsed. */
+    overflow: hidden;
   }
 
   .sidebar.is-collapsed .sidebar-divider {
