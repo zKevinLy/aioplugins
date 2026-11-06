@@ -9,6 +9,25 @@ import { renderAioStreamsFormat } from "../dist/providers/custom-formatter.js";
 import { DEFAULT_STREAM_MIDDLEWARE, normalizeStreamMiddlewareSettings, wrapPluginStreams } from "../dist/providers/stream-middleware.js";
 
 const commit = "b".repeat(40);
+const unsafeCharMap = {
+  "<": "\\u003C",
+  ">": "\\u003E",
+  "/": "\\u002F",
+  "\\": "\\\\",
+  "\b": "\\b",
+  "\f": "\\f",
+  "\n": "\\n",
+  "\r": "\\r",
+  "\t": "\\t",
+  "\0": "\\0",
+  "\u2028": "\\u2028",
+  "\u2029": "\\u2029"
+};
+
+function escapeUnsafeChars(str) {
+  return str.replace(/[<>\/\\\b\f\n\r\t\0\u2028\u2029]/g, (ch) => unsafeCharMap[ch]);
+}
+
 const sourceManifest = {
   name: "Source plugins",
   version: "1.0.0",
@@ -527,7 +546,11 @@ test("formats available metadata and omits empty optional blocks", async () => {
     { title: "Unlabeled source" }
   ] };`;
   const module = { exports: {} };
-  new Function("module", "exports", wrapPluginStreams(source, DEFAULT_STREAM_MIDDLEWARE))(
+  new Function(
+    "module",
+    "exports",
+    escapeUnsafeChars(wrapPluginStreams(source, DEFAULT_STREAM_MIDDLEWARE))
+  )(
     module,
     module.exports
   );
