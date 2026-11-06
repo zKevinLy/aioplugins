@@ -83,28 +83,39 @@ export function renderAioStreamsFormat(
     } catch {
       // Keep the original basename when a provider supplies malformed escapes.
     }
-    const sizeMatch = raw.match(/(?:^|\s)(\d+(?:\.\d+)?)\s*(B|KB|MB|GB|TB)\s*$/i);
+    const sizeMatch = raw.match(/(?:^|\s)(\d{1,15}(?:\.\d{1,6})?)\s{0,8}(B|KB|MB|GB|TB)\s{0,8}$/i);
     const unitFactors: Record<string, number> = {
       B: 1, KB: 1e3, MB: 1e6, GB: 1e9, TB: 1e12
     };
     const streamSize = typeof original.size === "string"
       ? original.size
       : typeof original.fileSize === "string" ? original.fileSize : "";
-    const streamSizeMatch = streamSize.match(/(\d+(?:\.\d+)?)\s*(B|KB|MB|GB|TB)\b/i);
+    const streamSizeMatch = streamSize.match(/(\d{1,15}(?:\.\d{1,6})?)\s{0,8}(B|KB|MB|GB|TB)\b/i);
     const parsedSize = sizeMatch
       ? Number(sizeMatch[1]) * unitFactors[sizeMatch[2]!.toUpperCase()]!
       : streamSizeMatch
         ? Number(streamSizeMatch[1]) * unitFactors[streamSizeMatch[2]!.toUpperCase()]!
         : undefined;
     const releaseText = raw
-      .replace(/\s*\d+(?:\.\d+)?\s*(?:B|KB|MB|GB|TB)\s*$/i, "")
+      .replace(/\s{0,8}\d{1,15}(?:\.\d{1,6})?\s{0,8}(?:B|KB|MB|GB|TB)\s{0,8}$/i, "")
       .replace(/\.(mkv|mp4|avi|mov|m4v|webm|ts|m2ts)$/i, "");
     const marker = markerPattern.exec(releaseText);
     const titlePart = marker ? releaseText.slice(0, marker.index) : releaseText;
-    const cleanTitle = titlePart
-      .replace(/[._]+/g, " ")
-      .replace(/\s+/g, " ")
-      .replace(/^[\s.\-]+|[\s.\-]+$/g, "");
+    // Trim separators with plain loops: the equivalent /^[\s.\-]+|[\s.\-]+$/
+    // regex backtracks quadratically on long runs of whitespace.
+    const trimSeparators = (value: string): string => {
+      const isSeparator = (ch: string): boolean => ch === "." || ch === "-" || /\s/.test(ch);
+      let start = 0;
+      let end = value.length;
+      while (start < end && isSeparator(value[start]!)) start++;
+      while (end > start && isSeparator(value[end - 1]!)) end--;
+      return value.slice(start, end);
+    };
+    const cleanTitle = trimSeparators(
+      titlePart
+        .replace(/[._]+/g, " ")
+        .replace(/\s+/g, " ")
+    );
     const parsedTitle = cleanTitle || releaseText
       .replace(/[._]+/g, " ")
       .replace(/\s+/g, " ")

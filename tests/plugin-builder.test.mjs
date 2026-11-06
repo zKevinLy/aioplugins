@@ -9,25 +9,6 @@ import { renderAioStreamsFormat } from "../dist/providers/custom-formatter.js";
 import { DEFAULT_STREAM_MIDDLEWARE, normalizeStreamMiddlewareSettings, wrapPluginStreams } from "../dist/providers/stream-middleware.js";
 
 const commit = "b".repeat(40);
-const unsafeCharMap = {
-  "<": "\\u003C",
-  ">": "\\u003E",
-  "/": "\\u002F",
-  "\\": "\\\\",
-  "\b": "\\b",
-  "\f": "\\f",
-  "\n": "\\n",
-  "\r": "\\r",
-  "\t": "\\t",
-  "\0": "\\0",
-  "\u2028": "\\u2028",
-  "\u2029": "\\u2029"
-};
-
-function escapeUnsafeChars(str) {
-  return str.replace(/[<>\/\\\b\f\n\r\t\0\u2028\u2029]/g, (ch) => unsafeCharMap[ch]);
-}
-
 const sourceManifest = {
   name: "Source plugins",
   version: "1.0.0",
@@ -546,11 +527,7 @@ test("formats available metadata and omits empty optional blocks", async () => {
     { title: "Unlabeled source" }
   ] };`;
   const module = { exports: {} };
-  new Function(
-    "module",
-    "exports",
-    escapeUnsafeChars(wrapPluginStreams(source, DEFAULT_STREAM_MIDDLEWARE))
-  )(
+  new Function("module", "exports", wrapPluginStreams(source, DEFAULT_STREAM_MIDDLEWARE))(
     module,
     module.exports
   );
@@ -647,11 +624,13 @@ test("supports AIOStreams nested optional groups and conditional branches", () =
 
   const module = { exports: {} };
   const wrapperFormat = "{stream.cached[\"Cached\"||\"Uncached\"||\"Unknown\"]} · {?{stream.resolution}?}";
-  const source = `module.exports = { getStreams: async () => [${JSON.stringify(stream)}] };`;
-  new Function("module", "exports", wrapPluginStreams(source, {
+  // The fixture is passed in as a function argument instead of being
+  // serialized into generated code.
+  const source = "module.exports = { getStreams: async () => [fixtureStream] };";
+  new Function("module", "exports", "fixtureStream", wrapPluginStreams(source, {
     ...DEFAULT_STREAM_MIDDLEWARE,
     format: wrapperFormat
-  }))(module, module.exports);
+  }))(module, module.exports, stream);
   return module.exports.getStreams({}).then(streams => {
     assert.equal(streams[0].description, "Uncached · 2160p");
     assert.equal(streams[0].title, streams[0].description);
@@ -816,15 +795,17 @@ test("extracts shared media fields from provider filenames before formatting", a
   assert.match(label, /AAC · English, Korean · 2.2 GB/);
 
   const module = { exports: {} };
-  const source = `module.exports = { getStreams: async () => [${JSON.stringify(stream)}] };`;
-  new Function("module", "exports", wrapPluginStreams(source, {
+  // The fixture is passed in as a function argument instead of being
+  // serialized into generated code.
+  const source = "module.exports = { getStreams: async () => [fixtureStream] };";
+  new Function("module", "exports", "fixtureStream", wrapPluginStreams(source, {
     ...DEFAULT_STREAM_MIDDLEWARE,
     filters: [
       { field: "languages", operator: "contains", value: "Korean" },
       { field: "releaseGroup", operator: "equals", value: "4kHdHub.Com" }
     ],
     format: "{stream.title} · {stream.formattedSeasons} {stream.formattedEpisodes} · {stream.resolution} · {stream.quality} · {stream.network} · {stream.encode}"
-  }))(module, module.exports);
+  }))(module, module.exports, stream);
   const [wrapped] = await module.exports.getStreams({});
   assert.equal(wrapped.title, "Doctor X Mafia in White · S01 E06 · 1080p · WEB-DL · Netflix · AVC");
   assert.equal(wrapped.network, "Netflix");
