@@ -183,6 +183,9 @@ The formatter has separate stream-name and description templates:
     instead of your description.
 -   Filtering and sorting use provider metadata, not the formatted
     display text.
+-   The live preview in the editor is rendered in your browser with the
+    same formatter code the plugin wrapper uses; no preview request is
+    sent to AIOPlugins.
 
 **Playback check (optional).** Under *Stream filters*, "Remove streams that
 cannot be played" adds a check to the generated plugin file. The check runs
@@ -287,12 +290,14 @@ src/
 ├── pages/index.astro         Main page composed from view components
 ├── components/               Plugin setup, middleware, review, and account views
 ├── scripts/app.js            Browser interactions and API calls
+│                             (including the live formatter preview)
 ├── index.ts                  Wrangler entry point (re-exports the Cloudflare worker)
 ├── server.ts                 Routing, sessions, rate limiting:
 │                             handleRequest(request, platform)
 ├── users.ts                  Accounts, sessions, profiles, per-user source config
 ├── providers/remote.ts       GitHub discovery, validation, and live provider fetching
 ├── lib/
+│   ├── formatter-preview.ts  Formatter preview, shared by browser and tests
 │   ├── db.ts                 Database contract (first, all, run, atomic batch)
 │   └── platform.ts           Platform contract (db, static assets, client IP)
 └── adapters/cloudflare/      The only place Cloudflare APIs appear

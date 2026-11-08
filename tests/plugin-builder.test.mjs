@@ -6,6 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import { after, before, test } from "node:test";
 import { handleRequest } from "../dist/server.js";
 import { renderAioStreamsFormat } from "../dist/providers/custom-formatter.js";
+import { buildFormatterPreview } from "../dist/lib/formatter-preview.js";
 import { DEFAULT_STREAM_MIDDLEWARE, normalizeStreamMiddlewareSettings, toJsLiteral, wrapPluginStreams } from "../dist/providers/stream-middleware.js";
 
 const commit = "b".repeat(40);
@@ -293,33 +294,41 @@ test("builds a combined Nuvio manifest and serves selected files without executi
   assert.ok(config.fields.some((field) => field.key === "audioTags"));
   assert.ok(config.fields.some((field) => field.key === "service.shortName"));
 
-  const previewResponse = await testFetch("/api/formatter/preview", {
+  // The preview is rendered in the browser; the server no longer has an endpoint for it.
+  const removedEndpoint = await testFetch("/api/formatter/preview", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      nameFormat: "{stream.resolution}",
-      descriptionFormat: "{metadata.title} ({stream.year}) · {stream.resolution}",
-      stream: { filename: "Movie.Title.2023.2160p.BluRay.HEVC.mkv" },
-      metadata: { title: "Movie Title" }
-    })
+    body: JSON.stringify({ stream: {} })
   });
-  assert.equal(previewResponse.status, 200);
-  const preview = await previewResponse.json();
+  assert.equal(removedEndpoint.status, 404);
+
+  const preview = buildFormatterPreview({
+    nameFormat: "{stream.resolution}",
+    descriptionFormat: "{metadata.title} ({stream.year}) · {stream.resolution}",
+    stream: { filename: "Movie.Title.2023.2160p.BluRay.HEVC.mkv" },
+    metadata: { title: "Movie Title" }
+  });
   assert.equal(preview.name, "2160p");
   assert.equal(preview.description, "Movie Title (2023) · 2160p");
   assert.equal(preview.title, preview.description);
   assert.equal(preview.parsed.quality, "BluRay");
 
-  const legacyPreview = await testFetch("/api/formatter/preview", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      format: "{stream.title}",
-      stream: { title: "Legacy format" }
-    })
-  }).then((response) => response.json());
+  const legacyPreview = buildFormatterPreview({
+    format: "{stream.title}",
+    stream: { title: "Legacy format" }
+  });
   assert.equal(legacyPreview.description, "Legacy format");
   assert.equal(legacyPreview.title, legacyPreview.description);
+
+  assert.throws(() => buildFormatterPreview({ stream: [] }), /Stream sample must be a JSON object/);
+  assert.throws(
+    () => buildFormatterPreview({ nameFormat: "x".repeat(3001), stream: {} }),
+    /3000 characters or fewer/
+  );
+  assert.throws(
+    () => buildFormatterPreview({ stream: {}, metadata: [] }),
+    /Metadata sample must be a JSON object/
+  );
 
   assert.equal(globalThis.fixturePluginExecuted, undefined);
 
@@ -1307,14 +1316,10 @@ test("formats unknown values with a fallback, or skips them", async () => {
     ["Known · WEB-DL", "Placeholder", "Missing"]
   );
 
-  const preview = await testFetch("/api/formatter/preview", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      descriptionFormat: '{stream.quality::exists["{stream.quality}"||"Unrated"]}',
-      stream: { quality: "Unknown" }
-    })
-  }).then((response) => response.json());
+  const preview = buildFormatterPreview({
+    descriptionFormat: '{stream.quality::exists["{stream.quality}"||"Unrated"]}',
+    stream: { quality: "Unknown" }
+  });
   assert.equal(preview.description, "Unrated");
 });
 

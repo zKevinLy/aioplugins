@@ -14,12 +14,7 @@ import {
   type SavedSourceSelection
 } from "./providers/remote.js";
 import { loadAppVersion } from "./lib/app-info.js";
-import { renderAioStreamsFormat } from "./providers/custom-formatter.js";
-import { removeUnknownPlaceholders } from "./providers/unknown-values.js";
-import {
-  DEFAULT_STREAM_MIDDLEWARE,
-  STREAM_FIELD_CATALOG
-} from "./providers/stream-middleware.js";
+import { STREAM_FIELD_CATALOG } from "./providers/stream-middleware.js";
 
 import {
   createSession,
@@ -400,51 +395,6 @@ async function handleApi(
     const { sources, middleware, fields } = await loadWorkspace(user.id, db);
 
     return sendJson(200, { sources, middleware, fields });
-  }
-
-  if (pathname === "/api/formatter/preview" && method === "POST") {
-    const body = await readJsonBody(request);
-    const nameFormat = typeof body.nameFormat === "string"
-      ? body.nameFormat
-      : DEFAULT_STREAM_MIDDLEWARE.nameFormat;
-    const descriptionFormat = typeof body.descriptionFormat === "string"
-      ? body.descriptionFormat
-      : typeof body.format === "string"
-        ? body.format
-        : DEFAULT_STREAM_MIDDLEWARE.descriptionFormat;
-    if (nameFormat.length > 3000 || descriptionFormat.length > 3000) {
-      throw new HttpError(400, "Formatter template must be 3000 characters or fewer");
-    }
-    if (!body.stream || typeof body.stream !== "object" || Array.isArray(body.stream)) {
-      throw new HttpError(400, "Stream sample must be a JSON object");
-    }
-    if (body.metadata !== undefined &&
-      (!body.metadata || typeof body.metadata !== "object" || Array.isArray(body.metadata))) {
-      throw new HttpError(400, "Metadata sample must be a JSON object");
-    }
-
-    // Same placeholder handling as the generated plugin wrapper, so the
-    // preview matches what Nuvio will show.
-    const stream = removeUnknownPlaceholders(body.stream as Record<string, unknown>);
-    const metadata = (body.metadata || {}) as Record<string, unknown>;
-    const name = renderAioStreamsFormat(nameFormat, { ...stream }, "AIOPlugins", { metadata });
-    const description = renderAioStreamsFormat(
-      descriptionFormat,
-      stream,
-      "AIOPlugins",
-      { metadata }
-    );
-    const parsedFields = [
-      "title", "filename", "year", "resolution", "quality", "encode", "network",
-      "visualTags", "audioTags", "audioChannels", "languages", "subtitles",
-      "seasons", "episodes", "formattedSeasons", "formattedEpisodes", "releaseGroup",
-      "editions", "size", "container", "extension"
-    ];
-    const parsed = Object.fromEntries(parsedFields
-      .filter(field => Object.prototype.hasOwnProperty.call(stream, field))
-      .map(field => [field, stream[field]]));
-
-    return sendJson(200, { name, description, title: description, parsed });
   }
 
   if (pathname === "/api/discover" && method === "POST") {

@@ -1,9 +1,9 @@
-// "Stream name and description": templates plus a live server-side preview.
+// "Stream name and description": templates plus a live preview that is
+// rendered in the browser; no request is sent to the server.
 
-import { api } from "../../core/api.js";
 import { $ } from "../../core/dom.js";
 import { errorMessage, parseJsonRecord } from "../../core/guards.js";
-import type { FormatterPreviewResponse } from "../../core/types.js";
+import { buildFormatterPreview } from "../../../lib/formatter-preview.js";
 import { middlewareStore, STREAM_FORMAT_PRESETS } from "../../state/middleware.js";
 import { viewStore } from "../../state/view.js";
 import { fieldsStore } from "../../state/workspace.js";
@@ -48,7 +48,7 @@ async function renderPreview(): Promise<void> {
     stream.filename = $<HTMLInputElement>("#formatter-filename").value.trim();
 
     const { nameFormat, descriptionFormat } = middlewareStore.get();
-    const result = await api<FormatterPreviewResponse>("/api/formatter/preview", {
+    const result = buildFormatterPreview({
       nameFormat,
       descriptionFormat,
       stream,
@@ -71,7 +71,7 @@ async function renderPreview(): Promise<void> {
   }
 }
 
-/** Re-renders soon, but only spends a request when the tab can be seen. */
+/** Re-renders soon, but only when the tab can be seen. */
 function schedulePreview(): void {
   clearTimeout(timer);
   stale = true;

@@ -89,12 +89,6 @@ export interface ApplyResponse {
   plugins: number;
 }
 
-export interface FormatterPreviewResponse {
-  name: string;
-  description: string;
-  parsed: Record<string, unknown>;
-}
-
 export interface ProfileBackup {
   format: "aioplugins-profile";
   version: 1;
