@@ -1,7 +1,10 @@
 // Checks AIOPlugins output against Nuvio's own consumers. The helpers below are
-// ports of the Kotlin that reads plugin output: PluginRuntime.parseJsonResults,
-// StreamRepositoryImpl.toPluginStream/buildDescription, Stream.getDisplayDescription
-// and StreamBadgeMatcher. If Nuvio changes them, update the ports and these tests.
+// ports of the Kotlin that reads plugin output.
+//   Nuvio TV:      PluginRuntime.parseJsonResults, StreamRepositoryImpl.toPluginStream /
+//                  buildDescription, Stream.getDisplayDescription, StreamBadgeMatcher.
+//   Nuvio Desktop: PluginRuntime.parseJsonResults, PluginRuntimeResult.toStreamItem,
+//                  StreamItem.streamLabel / streamSubtitle, StreamBadgeMatcher.
+// If either client changes them, update the ports and these tests.
 
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
@@ -60,6 +63,20 @@ function nuvioCard(result, scraperName = "Scraper") {
   return { name, title, description, shownDescription: description ?? title };
 }
 
+/**
+ * Nuvio Desktop: PluginRuntimeResult.toStreamItem + StreamItem.streamLabel/streamSubtitle.
+ * The title is never shown; the line under the name is quality • size • language.
+ */
+function desktopCard(result) {
+  const parts = [result.quality, result.size, result.language]
+    .filter((part) => part !== undefined && part.trim() !== "");
+
+  return {
+    name: result.name?.trim() ? result.name : result.title,
+    subtitle: parts.length > 0 ? parts.join(" • ") : undefined
+  };
+}
+
 async function run(source, settings = {}) {
   const module = { exports: {} };
   new Function("module", "exports", wrapPluginStreams(source, { ...DEFAULT_STREAM_MIDDLEWARE, ...settings }))(
@@ -78,44 +95,64 @@ const provider = `module.exports = { getStreams: async () => [
 
 // ---------- stream output ----------
 
-test("title mode leaves size and language out so Nuvio shows the formatted description", async () => {
+test("the formatted description is what Nuvio TV shows under the name", async () => {
   const [first] = await run(provider);
   const parsed = nuvioParse(first);
   const card = nuvioCard(parsed);
 
-  assert.equal(parsed.size, undefined);
   assert.equal(parsed.language, undefined);
-  assert.equal(card.description, undefined);
   assert.equal(card.shownDescription, first.description);
   assert.match(card.shownDescription, /Movie/);
   assert.match(card.shownDescription, /📦 2\.2 GB/);
   assert.equal(card.name, first.name);
 });
 
+test("the formatted description is what Nuvio Desktop shows under the name", async () => {
+  for (const stream of await run(provider)) {
+    const card = desktopCard(nuvioParse(stream));
+
+    assert.equal(card.name, stream.name);
+    assert.equal(card.subtitle, stream.description, "only the user's text, nothing added");
+  }
+  const [first] = await run(provider);
+  assert.match(desktopCard(nuvioParse(first)).subtitle, /📦 2\.2 GB/);
+});
+
+test("the settings that used to move the description are ignored", async () => {
+  const [byDefault] = await run(provider);
+  const [legacy] = await run(provider, { detailField: "title" });
+
+  assert.equal(legacy.size, byDefault.size);
+  assert.equal(byDefault.size, byDefault.description);
+});
+
 test("names never get Nuvio's \" - Unknown\" suffix", async () => {
   for (const settings of [{}, { detailField: "size" }]) {
     for (const stream of await run(provider, settings)) {
       const card = nuvioCard(nuvioParse(stream));
-      assert.ok(stream.quality && stream.quality.trim(), "quality must always be set");
+      assert.equal(stream.quality, undefined, "quality would be printed by Desktop");
       assert.doesNotMatch(card.name, / - Unknown$/);
       assert.equal(card.name, stream.name);
     }
   }
 });
 
-test("quality is the canonical resolution, then the provider label, then Unknown", async () => {
+test("no quality is sent, and the TV unknown label is parked in the hidden provider field", async () => {
   const streams = await run(`module.exports = { getStreams: async () => [
     { title: "A 2160p", url: "https://x/a" },
-    { title: "B", quality: "HD", url: "https://x/b" },
-    { title: "C", quality: "Unknown", url: "https://x/c" },
-    { title: "D", quality: "Cinema", url: "https://x/d" }
+    { title: "B", quality: "HD", provider: "Prov", url: "https://x/b" }
   ] };`);
 
-  assert.deepEqual(streams.map((stream) => stream.quality), ["2160p", "720p", "Unknown", "Cinema"]);
+  for (const stream of streams) {
+    assert.equal(stream.quality, undefined);
+    assert.match(stream.provider, /Unknown/);
+    assert.match(stream.provider, /未知/);
+  }
+  assert.match(streams[1].provider, /^Prov /);
 });
 
-test("size mode keeps the old display field for older Nuvio builds", async () => {
-  const [first] = await run(provider, { detailField: "size" });
+test("the description rides in size and the provider's language is dropped", async () => {
+  const [first] = await run(provider);
   const card = nuvioCard(nuvioParse(first));
 
   assert.equal(first.size, first.description);

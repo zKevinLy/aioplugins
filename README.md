@@ -175,9 +175,9 @@ available only when supplied by the provider.
 The formatter has separate stream-name and description templates:
 
 -   The short name is written to `name`.
--   The detailed description is written to `title` and `description`. A
-    setting, *Show the description in*, can also write it to `size` for older
-    Nuvio builds (see [Nuvio compatibility](#nuvio-compatibility)).
+-   The detailed description is written to `size`, `title` and `description`.
+    `size` is the field both Nuvio TV and Nuvio Desktop display (see
+    [Nuvio compatibility](#nuvio-compatibility)).
 -   The parsed byte count is kept as `behaviorHints.videoSize` and
     `fileSize`; the provider's own `size` text is never shown next to or
     instead of your description.
@@ -245,24 +245,32 @@ before downloading each plugin, are answered without contacting GitHub.
 is kept, a relative path resolves against the upstream repository at the pinned
 commit, and anything missing or unusable falls back to the AIOPlugins icon.
 
-**Stream fields.** Nuvio's card shows the stream `name`, then `size` and
-`language` when either exists, and falls back to `title` only when both are
-missing. Nuvio also appends " - Unknown" to the name when `quality` is empty.
+**Stream fields.** The two clients draw a plugin stream differently:
+
+| | Nuvio TV | Nuvio Desktop |
+|---|---|---|
+| Card name | `name`, plus " - Unknown" when `quality` is empty | `name` (`title` only if there is no name), one line |
+| Line under the name | `size` • `language`, or `title` when both are missing | `quality` • `size` • `language` |
+| `title` shown | only as that fallback | never |
+
 So the wrapper:
 
--   always sends a `quality` (canonical resolution such as `1080p`, then the
-    provider's label, then `Unknown`), which stops the " - Unknown" suffix;
--   removes the provider's `size` and `language`, which would otherwise hide
-    your description or print the language twice, and shows the description
-    through `title`;
+-   writes the formatted description to `size`, the one field both clients
+    display, so the text on the card is exactly what your templates produce;
+-   sends no `quality` or `language`: Desktop would print them around your
+    text. To stop TV adding " - Unknown" to the name when quality is missing,
+    the unknown label (in every language TV ships) is placed in `provider`,
+    which neither client displays;
+-   keeps `title` and `description` set to the same text;
 -   sends the real file size as `behaviorHints.videoSize` and the filename as
     `behaviorHints.filename` (Stremio's standard hints) for Nuvio versions that
     read them;
 -   keeps headers, subtitles, audio delay hints and other provider fields.
 
-If your Nuvio build shows only the name and no details, set *Show the
-description in* to the size field under **Filters → Formatter**. That restores
-the earlier behavior of writing the description to `size`.
+Earlier versions wrote the description to `title` by default and offered a
+*Show the description in* setting. Desktop never shows `title`, so that default
+left its cards with only a resolution; the setting is gone and saved values are
+ignored.
 
 **Badges.** Nuvio draws a chip for each imported badge rule whose regular
 expression matches a stream's name, title or description. AIOPlugins serves a
@@ -271,8 +279,11 @@ channels, source, codec, extras) at `/badges.json`, with images in
 `/badges/`. In Nuvio, import `https://<your-host>/badges.json` in the stream
 badge settings. The URL is public and identical for everyone. Badges match
 the formatted text, so a token that your templates leave out cannot produce a
-badge. Nuvio's file-size chip needs `behaviorHints.videoSize`, which Nuvio does
-not yet read from plugins.
+badge. Both clients match only name, title and description (plus filename hints), so
+keep the resolution in your name or description template if you want its badge. The
+file-size chip needs `behaviorHints.videoSize`, which neither client reads from
+plugin results (only from Stremio addon streams); put `📦 {stream.size::sbytes}`
+in the description template to show the size as text.
 
 Regenerate the badge images after editing `src/providers/badge-pack.ts`:
 

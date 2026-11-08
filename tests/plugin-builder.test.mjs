@@ -712,12 +712,13 @@ test("formats the stream name and description separately", async () => {
   assert.equal(stream.name, "1080p");
   assert.equal(stream.description, "Doctor X Mafia · 1080p");
   assert.equal(stream.title, stream.description);
-  // Nuvio shows size and language before title, so neither may survive.
-  assert.equal(stream.size, undefined);
+  // Nuvio Desktop never shows title and Nuvio TV shows size, so the description
+  // travels in size; the provider's own language must not follow it.
+  assert.equal(stream.size, stream.description);
   assert.equal(stream.language, undefined);
   assert.equal(stream.fileSize, 1234);
   assert.equal(stream.behaviorHints.videoSize, 1234);
-  assert.equal(stream.quality, "1080p");
+  assert.equal(stream.quality, undefined);
 });
 
 test("applies title filters to provider metadata rather than formatted output", async () => {
@@ -862,7 +863,7 @@ test("extracts shared media fields from provider filenames before formatting", a
   assert.equal(wrapped.network, "Netflix");
   assert.equal(wrapped.fileSize, 2240000000);
   assert.equal(wrapped.behaviorHints.videoSize, 2240000000);
-  assert.equal(wrapped.size, undefined);
+  assert.equal(wrapped.size, wrapped.description);
   assert.equal(wrapped.description, wrapped.title);
   assert.equal(wrapped.name, "🚀 FHD");
 });

@@ -190,15 +190,24 @@ export interface StreamMiddlewareSettings {
   format: string;
   hideOriginalMetadata: boolean;
   /**
-   * Which Nuvio field carries the formatted description. Nuvio's card shows
-   * `size` and `language` when either exists and only falls back to `title`
-   * when both are missing. "title" (default) leaves `size` alone; "size" is
-   * for older Nuvio builds that never show `title`.
+   * Which Nuvio field carries the formatted description. Always "size": Nuvio
+   * Desktop builds its card subtitle only from quality, size and language and
+   * never shows `title`, and Nuvio TV shows the size text as the description
+   * line. "title" is accepted for old saved settings but is no longer honored.
    */
   detailField: DetailField;
 }
 
 export type DetailField = "title" | "size";
+
+/**
+ * Nuvio TV appends " - <label>" to the card name when a stream has no quality,
+ * unless that label already appears anywhere in the stream's text fields. Nuvio
+ * Desktop prints the quality in front of the description. To show only the
+ * user's own text, no quality is sent and the label (in every language Nuvio TV
+ * ships) is parked in the provider field, which neither client displays.
+ */
+export const NUVIO_UNKNOWN_QUALITY_LABELS: readonly string[] = ["Bilinmiyor", "Desconhecida", "Desconhecido", "Desconocida", "Desconocido", "E panjohur", "Inconnue", "Ismeretlen", "Không xác định", "Nepoznato", "Neznana", "Neznáme", "Neznámá", "Nieznana", "Onbekend", "Sconosciuta", "Tidak Diketahui", "Ukendt", "Unknown", "Άγνωστη", "Невідомо", "Неизвестно", "לא ידוע", "غير معروف", "অজানা", "அறியப்படாதது", "不明", "未知"];
 
 export const DEFAULT_STREAM_MIDDLEWARE: StreamMiddlewareSettings = {
   filters: [],
@@ -208,7 +217,7 @@ export const DEFAULT_STREAM_MIDDLEWARE: StreamMiddlewareSettings = {
   descriptionFormat: DEFAULT_STREAM_DESCRIPTION_FORMAT,
   format: DEFAULT_STREAM_DESCRIPTION_FORMAT,
   hideOriginalMetadata: false,
-  detailField: "title"
+  detailField: "size"
 };
 
 const PREVIOUS_DEFAULT_STREAM_FORMAT = "{?{stream.resolution::replace('2160p', '🔥4K UHD')::replace('1440p', '✨ QHD')::replace('1080p', '🚀 FHD')::replace('720p', '💿 HD')::replace('576p', '💩 Low Quality')::replace('480p', '💩 Low Quality')::replace('360p', '💩 Low Quality')::replace('240p', '💩 Low Quality')::replace('144p', '💩 Low Quality')} · ?}{stream.title}{? · {stream.formattedSeasons}?}{? · {stream.formattedEpisodes}?}{? · 📦 {stream.size::sbytes}?}{? · 🎧 {stream.audioTags::join(' | ')}?}";
@@ -479,7 +488,7 @@ export function normalizeStreamMiddlewareSettings(
     descriptionFormat,
     format: descriptionFormat,
     hideOriginalMetadata: candidate.hideOriginalMetadata === true,
-    detailField: candidate.detailField === "size" ? "size" : "title"
+    detailField: "size"
   };
 }
 
@@ -518,6 +527,7 @@ export function wrapPluginStreams(
   ${unknownValueSource}
   ${removeUnknownSource}
   const probeStreamUrl = ${probeSource};
+  const unknownQualityLabels = ${JSON.stringify(NUVIO_UNKNOWN_QUALITY_LABELS)};
   const fieldTypes = ${fieldTypes};
   const fieldRanks = ${fieldRanks};
   const dateOperators = ["equals", "notEquals", "gt", "gte", "lt", "lte"];
@@ -785,32 +795,12 @@ export function wrapPluginStreams(
     // ---- Nuvio output -------------------------------------------------
     // Nuvio's plugin runtime keeps only: title, name, url, quality, size,
     // language, provider, type, seeders, peers, infoHash, headers, subtitles and
-    // behaviorHints.audioDelay*. Its card shows name, then size and language
-    // (or title when neither exists). Anything else a plugin returns is dropped.
-
-    const canonicalResolution = value => {
-      const text = stringify(value).toLowerCase();
-      const match = text.match(/(2160|1440|1080|720|576|480|360|240|144)p?/);
-
-      if (match) return match[1] + "p";
-      if (/4k|uhd/.test(text)) return "2160p";
-      if (/qhd/.test(text)) return "1440p";
-      if (/fhd/.test(text)) return "1080p";
-      if (/\\bhd\\b/.test(text)) return "720p";
-
-      return "";
-    };
-
-    // Nuvio appends " - Unknown" to the name whenever quality is missing, so a
-    // value is always sent: the resolution, the provider's own label, or "Unknown".
-    const nuvioQuality = (original, normalized) => {
-      const resolved = canonicalResolution(normalized.resolution) ||
-        canonicalResolution(original.quality);
-      if (resolved) return resolved;
-
-      const own = stringify(original.quality).trim();
-      return own && !isUnknownValue(own, "quality") ? own : "Unknown";
-    };
+    // (TV only) behaviorHints.audioDelay*. Anything else a plugin returns is dropped.
+    //   TV:      card name = name (+ " - Unknown" if quality is blank); the line
+    //            under it = size • language, or title when both are missing.
+    //   Desktop: card name = name (title only if name is missing); the line under
+    //            it = quality • size • language. The title is never shown.
+    // The description therefore travels in the size field, which both clients display.
 
     const toNuvioStream = (original, normalized, name, description) => {
       const output = { ...normalized };
@@ -820,17 +810,19 @@ export function wrapPluginStreams(
       const hints = original.behaviorHints && typeof original.behaviorHints === "object" &&
         !Array.isArray(original.behaviorHints) ? { ...original.behaviorHints } : {};
 
-      // The description must not be hidden behind, or doubled by, these two.
-      delete output.size;
+      // Anything else in these fields would be printed next to the description.
       delete output.language;
       delete output.fileSize;
+      delete output.quality;
 
       output.name = name;
       output.title = description;
       output.description = description;
-      output.quality = nuvioQuality(original, normalized);
-
-      if (config.detailField === "size") output.size = description;
+      // Stops Nuvio TV from adding " - Unknown" to the name (see the constant).
+      output.provider = [stringify(normalized.provider).trim(), ...unknownQualityLabels]
+        .filter(Boolean).join(" ");
+      // Both clients render size; Desktop never renders title.
+      output.size = description;
 
       if (bytes > 0) {
         output.fileSize = bytes;

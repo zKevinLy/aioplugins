@@ -62,7 +62,7 @@ export function toMiddlewareSettings(value: unknown): MiddlewareSettings {
       nonEmpty(settings.descriptionFormat) ??
       nonEmpty(settings.format) ??
       DEFAULT_STREAM_DESCRIPTION_FORMAT,
-    detailField: settings.detailField === "size" ? "size" : "title"
+    detailField: "size"
   };
 }
 
