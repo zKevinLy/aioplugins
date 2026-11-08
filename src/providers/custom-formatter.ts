@@ -8,14 +8,42 @@ export function renderAioStreamsFormat(
 ): string {
   const REMOVE_LINE = "\u0000AIOSTREAMS_REMOVE_LINE\u0000";
 
+  // Linear-time run collapsing. Regexes such as /\s+/ and /[ \t]{2,}/ are
+  // flagged as polynomial on uncontrolled input, so scan once instead. These
+  // helpers live inside this function because it is serialized with toString().
+  const collapseRuns = (
+    value: string,
+    isMember: (ch: string) => boolean,
+    minRun: number
+  ): string => {
+    let out = "";
+    let i = 0;
+    while (i < value.length) {
+      if (!isMember(value[i]!)) {
+        out += value[i]!;
+        i++;
+        continue;
+      }
+      let end = i;
+      while (end < value.length && isMember(value[end]!)) end++;
+      out += end - i >= minRun ? " " : value.slice(i, end);
+      i = end;
+    }
+    return out;
+  };
+  const collapseWhitespace = (value: string): string =>
+    collapseRuns(value, ch => /\s/.test(ch), 1);
+
   const stripEmojis = (value: string): string =>
-    value
-      .replace(/\p{Extended_Pictographic}/gu, "")
-      .replace(/\p{Emoji_Modifier}/gu, "")
-      .replace(/\p{Regional_Indicator}/gu, "")
-      .replace(/[\uFE0E\uFE0F\u200D\u20E3]/gu, "")
-      .replace(/[ \t]{2,}/g, " ")
-      .trim();
+    collapseRuns(
+      value
+        .replace(/\p{Extended_Pictographic}/gu, "")
+        .replace(/\p{Emoji_Modifier}/gu, "")
+        .replace(/\p{Regional_Indicator}/gu, "")
+        .replace(/[\uFE0E\uFE0F\u200D\u20E3]/gu, ""),
+      ch => ch === " " || ch === "\t",
+      2
+    ).trim();
 
   const sanitizeProviderValue = (
     value: unknown,
@@ -112,14 +140,10 @@ export function renderAioStreamsFormat(
       return value.slice(start, end);
     };
     const cleanTitle = trimSeparators(
-      titlePart
-        .replace(/[._]+/g, " ")
-        .replace(/\s+/g, " ")
+      collapseWhitespace(titlePart.replace(/[._]/g, " "))
     );
-    const parsedTitle = cleanTitle || releaseText
-      .replace(/[._]+/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
+    const parsedTitle = cleanTitle ||
+      collapseWhitespace(releaseText.replace(/[._]/g, " ")).trim();
     const resolutionMatch = releaseText.match(/(?:2160|1440|1080|720|576|480|360|240|144)[pi]?|\b(?:4k|uhd|qhd|fhd)\b/i);
     const resolutionText = resolutionMatch?.[0].toLowerCase();
     const resolution = resolutionText
@@ -303,7 +327,7 @@ export function renderAioStreamsFormat(
     return match?.[0];
   };
   const getPath = (path: string, currentContext: FormatterContext): unknown => {
-    const parts = path.replace(/\s+/g, "").split(".");
+    const parts = path.replace(/\s/g, "").split(".");
     if (parts.length < 2) return undefined;
     const section = parts.shift()!.toLowerCase();
     const object = getProperty(currentContext, section);
@@ -393,7 +417,11 @@ export function renderAioStreamsFormat(
     value.trim() ? splitTopLevel(value, ",").map(item => parseArgument(item, currentContext)) : [];
   const parseArgument = (value: string, currentContext = context): unknown => {
     const trimmed = value.trim();
-    if (/^(['"]).*\1$/s.test(trimmed)) return unquote(trimmed);
+    if (
+      trimmed.length >= 2 &&
+      (trimmed[0] === "'" || trimmed[0] === '"') &&
+      trimmed[trimmed.length - 1] === trimmed[0]
+    ) return unquote(trimmed);
     if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
       return evaluateExpression(trimmed.slice(1, -1), currentContext);
     }

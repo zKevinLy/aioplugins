@@ -4,6 +4,7 @@ import { after, before, test } from "node:test";
 import {
   DEFAULT_STREAM_MIDDLEWARE,
   normalizeStreamMiddlewareSettings,
+  toJsLiteral,
   wrapPluginStreams
 } from "../dist/providers/stream-middleware.js";
 
@@ -94,7 +95,7 @@ after(() => {
 
 async function run(urls, probe, { headers } = {}) {
   const module = { exports: {} };
-  const source = `module.exports = { getStreams: async () => ${JSON.stringify(
+  const source = `module.exports = { getStreams: async () => ${toJsLiteral(
     urls.map((url, index) => ({
       title: `Stream ${index}`,
       url: url.startsWith("/") ? base + url : url,
@@ -197,4 +198,12 @@ test("normalizes probe settings", () => {
   assert.equal(normalizeStreamMiddlewareSettings({ probe: { timeoutMs: "soon" } }).probe.timeoutMs, 5000);
   assert.equal(normalizeStreamMiddlewareSettings({ probe: { enabled: "yes" } }).probe.enabled, false);
   assert.equal(normalizeStreamMiddlewareSettings({ probe: [] }).probe.enabled, false);
+});
+
+test("toJsLiteral escapes characters that can break out of generated code", () => {
+  const literal = toJsLiteral({ value: "</script><!-- \u2028\u2029 /" });
+
+  assert.ok(!/[<>/\u2028\u2029]/.test(literal));
+  assert.deepEqual(JSON.parse(literal), { value: "</script><!-- \u2028\u2029 /" });
+  assert.equal(toJsLiteral(undefined), "undefined");
 });

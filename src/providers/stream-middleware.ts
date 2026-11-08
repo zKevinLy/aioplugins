@@ -492,25 +492,46 @@ export function normalizeStreamMiddlewareSettings(
   };
 }
 
+const UNSAFE_JS_CHARS: Record<string, string> = {
+  "<": "\\u003C",
+  ">": "\\u003E",
+  "/": "\\u002F",
+  "\u2028": "\\u2028",
+  "\u2029": "\\u2029"
+};
+
+/**
+ * Serializes a value as a JavaScript literal that is safe to embed in
+ * generated source. JSON.stringify alone leaves `<`, `>`, `/` and the line
+ * separators U+2028/U+2029 untouched, which can break out of the surrounding
+ * code or script context.
+ */
+export function toJsLiteral(value: unknown): string {
+  return (JSON.stringify(value) ?? "undefined").replace(
+    /[<>/\u2028\u2029]/g,
+    ch => UNSAFE_JS_CHARS[ch]!
+  );
+}
+
 export function wrapPluginStreams(
   source: string,
   value: unknown,
   addonName = ""
 ): string {
-  const settings = JSON.stringify(normalizeStreamMiddlewareSettings(value));
-  const formattedAddonName = JSON.stringify(addonName);
+  const settings = toJsLiteral(normalizeStreamMiddlewareSettings(value));
+  const formattedAddonName = toJsLiteral(addonName);
   const formatterSource = renderAioStreamsFormat.toString();
   const unknownValueSource = isUnknownValue.toString();
   const removeUnknownSource = removeUnknownPlaceholders.toString();
   const probeSource = probeStreamUrl.toString();
 
-  const fieldTypes = JSON.stringify(
+  const fieldTypes = toJsLiteral(
     Object.fromEntries(STREAM_FIELD_CATALOG.map(field => [field.key, field.type]))
   );
 
   // Ranked text fields (quality, encode) sort by their position in the
   // preset list rather than alphabetically.
-  const fieldRanks = JSON.stringify(
+  const fieldRanks = toJsLiteral(
     Object.fromEntries(
       STREAM_FIELD_CATALOG
         .filter(field => field.ranked && field.type !== "number" && field.options)
@@ -527,7 +548,7 @@ export function wrapPluginStreams(
   ${unknownValueSource}
   ${removeUnknownSource}
   const probeStreamUrl = ${probeSource};
-  const unknownQualityLabels = ${JSON.stringify(NUVIO_UNKNOWN_QUALITY_LABELS)};
+  const unknownQualityLabels = ${toJsLiteral(NUVIO_UNKNOWN_QUALITY_LABELS)};
   const fieldTypes = ${fieldTypes};
   const fieldRanks = ${fieldRanks};
   const dateOperators = ["equals", "notEquals", "gt", "gte", "lt", "lte"];

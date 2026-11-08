@@ -6,7 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import { after, before, test } from "node:test";
 import { handleRequest } from "../dist/server.js";
 import { renderAioStreamsFormat } from "../dist/providers/custom-formatter.js";
-import { DEFAULT_STREAM_MIDDLEWARE, normalizeStreamMiddlewareSettings, wrapPluginStreams } from "../dist/providers/stream-middleware.js";
+import { DEFAULT_STREAM_MIDDLEWARE, normalizeStreamMiddlewareSettings, toJsLiteral, wrapPluginStreams } from "../dist/providers/stream-middleware.js";
 
 const commit = "b".repeat(40);
 const sourceManifest = {
@@ -362,7 +362,7 @@ test("builds a combined Nuvio manifest and serves selected files without executi
   const servedPlugin = await pluginResponse.text();
   assert.ok(servedPlugin.startsWith(pluginSource));
   assert.match(servedPlugin, /originalGetStreams/);
-  assert.ok(servedPlugin.includes(`"format":"${middlewareFormat}"`));
+  assert.ok(servedPlugin.includes(`"format":${toJsLiteral(middlewareFormat)}`));
   assert.equal(globalThis.fixturePluginExecuted, undefined);
 
   const secondPluginResponse = await testFetch(fileUrl);
