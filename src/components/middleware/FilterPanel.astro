@@ -9,5 +9,29 @@
     <div id="filter-rules" class="filter-rules"></div>
     <button id="add-stream-filter" class="button button-small" type="button">Add filter</button>
     <p class="field-hint">All rules must match. Use the same stream metadata fields available to sorting and the formatter. Providers do not always supply every field, so each rule says whether to keep or remove a stream whose value is unknown.</p>
+    <div class="probe-options">
+      <h3 class="probe-heading">Playback check</h3>
+      <label class="check probe-check">
+        <input id="probe-enabled" type="checkbox">
+        <span>Remove streams that cannot be played</span>
+      </label>
+      <div id="probe-details" class="probe-details" hidden>
+        <label class="check probe-check">
+          <input id="probe-require-seekable" type="checkbox">
+          <span>Also remove streams that cannot be seeked</span>
+        </label>
+        <label class="probe-timeout">
+          <span>Wait up to</span>
+          <select id="probe-timeout">
+            <option value="3000">3 seconds</option>
+            <option value="5000">5 seconds</option>
+            <option value="8000">8 seconds</option>
+            <option value="12000">12 seconds</option>
+          </select>
+          <span>per stream</span>
+        </label>
+      </div>
+      <p class="field-hint">Nuvio checks each stream's address on your device before showing it. AIOPlugins does not open or play the media. A stream is removed only when the check clearly fails: an error response, a web page instead of video, or a server that ignores byte ranges (which breaks seeking). Streams that time out or cannot be checked are kept. Checking adds a short delay while results load.</p>
+    </div>
   </div>
 </section>

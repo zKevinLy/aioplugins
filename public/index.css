@@ -1056,6 +1056,14 @@ textarea { resize: vertical; line-height: 1.6; }
 
 .filter-rule .filter-unknown-select { min-height: 32px; width: auto; padding-block: 4px; font-size: 12px; }
 
+/* Playback check */
+.probe-options { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
+.probe-heading { margin: 0 0 4px; font-size: 14px; font-weight: 600; }
+.probe-check { margin: 10px 0; }
+.probe-details { margin-left: 24px; }
+.probe-timeout { display: flex; align-items: center; gap: 10px; margin: 10px 0 14px; color: var(--muted); font-size: 12px; }
+.probe-timeout select { width: auto; min-height: 32px; padding-block: 4px; font-size: 12px; }
+
 .sort-levels { display: grid; gap: 12px; margin-bottom: 16px; }
 .sort-empty { margin: 0 0 12px; }
 

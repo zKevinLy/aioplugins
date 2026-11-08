@@ -3,6 +3,7 @@
 import type {
   StreamFieldDefinition,
   StreamFilter,
+  StreamProbeSettings,
   StreamSort
 } from "../../providers/stream-middleware.js";
 
@@ -48,6 +49,7 @@ export interface SavedProfile {
 export interface MiddlewareSettings {
   filters: StreamFilter[];
   sorts: StreamSort[];
+  probe: StreamProbeSettings;
   nameFormat: string;
   descriptionFormat: string;
 }

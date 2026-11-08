@@ -1,7 +1,14 @@
 
 import { renderAioStreamsFormat } from "./custom-formatter.js";
+import { probeStreamUrl } from "./stream-probe.js";
 import { isUnknownValue, removeUnknownPlaceholders } from "./unknown-values.js";
-import { MAX_FILTERS, MAX_SORTS } from "../lib/middleware-limits.js";
+import {
+  DEFAULT_PROBE_SETTINGS,
+  MAX_FILTERS,
+  MAX_PROBE_TIMEOUT_MS,
+  MAX_SORTS,
+  MIN_PROBE_TIMEOUT_MS
+} from "../lib/middleware-limits.js";
 import {
   DEFAULT_STREAM_DESCRIPTION_FORMAT,
   DEFAULT_STREAM_NAME_FORMAT
@@ -160,9 +167,24 @@ export interface StreamSort {
   unknown: UnknownSortPlacement;
 }
 
+/**
+ * Optional check that runs inside Nuvio and drops streams whose URL clearly
+ * cannot be played. AIOPlugins never plays or fetches the media itself.
+ */
+export interface StreamProbeSettings {
+  enabled: boolean;
+  /** Also drop streams whose server ignores byte-range requests. */
+  requireSeekable: boolean;
+  /** How long to wait for each URL before keeping the stream unchecked. */
+  timeoutMs: number;
+}
+
+export const DEFAULT_STREAM_PROBE: StreamProbeSettings = DEFAULT_PROBE_SETTINGS;
+
 export interface StreamMiddlewareSettings {
   filters: StreamFilter[];
   sorts: StreamSort[];
+  probe: StreamProbeSettings;
   nameFormat: string;
   descriptionFormat: string;
   format: string;
@@ -172,6 +194,7 @@ export interface StreamMiddlewareSettings {
 export const DEFAULT_STREAM_MIDDLEWARE: StreamMiddlewareSettings = {
   filters: [],
   sorts: [],
+  probe: DEFAULT_STREAM_PROBE,
   nameFormat: DEFAULT_STREAM_NAME_FORMAT,
   descriptionFormat: DEFAULT_STREAM_DESCRIPTION_FORMAT,
   format: DEFAULT_STREAM_DESCRIPTION_FORMAT,
@@ -371,6 +394,21 @@ export function normalizeStreamMiddlewareSettings(
     if (sorts.length === MAX_SORTS) break;
   }
 
+  const rawProbe =
+    candidate.probe && typeof candidate.probe === "object" && !Array.isArray(candidate.probe)
+      ? candidate.probe as Record<string, unknown>
+      : {};
+
+  const requestedTimeout = Number(rawProbe.timeoutMs);
+
+  const probe: StreamProbeSettings = {
+    enabled: rawProbe.enabled === true,
+    requireSeekable: rawProbe.requireSeekable !== false,
+    timeoutMs: Number.isFinite(requestedTimeout) && rawProbe.timeoutMs !== null && rawProbe.timeoutMs !== ""
+      ? Math.min(MAX_PROBE_TIMEOUT_MS, Math.max(MIN_PROBE_TIMEOUT_MS, Math.round(requestedTimeout)))
+      : DEFAULT_STREAM_PROBE.timeoutMs
+  };
+
   const requestedNameFormat = typeof candidate.nameFormat === "string"
     ? candidate.nameFormat.trim()
     : "";
@@ -426,6 +464,7 @@ export function normalizeStreamMiddlewareSettings(
   return {
     filters,
     sorts,
+    probe,
     nameFormat,
     descriptionFormat,
     format: descriptionFormat,
@@ -443,6 +482,7 @@ export function wrapPluginStreams(
   const formatterSource = renderAioStreamsFormat.toString();
   const unknownValueSource = isUnknownValue.toString();
   const removeUnknownSource = removeUnknownPlaceholders.toString();
+  const probeSource = probeStreamUrl.toString();
 
   const fieldTypes = JSON.stringify(
     Object.fromEntries(STREAM_FIELD_CATALOG.map(field => [field.key, field.type]))
@@ -466,6 +506,7 @@ export function wrapPluginStreams(
   const renderAioStreamsFormat = ${formatterSource};
   ${unknownValueSource}
   ${removeUnknownSource}
+  const probeStreamUrl = ${probeSource};
   const fieldTypes = ${fieldTypes};
   const fieldRanks = ${fieldRanks};
   const dateOperators = ["equals", "notEquals", "gt", "gte", "lt", "lte"];
@@ -730,7 +771,7 @@ export function wrapPluginStreams(
         .trim();
     };
 
-    const streams = result
+    const candidates = result
       .filter(stream => stream && typeof stream === "object")
       .map((stream, index) => {
         const normalized = { ...stream };
@@ -794,6 +835,45 @@ export function wrapPluginStreams(
       .filter(item =>
         config.filters.every(filter => filterMatches(item.source, filter))
       );
+
+    // Drops streams whose URL clearly cannot be played (or, if asked, seeked).
+    // The probe runs here, in Nuvio; AIOPlugins never plays the media. Streams
+    // the probe cannot judge (timeouts, network errors, no http URL) are kept.
+    const probeHeaders = stream =>
+      stream.headers ?? stream.behaviorHints?.proxyHeaders?.request ?? null;
+
+    const dropUnplayable = async items => {
+      const { requireSeekable, timeoutMs } = config.probe;
+      const deadline = Date.now() + timeoutMs * 3;
+      const probes = new Map();
+      const outcomes = new Array(items.length).fill(null);
+      let next = 0;
+
+      const worker = async () => {
+        while (next < items.length) {
+          const position = next++;
+          const url = items[position].source.url;
+          if (typeof url !== "string" || Date.now() >= deadline) continue;
+
+          if (!probes.has(url)) {
+            probes.set(url, probeStreamUrl(url, probeHeaders(items[position].source), timeoutMs));
+          }
+
+          outcomes[position] = await probes.get(url);
+        }
+      };
+
+      await Promise.all(Array.from({ length: Math.min(8, items.length) }, worker));
+
+      return items.filter((_item, position) => {
+        const outcome = outcomes[position];
+        if (!outcome) return true;
+        if (outcome.playable === false) return false;
+        return !(requireSeekable && outcome.seekable === false);
+      });
+    };
+
+    const streams = config.probe.enabled ? await dropUnplayable(candidates) : candidates;
 
     const isTrue = value =>
       value === true || value === 1 || String(value).toLowerCase() === "true";

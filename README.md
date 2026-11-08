@@ -181,6 +181,31 @@ The formatter has separate stream-name and description templates:
 -   Filtering and sorting use provider metadata, not the formatted
     display text.
 
+**Playback check (optional).** Under *Stream filters*, "Remove streams that
+cannot be played" adds a check to the generated plugin file. The check runs
+inside Nuvio, on the viewer's device, after the provider returns its streams:
+for each `http(s)` stream URL it sends one small `Range: bytes=0-31` request,
+using the stream's own headers, and reads only those first bytes. AIOPlugins
+does not open, play, or proxy the media, and the check adds no AIOPlugins
+server requests.
+
+-   A stream is removed when the check clearly fails: a 4xx response
+    (other than 408, 425, and 429), an empty response, an HTML, JSON, or
+    XML response, or a body that starts like a web page instead of media.
+-   With "Also remove streams that cannot be seeked" (on by default), a
+    stream is also removed when the server ignores byte ranges, which
+    breaks seeking. HLS playlists are exempt because they seek by segment.
+-   A stream is kept, not removed, when the check cannot decide: timeouts,
+    network errors, 5xx responses, rate limits, non-HTTP addresses such as
+    magnet links, or a plugin runtime without `fetch`.
+-   Each distinct URL is checked once, up to eight at a time, and the wait
+    per stream is configurable (3 to 12 seconds). Checking adds a delay
+    while results load, so the option is off by default.
+
+This is a best-effort heuristic. A host can answer a probe differently from
+Nuvio's player (for example, by user agent), so a stream can still fail to
+play after passing, or occasionally be removed although it would have played.
+
 AIOPlugins middleware processes the array returned by each plugin's
 `getStreams` method. Nuvio remains responsible for plugin execution,
 plugin setting storage, debrid services, and playback.

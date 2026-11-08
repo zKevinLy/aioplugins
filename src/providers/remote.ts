@@ -13,7 +13,7 @@ const MAX_JSON_BYTES = 2 * 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 15_000;
 const GITHUB_MAX_ATTEMPTS = 2;
 const GITHUB_RETRY_DELAY_MS = 250;
-const STREAM_MIDDLEWARE_VERSION = "16";
+const STREAM_MIDDLEWARE_VERSION = "17";
 
 const GITHUB_RAW = "https://raw.githubusercontent.com";
 const GITHUB_WEB = "https://github.com";

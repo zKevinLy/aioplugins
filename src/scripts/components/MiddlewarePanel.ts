@@ -4,6 +4,7 @@ import { $$ } from "../core/dom.js";
 import { viewStore } from "../state/view.js";
 import { mountFilterEditor } from "./middleware/FilterEditor.js";
 import { mountFormatterEditor } from "./middleware/FormatterEditor.js";
+import { mountProbeEditor } from "./middleware/ProbeEditor.js";
 import { mountSortControls } from "./middleware/SortControls.js";
 
 function renderTabs(): void {
@@ -16,6 +17,7 @@ function renderTabs(): void {
 
 export function mountMiddlewarePanel(): void {
   mountFilterEditor();
+  mountProbeEditor();
   mountSortControls();
   mountFormatterEditor();
 
