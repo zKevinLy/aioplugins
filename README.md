@@ -272,24 +272,9 @@ Earlier versions wrote the description to `title` by default and offered a
 left its cards with only a resolution; the setting is gone and saved values are
 ignored.
 
-**Badges.** Nuvio draws a chip for each imported badge rule whose regular
-expression matches a stream's name, title or description. AIOPlugins serves a
-ready-made pack of 36 rules (resolution, HDR and Dolby Vision, audio formats and
-channels, source, codec, extras) at `/badges.json`, with images in
-`/badges/`. In Nuvio, import `https://<your-host>/badges.json` in the stream
-badge settings. The URL is public and identical for everyone. Badges match
-the formatted text, so a token that your templates leave out cannot produce a
-badge. Both clients match only name, title and description (plus filename hints), so
-keep the resolution in your name or description template if you want its badge. The
-file-size chip needs `behaviorHints.videoSize`, which neither client reads from
-plugin results (only from Stremio addon streams); put `📦 {stream.size::sbytes}`
-in the description template to show the size as text.
-
-Regenerate the badge images after editing `src/providers/badge-pack.ts`:
-
-``` sh
-python3 scripts/generate-badges.py   # needs Pillow
-```
+**Stream size.** Neither client reads `behaviorHints.videoSize` from plugin
+results (only from Stremio addon streams); put `📦 {stream.size::sbytes}` in the
+description template to show the size as text.
 
 ## Architecture
 

@@ -1,16 +1,14 @@
 // Checks AIOPlugins output against Nuvio's own consumers. The helpers below are
 // ports of the Kotlin that reads plugin output.
 //   Nuvio TV:      PluginRuntime.parseJsonResults, StreamRepositoryImpl.toPluginStream /
-//                  buildDescription, Stream.getDisplayDescription, StreamBadgeMatcher.
+//                  buildDescription, Stream.getDisplayDescription.
 //   Nuvio Desktop: PluginRuntime.parseJsonResults, PluginRuntimeResult.toStreamItem,
-//                  StreamItem.streamLabel / streamSubtitle, StreamBadgeMatcher.
+//                  StreamItem.streamLabel / streamSubtitle.
 // If either client changes them, update the ports and these tests.
 
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
 import { test } from "node:test";
 import { normalizeVersion } from "../dist/lib/app-info.js";
-import { BADGE_DEFINITIONS, BADGE_GROUPS, buildBadgePack } from "../dist/providers/badge-pack.js";
 import {
   buildNuvioManifest,
   pluginVersion,
@@ -285,63 +283,4 @@ test("version strings are validated", () => {
   assert.equal(normalizeVersion("1.2"), null);
   assert.equal(normalizeVersion("latest"), null);
   assert.equal(normalizeVersion(4), null);
-});
-
-// ---------- badges ----------
-
-/** Nuvio compiles with java.util.regex; `(?i)` is the only inline flag used here. */
-const compile = (pattern) => new RegExp(pattern.replace(/^\(\?i\)/, ""), pattern.startsWith("(?i)") ? "i" : "");
-
-const matchedBadges = (text) =>
-  BADGE_DEFINITIONS.filter((badge) => compile(badge.pattern).test(text.replace(/\s+/g, " "))).map((badge) => badge.id);
-
-test("every badge pattern is valid and has an image and a group", () => {
-  const groups = new Set(BADGE_GROUPS.map((group) => group.id));
-  const ids = new Set();
-
-  for (const badge of BADGE_DEFINITIONS) {
-    assert.ok(!ids.has(badge.id), `duplicate ${badge.id}`);
-    ids.add(badge.id);
-    assert.ok(groups.has(badge.group), `${badge.id} group`);
-    const hasLetters = /[a-z]/i.test(badge.pattern.replace(/\\./g, "").replace(/\\b/g, ""));
-    assert.ok(badge.pattern.startsWith("(?i)") || !hasLetters, `${badge.id} needs (?i): Nuvio compiles patterns case-sensitively`);
-    assert.doesNotThrow(() => compile(badge.pattern), badge.id);
-    assert.ok(existsSync(new URL(`../public/badges/${badge.id}.png`, import.meta.url)), `${badge.id}.png`);
-  }
-});
-
-test("badge JSON matches the shape Nuvio imports", () => {
-  const pack = buildBadgePack("https://aio.test", "0.4.0");
-
-  assert.ok(pack.groups.every((group) => group.id && group.name));
-  for (const filter of pack.filters) {
-    assert.ok(filter.name && filter.pattern, "Nuvio drops filters without a name or pattern");
-    assert.match(filter.imageURL, /^https:\/\/aio\.test\/badges\/[\w-]+\.png$/);
-    assert.equal(filter.isEnabled, true);
-  }
-});
-
-test("badges match what the default formatter prints for a loaded release", async () => {
-  const [stream] = await run(provider);
-  const shown = matchedBadges(`${stream.name} ${stream.description}`);
-
-  for (const id of ["res-4k", "hdr-dv", "hdr-hdr10plus", "audio-truehd", "audio-atmos", "audio-71", "src-bluray", "codec-hevc"]) {
-    assert.ok(shown.includes(id), `${id} should match "${stream.name} ${stream.description}"`);
-  }
-});
-
-test("similar tokens do not trigger each other's badges", () => {
-  assert.deepEqual(matchedBadges("HDR10+").filter((id) => id.startsWith("hdr")), ["hdr-hdr10plus"]);
-  assert.deepEqual(matchedBadges("HDR10").filter((id) => id.startsWith("hdr")), ["hdr-hdr10"]);
-  assert.deepEqual(matchedBadges("HDR").filter((id) => id.startsWith("hdr")), ["hdr-hdr"]);
-  assert.ok(!matchedBadges("DTS-HD MA 5.1").includes("audio-dts"));
-  assert.ok(matchedBadges("DTS-HD MA 5.1").includes("audio-dtshd"));
-  assert.ok(matchedBadges("DTS 5.1").includes("audio-dts"));
-  assert.ok(!matchedBadges("2160p UHD HDR").includes("res-720p"));
-  assert.ok(matchedBadges("💿 HD").includes("res-720p"));
-  assert.ok(matchedBadges("DDP5.1 Atmos").includes("audio-ddp"));
-  assert.ok(!matchedBadges("DDP5.1").includes("audio-dd"));
-  assert.ok(matchedBadges("DD5.1").includes("audio-dd"));
-  assert.ok(matchedBadges("Movie WEB-DL x264").includes("src-webdl"));
-  assert.ok(!matchedBadges("Movie WEB-DL x264").includes("src-webrip"));
 });

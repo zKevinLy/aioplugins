@@ -107,19 +107,6 @@ export function mountReviewPanel(): void {
       : "Clipboard access is unavailable.";
   };
 
-  const badgesUrl = `${location.origin}/badges.json`;
-  $("#badges-url").textContent = badgesUrl;
-
-  const copyBadges = async () => {
-    const copied = await copyText(badgesUrl);
-    $("#badges-feedback").textContent = copied
-      ? "Copied! Import this URL in Nuvio's stream badge settings."
-      : "Clipboard access is unavailable.";
-  };
-
-  $("#badges-url").addEventListener("click", () => void copyBadges());
-  $("#copy-badges-url").addEventListener("click", () => void copyBadges());
-
   $("#plugin-url").addEventListener("click", () => void copyUrl());
   $("#copy-plugin-url").addEventListener("click", () => void copyUrl());
 

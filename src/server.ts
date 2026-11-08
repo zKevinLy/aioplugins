@@ -14,7 +14,6 @@ import {
   type SavedSourceSelection
 } from "./providers/remote.js";
 import { loadAppVersion } from "./lib/app-info.js";
-import { buildBadgePack } from "./providers/badge-pack.js";
 import { renderAioStreamsFormat } from "./providers/custom-formatter.js";
 import { removeUnknownPlaceholders } from "./providers/unknown-values.js";
 import {
@@ -662,18 +661,6 @@ async function routeRequest(
       status: "ok",
       version: await loadAppVersion(platform, url.origin)
     });
-  }
-
-  // Nuvio stream badge rules: import this URL in Nuvio's stream badge settings.
-  if (url.pathname === "/badges.json") {
-    return sendJson(
-      200,
-      buildBadgePack(url.origin, await loadAppVersion(platform, url.origin)),
-      {
-        ...PUBLIC_CORS,
-        "cache-control": "public, max-age=3600"
-      }
-    );
   }
 
   const manifestMatch = url.pathname.match(

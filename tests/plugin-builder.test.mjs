@@ -335,7 +335,7 @@ test("builds a combined Nuvio manifest and serves selected files without executi
 
   // The deployed AIOPlugins version is surfaced where Nuvio can show it.
   assert.equal(manifest.version, "1.2.3");
-  assert.match(manifest.name, /^AIOPlugins v1\.2\.3 · /);
+  assert.equal(manifest.name, "AIOPlugins");
   assert.equal(manifest.author, "AIOPlugins");
   assert.match(manifest.description, /AIOPlugins v1\.2\.3: 1 plugin from 1 source/);
   assert.equal(manifest.scrapers[0].version, "1.0.0+aio.1.2.3");
@@ -348,7 +348,7 @@ test("builds a combined Nuvio manifest and serves selected files without executi
   versionJson = undefined;
   const devManifest = await testFetch(manifestUrl).then((response) => response.json());
   assert.equal(devManifest.version, "0.0.0-dev");
-  assert.match(devManifest.name, /^AIOPlugins dev · /);
+  assert.equal(devManifest.name, "AIOPlugins");
   assert.equal(devManifest.scrapers[0].version, "1.0.0+aio.dev");
   versionJson = JSON.stringify({ version: "v1.2.3" });
   assert.match(manifest.scrapers[0].filename, /^providers\/example-plugins-fixture-plugin-[a-f0-9]{10}\.js$/);
@@ -404,17 +404,6 @@ test("builds a combined Nuvio manifest and serves selected files without executi
 
   const health = await testFetch("/health").then((response) => response.json());
   assert.deepEqual(health, { status: "ok", version: "1.2.3" });
-
-  // The stream badge pack is public and importable by Nuvio.
-  const badgeResponse = await testFetch("/badges.json");
-  assert.equal(badgeResponse.status, 200);
-  assert.equal(badgeResponse.headers.get("access-control-allow-origin"), "*");
-  const pack = await badgeResponse.json();
-  assert.ok(pack.filters.length >= 30);
-  assert.ok(pack.filters.every((filter) => filter.imageURL.startsWith(`${BASE_URL}/badges/`)));
-  const chip = await testFetch(new URL(pack.filters[0].imageURL).pathname);
-  assert.equal(chip.status, 200);
-  assert.equal(chip.headers.get("content-type"), "image/png");
 });
 
 test("retries transient GitHub failures during source discovery", async () => {
