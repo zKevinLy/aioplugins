@@ -253,6 +253,20 @@ h1 {
 
 .sidebar-divider { height: 1px; margin: 0 6px; background: var(--line); }
 
+.sidebar-version {
+  margin: auto 4px 0;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Higher specificity than the rule above, so it wins wherever it sits. */
+.sidebar.is-collapsed .sidebar-version { display: none; }
+
+.about-page-version { margin-left: 6px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.about-page-version:not([hidden])::before { content: "\00b7"; margin-right: 6px; }
+
 .sidebar-note {
   margin: auto 4px 0;
   padding: 12px 14px;

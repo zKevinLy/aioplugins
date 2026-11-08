@@ -12,6 +12,7 @@ import { mountReviewPanel } from "./components/ReviewPanel.js";
 import { onUnauthorized } from "./core/api.js";
 import { onReady } from "./core/dom.js";
 import { setStatus } from "./core/status.js";
+import { showVersion } from "./services/version.js";
 import { leaveWorkspace, restoreSession } from "./services/session.js";
 import { userStore } from "./state/session.js";
 
@@ -33,6 +34,7 @@ function start(): void {
   });
 
   void restoreSession();
+  void showVersion();
 }
 
 onReady(start);
