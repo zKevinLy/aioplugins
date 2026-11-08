@@ -5,6 +5,7 @@ import {
   normalizeStreamMiddlewareSettings,
   wrapPluginStreams
 } from "./stream-middleware.js";
+import { buildNuvioManifest } from "./nuvio-manifest.js";
 
 type MediaType = "movie" | "series";
 
@@ -13,7 +14,7 @@ const MAX_JSON_BYTES = 2 * 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 15_000;
 const GITHUB_MAX_ATTEMPTS = 2;
 const GITHUB_RETRY_DELAY_MS = 250;
-const STREAM_MIDDLEWARE_VERSION = "17";
+export const STREAM_MIDDLEWARE_VERSION = "18";
 
 const GITHUB_RAW = "https://raw.githubusercontent.com";
 const GITHUB_WEB = "https://github.com";
@@ -589,21 +590,34 @@ async function getRemotePluginFiles(
 export async function getPluginRepositoryManifest(
   userId: string,
   sources: SavedSourceSelection[],
-  middlewareSettings: unknown
+  middlewareSettings: unknown,
+  context: { appVersion: string; origin: string }
 ) {
   const plugins = await getRemotePluginFiles(sources, middlewareSettings);
 
-  const scrapers = plugins.map(({ entry, filename }) => ({
-    ...entry,
-    enabled: true,
-    filename
-  }));
+  return buildNuvioManifest({
+    userId,
+    appVersion: context.appVersion,
+    origin: context.origin,
+    middlewareVersion: STREAM_MIDDLEWARE_VERSION,
+    plugins: plugins.map(({ entry, filename, owner, repo, commit }) => ({
+      entry: entry as Record<string, unknown>,
+      filename,
+      owner,
+      repo,
+      commit
+    }))
+  });
+}
 
-  return {
-    name: `AIOPlugins - ${userId.slice(0, 8)}`,
-    version: "1.0.0",
-    scrapers
-  };
+/** True when the file belongs to this selection. Never contacts GitHub. */
+export async function hasRemotePluginFile(
+  sources: SavedSourceSelection[],
+  filename: string,
+  middlewareSettings: unknown
+): Promise<boolean> {
+  const plugins = await getRemotePluginFiles(sources, middlewareSettings);
+  return plugins.some(entry => entry.filename === filename);
 }
 
 export async function getRemotePluginFile(

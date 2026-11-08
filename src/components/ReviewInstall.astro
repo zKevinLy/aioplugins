@@ -72,6 +72,25 @@ import ProfilesPanel from './ProfilesPanel.astro';
                   </p>
                 </div>
 
+                <div>
+                  <p class="output-label">Stream badges for Nuvio (optional)</p>
+
+                  <div class="copy-row">
+                    <button id="badges-url" class="addon-url" type="button"
+                      title="Copy stream badge URL">
+                      Loading…
+                    </button>
+
+                    <button id="copy-badges-url" class="button" type="button">
+                      Copy URL
+                    </button>
+                  </div>
+
+                  <p id="badges-feedback" class="output-hint" aria-live="polite">
+                    Adds resolution, HDR, audio, source and codec chips to your streams. In Nuvio, import this URL under stream badge settings. It is public and the same for everyone.
+                  </p>
+                </div>
+
                 <div class="install-instructions">
                   <h3>How to install</h3>
                   <ol>
@@ -79,6 +98,7 @@ import ProfilesPanel from './ProfilesPanel.astro';
                     <li>Copy your private repository URL.</li>
                     <li>Open Nuvio and go to its plugin source settings.</li>
                     <li>Add your copied URL as a plugin source.</li>
+                    <li>Optional: import the stream badge URL in Nuvio's stream badge settings.</li>
                   </ol>
                 </div>
               </div>

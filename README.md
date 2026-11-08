@@ -118,7 +118,8 @@ Request limits:
 The combined manifest uses Nuvio's `scrapers` format. AIOPlugins
 preserves source metadata such as plugin names, descriptions, supported
 types, logos, and settings flags, and rewrites each selected `filename`
-to a file served by AIOPlugins.
+to a file served by AIOPlugins. See [Nuvio compatibility](#nuvio-compatibility)
+for exactly what Nuvio receives.
 
 Nuvio continues to render and store each plugin's native settings.
 AIOPlugins wraps each selected plugin's `getStreams` result at request
@@ -174,10 +175,12 @@ available only when supplied by the provider.
 The formatter has separate stream-name and description templates:
 
 -   The short name is written to `name`.
--   The detailed description is written to `description`, `title`, and
-    `size`, because Nuvio's local-plugin runtime uses `size` for its
-    visible stream details.
--   Parsed byte counts are preserved in `fileSize`.
+-   The detailed description is written to `title` and `description`. A
+    setting, *Show the description in*, can also write it to `size` for older
+    Nuvio builds (see [Nuvio compatibility](#nuvio-compatibility)).
+-   The parsed byte count is kept as `behaviorHints.videoSize` and
+    `fileSize`; the provider's own `size` text is never shown next to or
+    instead of your description.
 -   Filtering and sorting use provider metadata, not the formatted
     display text.
 
@@ -209,6 +212,73 @@ play after passing, or occasionally be removed although it would have played.
 AIOPlugins middleware processes the array returned by each plugin's
 `getStreams` method. Nuvio remains responsible for plugin execution,
 plugin setting storage, debrid services, and playback.
+
+## Nuvio compatibility
+
+Nuvio reads a plugin repository into strictly typed classes, and it keeps only
+a few fields of what a plugin returns. AIOPlugins is built around what Nuvio
+actually reads.
+
+**Version.** The release workflow writes the deployed tag to
+`/version.json`; the Worker reads the same file, so every surface agrees:
+
+-   Manifest `version` is the AIOPlugins version (`0.0.0-dev` locally).
+-   Manifest `name` is `AIOPlugins v1.2.3 · <account prefix>`. Nuvio shows the
+    repository name on the plugin screen and, with *group streams by
+    repository*, on each stream card, so this is where the version is visible.
+-   Each plugin's `version` keeps the upstream version and appends build
+    metadata: `1.4.0+aio.1.2.3`. Nuvio lists it as "Version 1.4.0+aio.1.2.3".
+    Semantic-version precedence ignores build metadata, so comparisons still
+    work.
+-   `GET /health` reports the version, and each plugin carries an
+    `aioplugins` block with the version, middleware revision, source
+    repository and pinned commit.
+
+**Manifest validity.** Every upstream entry is coerced to the types Nuvio
+requires, so one odd upstream value (a numeric `version`, `"supportedTypes":
+null`, a string where a list belongs) cannot make Nuvio reject the whole
+repository. Unknown upstream keys are kept. `description`, `author`, `logo`
+and `homepage` are set on the repository. `HEAD` requests, which Nuvio sends
+before downloading each plugin, are answered without contacting GitHub.
+
+**Logo.** A plugin's `logo` is always an absolute URL: an upstream absolute URL
+is kept, a relative path resolves against the upstream repository at the pinned
+commit, and anything missing or unusable falls back to the AIOPlugins icon.
+
+**Stream fields.** Nuvio's card shows the stream `name`, then `size` and
+`language` when either exists, and falls back to `title` only when both are
+missing. Nuvio also appends " - Unknown" to the name when `quality` is empty.
+So the wrapper:
+
+-   always sends a `quality` (canonical resolution such as `1080p`, then the
+    provider's label, then `Unknown`), which stops the " - Unknown" suffix;
+-   removes the provider's `size` and `language`, which would otherwise hide
+    your description or print the language twice, and shows the description
+    through `title`;
+-   sends the real file size as `behaviorHints.videoSize` and the filename as
+    `behaviorHints.filename` (Stremio's standard hints) for Nuvio versions that
+    read them;
+-   keeps headers, subtitles, audio delay hints and other provider fields.
+
+If your Nuvio build shows only the name and no details, set *Show the
+description in* to the size field under **Filters → Formatter**. That restores
+the earlier behavior of writing the description to `size`.
+
+**Badges.** Nuvio draws a chip for each imported badge rule whose regular
+expression matches a stream's name, title or description. AIOPlugins serves a
+ready-made pack of 36 rules (resolution, HDR and Dolby Vision, audio formats and
+channels, source, codec, extras) at `/badges.json`, with images in
+`/badges/`. In Nuvio, import `https://<your-host>/badges.json` in the stream
+badge settings. The URL is public and identical for everyone. Badges match
+the formatted text, so a token that your templates leave out cannot produce a
+badge. Nuvio's file-size chip needs `behaviorHints.videoSize`, which Nuvio does
+not yet read from plugins.
+
+Regenerate the badge images after editing `src/providers/badge-pack.ts`:
+
+``` sh
+python3 scripts/generate-badges.py   # needs Pillow
+```
 
 ## Architecture
 

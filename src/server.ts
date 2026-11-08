@@ -8,10 +8,13 @@ import type { Platform } from "./lib/platform.js";
 import {
   getRemotePluginFile,
   getPluginRepositoryManifest,
+  hasRemotePluginFile,
   inspectGitHubSource,
   resolveSelectedSources,
   type SavedSourceSelection
 } from "./providers/remote.js";
+import { loadAppVersion } from "./lib/app-info.js";
+import { buildBadgePack } from "./providers/badge-pack.js";
 import { renderAioStreamsFormat } from "./providers/custom-formatter.js";
 import { removeUnknownPlaceholders } from "./providers/unknown-values.js";
 import {
@@ -580,6 +583,24 @@ export async function handleRequest(
   request: Request,
   platform: Platform
 ): Promise<Response> {
+  const response = await routeRequest(request, platform);
+
+  // HEAD gets the headers GET would send, without a body.
+  if (request.method === "HEAD") {
+    return new Response(null, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers
+    });
+  }
+
+  return response;
+}
+
+async function routeRequest(
+  request: Request,
+  platform: Platform
+): Promise<Response> {
   let url: URL;
 
   try {
@@ -628,16 +649,31 @@ export async function handleRequest(
     }
   }
 
-  if (request.method !== "GET") {
+  const isHead = request.method === "HEAD";
+
+  if (request.method !== "GET" && !isHead) {
     return sendJson(405, {
       error: "Method not allowed"
-    });
+    }, { allow: "GET, HEAD" });
   }
 
   if (url.pathname === "/health") {
     return sendJson(200, {
-      status: "ok"
+      status: "ok",
+      version: await loadAppVersion(platform, url.origin)
     });
+  }
+
+  // Nuvio stream badge rules: import this URL in Nuvio's stream badge settings.
+  if (url.pathname === "/badges.json") {
+    return sendJson(
+      200,
+      buildBadgePack(url.origin, await loadAppVersion(platform, url.origin)),
+      {
+        ...PUBLIC_CORS,
+        "cache-control": "public, max-age=3600"
+      }
+    );
   }
 
   const manifestMatch = url.pathname.match(
@@ -664,7 +700,11 @@ export async function handleRequest(
       const manifest = await getPluginRepositoryManifest(
         user.id,
         sources,
-        middleware
+        middleware,
+        {
+          appVersion: await loadAppVersion(platform, url.origin),
+          origin: url.origin
+        }
       );
 
       return sendJson(200, manifest, PUBLIC_CORS);
@@ -706,6 +746,22 @@ export async function handleRequest(
       const config = user
         ? await getUserConfig(user.id, platform.db)
         : null;
+
+      // Nuvio checks the size of a plugin with HEAD before downloading it.
+      // Answer without fetching and wrapping the file just to count its bytes.
+      if (isHead) {
+        const known = config
+          ? await hasRemotePluginFile(
+              config.sources,
+              `providers/${filename}`,
+              config.middleware
+            )
+          : false;
+
+        return known
+          ? sendText(200, "", "application/javascript; charset=utf-8", PUBLIC_CORS)
+          : sendJson(404, { error: "Not found" }, PUBLIC_CORS);
+      }
 
       const source = config
         ? await getRemotePluginFile(

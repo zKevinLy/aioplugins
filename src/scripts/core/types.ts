@@ -1,6 +1,7 @@
 // Shapes shared by the browser modules. They mirror the JSON the server sends.
 
 import type {
+  DetailField,
   StreamFieldDefinition,
   StreamFilter,
   StreamProbeSettings,
@@ -52,6 +53,7 @@ export interface MiddlewareSettings {
   probe: StreamProbeSettings;
   nameFormat: string;
   descriptionFormat: string;
+  detailField: DetailField;
 }
 
 /** Everything the server knows about a signed-in user. */

@@ -1,0 +1,310 @@
+// Checks AIOPlugins output against Nuvio's own consumers. The helpers below are
+// ports of the Kotlin that reads plugin output: PluginRuntime.parseJsonResults,
+// StreamRepositoryImpl.toPluginStream/buildDescription, Stream.getDisplayDescription
+// and StreamBadgeMatcher. If Nuvio changes them, update the ports and these tests.
+
+import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
+import { test } from "node:test";
+import { normalizeVersion } from "../dist/lib/app-info.js";
+import { BADGE_DEFINITIONS, BADGE_GROUPS, buildBadgePack } from "../dist/providers/badge-pack.js";
+import {
+  buildNuvioManifest,
+  pluginVersion,
+  resolveLogo,
+  sanitizeScraper
+} from "../dist/providers/nuvio-manifest.js";
+import { DEFAULT_STREAM_MIDDLEWARE, wrapPluginStreams } from "../dist/providers/stream-middleware.js";
+
+// ---------- ports of Nuvio's consumers ----------
+
+const clean = (value) => {
+  const text = value == null ? undefined : String(value);
+  return text !== undefined && !text.includes("[object") ? text : undefined;
+};
+
+/** PluginRuntime.parseJsonResults (the fields Nuvio keeps). */
+function nuvioParse(item) {
+  const hints = item.behaviorHints && typeof item.behaviorHints === "object" ? item.behaviorHints : {};
+  return {
+    title: clean(item.title) ?? clean(item.name) ?? "Unknown",
+    name: clean(item.name),
+    url: item.url,
+    quality: clean(item.quality),
+    size: clean(item.size),
+    language: clean(item.language),
+    provider: clean(item.provider),
+    type: clean(item.type),
+    audioDelayMs: typeof hints.audioDelayMs === "number" ? hints.audioDelayMs : undefined
+  };
+}
+
+/** Kotlin data class toString: every field, as name=value. */
+const dataClassToString = (result) =>
+  `LocalScraperResult(${Object.entries(result).map(([key, value]) => `${key}=${value ?? "null"}`).join(", ")})`;
+
+/** StreamRepositoryImpl.toPluginStream + Stream.getDisplayDescription. */
+function nuvioCard(result, scraperName = "Scraper") {
+  const quality = result.quality?.trim() || undefined;
+  const qualityLabel = quality ?? "Unknown";
+  const baseTitle = result.title.trim() || undefined;
+  const baseName = result.name?.trim() || undefined;
+
+  let name = baseName ?? baseTitle ?? scraperName;
+  if (!dataClassToString(result).includes(qualityLabel)) name += ` - ${qualityLabel}`;
+
+  const title = baseTitle ?? baseName ?? scraperName;
+  const parts = [result.size, result.language].filter((part) => part !== undefined);
+  const description = parts.length > 0 ? parts.join(" • ") : undefined;
+
+  return { name, title, description, shownDescription: description ?? title };
+}
+
+async function run(source, settings = {}) {
+  const module = { exports: {} };
+  new Function("module", "exports", wrapPluginStreams(source, { ...DEFAULT_STREAM_MIDDLEWARE, ...settings }))(
+    module,
+    module.exports
+  );
+  return module.exports.getStreams({});
+}
+
+const provider = `module.exports = { getStreams: async () => [
+  { name: "HubCloud", title: "Movie.2023.2160p.BluRay.HEVC.DV.HDR10+.TrueHD.Atmos.7.1-GRP.mkv",
+    url: "https://example.com/a.mkv", quality: "2160p", size: "2.24 GB", language: "English",
+    headers: { Referer: "https://example.com" } },
+  { title: "Unlabelled stream", url: "https://example.com/b.mp4", size: 1500000000 }
+] };`;
+
+// ---------- stream output ----------
+
+test("title mode leaves size and language out so Nuvio shows the formatted description", async () => {
+  const [first] = await run(provider);
+  const parsed = nuvioParse(first);
+  const card = nuvioCard(parsed);
+
+  assert.equal(parsed.size, undefined);
+  assert.equal(parsed.language, undefined);
+  assert.equal(card.description, undefined);
+  assert.equal(card.shownDescription, first.description);
+  assert.match(card.shownDescription, /Movie/);
+  assert.match(card.shownDescription, /📦 2\.2 GB/);
+  assert.equal(card.name, first.name);
+});
+
+test("names never get Nuvio's \" - Unknown\" suffix", async () => {
+  for (const settings of [{}, { detailField: "size" }]) {
+    for (const stream of await run(provider, settings)) {
+      const card = nuvioCard(nuvioParse(stream));
+      assert.ok(stream.quality && stream.quality.trim(), "quality must always be set");
+      assert.doesNotMatch(card.name, / - Unknown$/);
+      assert.equal(card.name, stream.name);
+    }
+  }
+});
+
+test("quality is the canonical resolution, then the provider label, then Unknown", async () => {
+  const streams = await run(`module.exports = { getStreams: async () => [
+    { title: "A 2160p", url: "https://x/a" },
+    { title: "B", quality: "HD", url: "https://x/b" },
+    { title: "C", quality: "Unknown", url: "https://x/c" },
+    { title: "D", quality: "Cinema", url: "https://x/d" }
+  ] };`);
+
+  assert.deepEqual(streams.map((stream) => stream.quality), ["2160p", "720p", "Unknown", "Cinema"]);
+});
+
+test("size mode keeps the old display field for older Nuvio builds", async () => {
+  const [first] = await run(provider, { detailField: "size" });
+  const card = nuvioCard(nuvioParse(first));
+
+  assert.equal(first.size, first.description);
+  assert.equal(first.language, undefined);
+  assert.equal(card.description, first.description);
+});
+
+test("real file size and filename are carried in Stremio's standard hints", async () => {
+  const [first, second] = await run(provider);
+
+  assert.equal(first.behaviorHints.videoSize, 2240000000);
+  assert.equal(first.fileSize, 2240000000);
+  assert.equal(second.behaviorHints.videoSize, 1500000000);
+  assert.match(first.behaviorHints.filename, /^Movie\.2023\.2160p/);
+});
+
+test("provider headers, url and unrelated behavior hints survive", async () => {
+  const [stream] = await run(`module.exports = { getStreams: async () => [
+    { title: "S 1080p", url: "https://x/s", headers: { "User-Agent": "UA" },
+      behaviorHints: { audioDelayMs: 120, audioDelayLanguage: "eng" } }
+  ] };`);
+  const parsed = nuvioParse(stream);
+
+  assert.equal(parsed.url, "https://x/s");
+  assert.equal(stream.headers["User-Agent"], "UA");
+  assert.equal(parsed.audioDelayMs, 120);
+  assert.equal(stream.behaviorHints.audioDelayLanguage, "eng");
+});
+
+// ---------- manifest ----------
+
+const source = { owner: "o", repo: "r", commit: "c".repeat(40) };
+
+/** The types Nuvio's Moshi adapters require for PluginManifest / ScraperManifestInfo. */
+function assertMoshiValid(manifest) {
+  const isStrings = (value) => Array.isArray(value) && value.every((item) => typeof item === "string");
+
+  for (const key of ["name", "version"]) assert.equal(typeof manifest[key], "string", `manifest.${key}`);
+  assert.ok(Array.isArray(manifest.scrapers));
+
+  for (const scraper of manifest.scrapers) {
+    for (const key of ["id", "name", "version", "filename"]) {
+      assert.equal(typeof scraper[key], "string", `scraper.${key}`);
+    }
+    assert.ok(isStrings(scraper.supportedTypes) && scraper.supportedTypes.length > 0);
+    assert.equal(typeof scraper.enabled, "boolean");
+    for (const key of ["contentLanguage", "supportedPlatforms", "disabledPlatforms", "formats", "supportedFormats"]) {
+      assert.ok(scraper[key] === undefined || isStrings(scraper[key]), key);
+    }
+    for (const key of ["supportsExternalPlayer", "limited", "description", "logo"]) {
+      assert.ok(scraper[key] === undefined || ["boolean", "string"].includes(typeof scraper[key]), key);
+    }
+  }
+}
+
+test("hostile upstream entries still produce a manifest Nuvio can parse", () => {
+  const plugins = [
+    { entry: { id: "numeric", version: 3, supportedTypes: null, name: 42, logo: 5, limited: "yes", formats: "mp4" } },
+    { entry: { id: "nulls", name: null, description: null, contentLanguage: [1, null, "en"], enabled: false } },
+    { entry: { id: "plain" } }
+  ].map(({ entry }) => ({ entry, filename: `providers/${entry.id}.js`, ...source }));
+
+  const manifest = buildNuvioManifest({
+    userId: "12345678-aaaa-bbbb-cccc-1234567890ab",
+    appVersion: "0.4.0",
+    origin: "https://aio.test",
+    middlewareVersion: "18",
+    plugins
+  });
+
+  assertMoshiValid(manifest);
+  assert.equal(manifest.scrapers[0].version, "3+aio.0.4.0");
+  assert.equal(manifest.scrapers[0].name, "42");
+  assert.deepEqual(manifest.scrapers[0].supportedTypes, ["movie", "tv"]);
+  assert.equal(manifest.scrapers[0].limited, undefined);
+  assert.equal(manifest.scrapers[0].formats, undefined);
+  assert.deepEqual(manifest.scrapers[1].contentLanguage, ["en"]);
+  assert.equal(manifest.scrapers[1].name, "nulls");
+  assert.equal(manifest.scrapers[2].version, "1.0.0+aio.0.4.0");
+  assert.equal(manifest.scrapers.every((scraper) => scraper.enabled), true);
+});
+
+test("unknown upstream keys are kept and provenance is recorded", () => {
+  const scraper = sanitizeScraper(
+    { entry: { id: "x", name: "X", hasSettings: true, settings: { a: 1 } }, filename: "providers/x.js", ...source },
+    "0.4.0",
+    "https://aio.test",
+    "18"
+  );
+
+  assert.equal(scraper.hasSettings, true);
+  assert.deepEqual(scraper.settings, { a: 1 });
+  assert.deepEqual(scraper.aioplugins, {
+    version: "0.4.0",
+    middleware: "18",
+    source: "o/r",
+    commit: source.commit,
+    upstreamVersion: null
+  });
+});
+
+test("scraper versions carry AIOPlugins build metadata", () => {
+  assert.equal(pluginVersion("1.2.0", "0.4.0"), "1.2.0+aio.0.4.0");
+  assert.equal(pluginVersion("1.2.0+build5", "0.4.0"), "1.2.0+build5.aio.0.4.0");
+  assert.equal(pluginVersion(undefined, "dev"), "1.0.0+aio.dev");
+  assert.equal(pluginVersion(" 2 ", "0.4.0"), "2+aio.0.4.0");
+});
+
+test("logos are absolute, resolved against the pinned commit, or fall back to the AIOPlugins icon", () => {
+  const origin = "https://aio.test";
+  const fallback = "https://aio.test/favicon-192.png";
+
+  assert.equal(resolveLogo("https://cdn.example/l.png", source, origin), "https://cdn.example/l.png");
+  assert.equal(
+    resolveLogo("assets/logo one.png", source, origin),
+    `https://raw.githubusercontent.com/o/r/${source.commit}/assets/logo%20one.png`
+  );
+  assert.equal(resolveLogo(undefined, source, origin), fallback);
+  assert.equal(resolveLogo("", source, origin), fallback);
+  assert.equal(resolveLogo("../escape.png", source, origin), fallback);
+  assert.equal(resolveLogo("/abs.png", source, origin), fallback);
+  assert.equal(resolveLogo("javascript:alert(1)", source, origin), fallback);
+  assert.equal(resolveLogo("data:image/png;base64,AAAA", source, origin), fallback);
+  assert.equal(resolveLogo("//cdn.example/l.png", source, origin), fallback);
+});
+
+test("version strings are validated", () => {
+  assert.equal(normalizeVersion("v0.4.0"), "0.4.0");
+  assert.equal(normalizeVersion(" 1.2.3-rc.1 "), "1.2.3-rc.1");
+  assert.equal(normalizeVersion("1.2"), null);
+  assert.equal(normalizeVersion("latest"), null);
+  assert.equal(normalizeVersion(4), null);
+});
+
+// ---------- badges ----------
+
+/** Nuvio compiles with java.util.regex; `(?i)` is the only inline flag used here. */
+const compile = (pattern) => new RegExp(pattern.replace(/^\(\?i\)/, ""), pattern.startsWith("(?i)") ? "i" : "");
+
+const matchedBadges = (text) =>
+  BADGE_DEFINITIONS.filter((badge) => compile(badge.pattern).test(text.replace(/\s+/g, " "))).map((badge) => badge.id);
+
+test("every badge pattern is valid and has an image and a group", () => {
+  const groups = new Set(BADGE_GROUPS.map((group) => group.id));
+  const ids = new Set();
+
+  for (const badge of BADGE_DEFINITIONS) {
+    assert.ok(!ids.has(badge.id), `duplicate ${badge.id}`);
+    ids.add(badge.id);
+    assert.ok(groups.has(badge.group), `${badge.id} group`);
+    const hasLetters = /[a-z]/i.test(badge.pattern.replace(/\\./g, "").replace(/\\b/g, ""));
+    assert.ok(badge.pattern.startsWith("(?i)") || !hasLetters, `${badge.id} needs (?i): Nuvio compiles patterns case-sensitively`);
+    assert.doesNotThrow(() => compile(badge.pattern), badge.id);
+    assert.ok(existsSync(new URL(`../public/badges/${badge.id}.png`, import.meta.url)), `${badge.id}.png`);
+  }
+});
+
+test("badge JSON matches the shape Nuvio imports", () => {
+  const pack = buildBadgePack("https://aio.test", "0.4.0");
+
+  assert.ok(pack.groups.every((group) => group.id && group.name));
+  for (const filter of pack.filters) {
+    assert.ok(filter.name && filter.pattern, "Nuvio drops filters without a name or pattern");
+    assert.match(filter.imageURL, /^https:\/\/aio\.test\/badges\/[\w-]+\.png$/);
+    assert.equal(filter.isEnabled, true);
+  }
+});
+
+test("badges match what the default formatter prints for a loaded release", async () => {
+  const [stream] = await run(provider);
+  const shown = matchedBadges(`${stream.name} ${stream.description}`);
+
+  for (const id of ["res-4k", "hdr-dv", "hdr-hdr10plus", "audio-truehd", "audio-atmos", "audio-71", "src-bluray", "codec-hevc"]) {
+    assert.ok(shown.includes(id), `${id} should match "${stream.name} ${stream.description}"`);
+  }
+});
+
+test("similar tokens do not trigger each other's badges", () => {
+  assert.deepEqual(matchedBadges("HDR10+").filter((id) => id.startsWith("hdr")), ["hdr-hdr10plus"]);
+  assert.deepEqual(matchedBadges("HDR10").filter((id) => id.startsWith("hdr")), ["hdr-hdr10"]);
+  assert.deepEqual(matchedBadges("HDR").filter((id) => id.startsWith("hdr")), ["hdr-hdr"]);
+  assert.ok(!matchedBadges("DTS-HD MA 5.1").includes("audio-dts"));
+  assert.ok(matchedBadges("DTS-HD MA 5.1").includes("audio-dtshd"));
+  assert.ok(matchedBadges("DTS 5.1").includes("audio-dts"));
+  assert.ok(!matchedBadges("2160p UHD HDR").includes("res-720p"));
+  assert.ok(matchedBadges("💿 HD").includes("res-720p"));
+  assert.ok(matchedBadges("DDP5.1 Atmos").includes("audio-ddp"));
+  assert.ok(!matchedBadges("DDP5.1").includes("audio-dd"));
+  assert.ok(matchedBadges("DD5.1").includes("audio-dd"));
+  assert.ok(matchedBadges("Movie WEB-DL x264").includes("src-webdl"));
+  assert.ok(!matchedBadges("Movie WEB-DL x264").includes("src-webrip"));
+});

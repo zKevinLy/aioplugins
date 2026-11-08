@@ -165,5 +165,17 @@ export function mountFormatterEditor(): void {
     editor.dispatchEvent(new Event("input"));
   });
 
+  const detailField = $<HTMLSelectElement>("#detail-field");
+  detailField.addEventListener("change", () => {
+    middlewareStore.update((settings) => ({
+      ...settings,
+      detailField: detailField.value === "size" ? "size" : "title"
+    }));
+  });
+  middlewareStore.subscribe(({ detailField: saved }) => {
+    if (detailField.value !== saved) detailField.value = saved;
+  });
+  detailField.value = middlewareStore.get().detailField;
+
   syncTemplates();
 }

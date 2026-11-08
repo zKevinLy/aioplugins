@@ -107,6 +107,8 @@ let originalFetch;
 let cookieJar = "";
 let temporaryAtomFailures = 0;
 let fixtureFileRequests = 0;
+// What the deployed /version.json contains; undefined means the file is missing.
+let versionJson = JSON.stringify({ version: "v1.2.3" });
 
 async function testFetch(target, options = {}) {
   const headers = new Headers(options.headers || {});
@@ -166,6 +168,11 @@ before(() => {
     assets: {
       fetch: async (request) => {
         const pathname = decodeURIComponent(new URL(request.url).pathname);
+        if (pathname === "/version.json") {
+          return versionJson === undefined
+            ? new Response("Not found", { status: 404 })
+            : new Response(versionJson, { headers: { "content-type": "application/json" } });
+        }
         const siteRoot = resolve(fileURLToPath(new URL("../dist/site/", import.meta.url)));
         const filePath = resolve(siteRoot, `.${pathname}`);
 
@@ -325,6 +332,25 @@ test("builds a combined Nuvio manifest and serves selected files without executi
   assert.equal(manifest.scrapers.length, 1);
   assert.equal(manifest.scrapers[0].id, "fixture-plugin");
   assert.equal(manifest.scrapers[0].description, "Preserved source metadata");
+
+  // The deployed AIOPlugins version is surfaced where Nuvio can show it.
+  assert.equal(manifest.version, "1.2.3");
+  assert.match(manifest.name, /^AIOPlugins v1\.2\.3 · /);
+  assert.equal(manifest.author, "AIOPlugins");
+  assert.match(manifest.description, /AIOPlugins v1\.2\.3: 1 plugin from 1 source/);
+  assert.equal(manifest.scrapers[0].version, "1.0.0+aio.1.2.3");
+  assert.equal(manifest.scrapers[0].logo, "https://assets.example/logo.png");
+  assert.equal(manifest.scrapers[0].enabled, true);
+  assert.deepEqual(manifest.scrapers[0].supportedTypes, ["movie", "tv"]);
+  assert.equal(manifest.logo, `${BASE_URL}/favicon-192.png`);
+
+  // Without a version file (local development) the version is "dev".
+  versionJson = undefined;
+  const devManifest = await testFetch(manifestUrl).then((response) => response.json());
+  assert.equal(devManifest.version, "0.0.0-dev");
+  assert.match(devManifest.name, /^AIOPlugins dev · /);
+  assert.equal(devManifest.scrapers[0].version, "1.0.0+aio.dev");
+  versionJson = JSON.stringify({ version: "v1.2.3" });
   assert.match(manifest.scrapers[0].filename, /^providers\/example-plugins-fixture-plugin-[a-f0-9]{10}\.js$/);
 
   const fileUrl = new URL(manifest.scrapers[0].filename, manifestUrl);
@@ -342,6 +368,16 @@ test("builds a combined Nuvio manifest and serves selected files without executi
   const secondPluginResponse = await testFetch(fileUrl);
   assert.equal(secondPluginResponse.status, 200);
   assert.equal(fixtureFileRequests, 2);
+
+  // Nuvio sends HEAD before downloading a plugin: it must succeed without
+  // fetching the upstream file.
+  const headResponse = await testFetch(fileUrl, { method: "HEAD" });
+  assert.equal(headResponse.status, 200);
+  assert.equal(headResponse.headers.get("content-type"), "application/javascript; charset=utf-8");
+  assert.equal(await headResponse.text(), "");
+  assert.equal(fixtureFileRequests, 2);
+  const unknownHead = await testFetch(new URL("providers/nope.js", manifestUrl), { method: "HEAD" });
+  assert.equal(unknownHead.status, 404);
 
   cookieJar = savedCookie;
   await testFetch("/api/apply", {
@@ -367,7 +403,18 @@ test("builds a combined Nuvio manifest and serves selected files without executi
   cookieJar = savedCookie;
 
   const health = await testFetch("/health").then((response) => response.json());
-  assert.deepEqual(health, { status: "ok" });
+  assert.deepEqual(health, { status: "ok", version: "1.2.3" });
+
+  // The stream badge pack is public and importable by Nuvio.
+  const badgeResponse = await testFetch("/badges.json");
+  assert.equal(badgeResponse.status, 200);
+  assert.equal(badgeResponse.headers.get("access-control-allow-origin"), "*");
+  const pack = await badgeResponse.json();
+  assert.ok(pack.filters.length >= 30);
+  assert.ok(pack.filters.every((filter) => filter.imageURL.startsWith(`${BASE_URL}/badges/`)));
+  const chip = await testFetch(new URL(pack.filters[0].imageURL).pathname);
+  assert.equal(chip.status, 200);
+  assert.equal(chip.headers.get("content-type"), "image/png");
 });
 
 test("retries transient GitHub failures during source discovery", async () => {
@@ -665,8 +712,12 @@ test("formats the stream name and description separately", async () => {
   assert.equal(stream.name, "1080p");
   assert.equal(stream.description, "Doctor X Mafia · 1080p");
   assert.equal(stream.title, stream.description);
-  assert.equal(stream.size, stream.description);
+  // Nuvio shows size and language before title, so neither may survive.
+  assert.equal(stream.size, undefined);
+  assert.equal(stream.language, undefined);
   assert.equal(stream.fileSize, 1234);
+  assert.equal(stream.behaviorHints.videoSize, 1234);
+  assert.equal(stream.quality, "1080p");
 });
 
 test("applies title filters to provider metadata rather than formatted output", async () => {
@@ -810,7 +861,8 @@ test("extracts shared media fields from provider filenames before formatting", a
   assert.equal(wrapped.title, "Doctor X Mafia in White · S01 E06 · 1080p · WEB-DL · Netflix · AVC");
   assert.equal(wrapped.network, "Netflix");
   assert.equal(wrapped.fileSize, 2240000000);
-  assert.equal(wrapped.size, wrapped.description);
+  assert.equal(wrapped.behaviorHints.videoSize, 2240000000);
+  assert.equal(wrapped.size, undefined);
   assert.equal(wrapped.description, wrapped.title);
   assert.equal(wrapped.name, "🚀 FHD");
 });

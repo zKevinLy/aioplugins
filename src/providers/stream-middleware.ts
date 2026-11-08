@@ -189,7 +189,16 @@ export interface StreamMiddlewareSettings {
   descriptionFormat: string;
   format: string;
   hideOriginalMetadata: boolean;
+  /**
+   * Which Nuvio field carries the formatted description. Nuvio's card shows
+   * `size` and `language` when either exists and only falls back to `title`
+   * when both are missing. "title" (default) leaves `size` alone; "size" is
+   * for older Nuvio builds that never show `title`.
+   */
+  detailField: DetailField;
 }
+
+export type DetailField = "title" | "size";
 
 export const DEFAULT_STREAM_MIDDLEWARE: StreamMiddlewareSettings = {
   filters: [],
@@ -198,7 +207,8 @@ export const DEFAULT_STREAM_MIDDLEWARE: StreamMiddlewareSettings = {
   nameFormat: DEFAULT_STREAM_NAME_FORMAT,
   descriptionFormat: DEFAULT_STREAM_DESCRIPTION_FORMAT,
   format: DEFAULT_STREAM_DESCRIPTION_FORMAT,
-  hideOriginalMetadata: false
+  hideOriginalMetadata: false,
+  detailField: "title"
 };
 
 const PREVIOUS_DEFAULT_STREAM_FORMAT = "{?{stream.resolution::replace('2160p', '🔥4K UHD')::replace('1440p', '✨ QHD')::replace('1080p', '🚀 FHD')::replace('720p', '💿 HD')::replace('576p', '💩 Low Quality')::replace('480p', '💩 Low Quality')::replace('360p', '💩 Low Quality')::replace('240p', '💩 Low Quality')::replace('144p', '💩 Low Quality')} · ?}{stream.title}{? · {stream.formattedSeasons}?}{? · {stream.formattedEpisodes}?}{? · 📦 {stream.size::sbytes}?}{? · 🎧 {stream.audioTags::join(' | ')}?}";
@@ -468,7 +478,8 @@ export function normalizeStreamMiddlewareSettings(
     nameFormat,
     descriptionFormat,
     format: descriptionFormat,
-    hideOriginalMetadata: candidate.hideOriginalMetadata === true
+    hideOriginalMetadata: candidate.hideOriginalMetadata === true,
+    detailField: candidate.detailField === "size" ? "size" : "title"
   };
 }
 
@@ -771,9 +782,71 @@ export function wrapPluginStreams(
         .trim();
     };
 
+    // ---- Nuvio output -------------------------------------------------
+    // Nuvio's plugin runtime keeps only: title, name, url, quality, size,
+    // language, provider, type, seeders, peers, infoHash, headers, subtitles and
+    // behaviorHints.audioDelay*. Its card shows name, then size and language
+    // (or title when neither exists). Anything else a plugin returns is dropped.
+
+    const canonicalResolution = value => {
+      const text = stringify(value).toLowerCase();
+      const match = text.match(/(2160|1440|1080|720|576|480|360|240|144)p?/);
+
+      if (match) return match[1] + "p";
+      if (/4k|uhd/.test(text)) return "2160p";
+      if (/qhd/.test(text)) return "1440p";
+      if (/fhd/.test(text)) return "1080p";
+      if (/\\bhd\\b/.test(text)) return "720p";
+
+      return "";
+    };
+
+    // Nuvio appends " - Unknown" to the name whenever quality is missing, so a
+    // value is always sent: the resolution, the provider's own label, or "Unknown".
+    const nuvioQuality = (original, normalized) => {
+      const resolved = canonicalResolution(normalized.resolution) ||
+        canonicalResolution(original.quality);
+      if (resolved) return resolved;
+
+      const own = stringify(original.quality).trim();
+      return own && !isUnknownValue(own, "quality") ? own : "Unknown";
+    };
+
+    const toNuvioStream = (original, normalized, name, description) => {
+      const output = { ...normalized };
+      const bytes = Math.round(numericValue(normalized, "size")) ||
+        Math.round(numericValue(normalized, "fileSize")) || 0;
+      const filename = stringify(normalized.filename).trim();
+      const hints = original.behaviorHints && typeof original.behaviorHints === "object" &&
+        !Array.isArray(original.behaviorHints) ? { ...original.behaviorHints } : {};
+
+      // The description must not be hidden behind, or doubled by, these two.
+      delete output.size;
+      delete output.language;
+      delete output.fileSize;
+
+      output.name = name;
+      output.title = description;
+      output.description = description;
+      output.quality = nuvioQuality(original, normalized);
+
+      if (config.detailField === "size") output.size = description;
+
+      if (bytes > 0) {
+        output.fileSize = bytes;
+        if (hints.videoSize === undefined) hints.videoSize = bytes;
+      }
+
+      if (filename && hints.filename === undefined) hints.filename = filename;
+      if (Object.keys(hints).length > 0) output.behaviorHints = hints;
+
+      return output;
+    };
+
     const candidates = result
       .filter(stream => stream && typeof stream === "object")
       .map((stream, index) => {
+        const original = { ...stream };
         const normalized = { ...stream };
 
         // Remove decorative emoji from provider-supplied display text.
@@ -813,16 +886,7 @@ export function wrapPluginStreams(
           if (key !== "service") normalized[key] = value;
         }
 
-        const formatted = {
-          ...normalized,
-          ...(normalized.size !== undefined
-            ? { fileSize: normalized.fileSize ?? normalized.size }
-            : {}),
-          name,
-          description,
-          title: description,
-          size: description
-        };
+        const formatted = toNuvioStream(original, normalized, name, description);
 
         const sourceStream = { ...normalized };
 
@@ -927,12 +991,7 @@ export function wrapPluginStreams(
     });
 
     return streams.map(item => {
-      const output = { ...item.stream };
-
-      // Hide only the provider quality label.
-      delete output.quality;
-
-      return output;
+      return { ...item.stream };
     });
   };
 })();
