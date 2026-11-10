@@ -7,6 +7,7 @@ import { errorMessage } from "../core/guards.js";
 import { clearStatus, setStatus } from "../core/status.js";
 import type { PublicUser, UserResponse } from "../core/types.js";
 import { enterWorkspace } from "../services/session.js";
+import { passkeyErrorMessage, passkeysSupported, signInWithPasskey } from "../services/passkeys.js";
 import { userStore } from "../state/session.js";
 
 type AuthTab = "login" | "register";
@@ -89,6 +90,20 @@ export function mountAuthPanel(): void {
   $("#register-tab").addEventListener("click", () => showTab("register"));
   $("#login-form").addEventListener("submit", (event) => void login(event));
   $("#register-form").addEventListener("submit", (event) => void register(event));
+
+  const passkeyButton = $<HTMLButtonElement>("#passkey-login");
+  passkeyButton.hidden = !passkeysSupported();
+  passkeyButton.addEventListener("click", async () => {
+    passkeyButton.disabled = true;
+    try {
+      const result = await signInWithPasskey();
+      await enterWorkspace(result.user, result.workspace);
+    } catch (error) {
+      setStatus("auth", passkeyErrorMessage(error), "error");
+    } finally {
+      passkeyButton.disabled = false;
+    }
+  });
 
   $("#copy-new-uuid").addEventListener("click", async () => {
     if (!pending) return;

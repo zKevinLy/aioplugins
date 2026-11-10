@@ -10,6 +10,50 @@ import { leaveWorkspace } from "../services/session.js";
 import { userStore } from "../state/session.js";
 import type { PublicUser } from "../core/types.js";
 import { showView } from "../state/view.js";
+import {
+  addPasskey,
+  listPasskeys,
+  passkeyErrorMessage,
+  passkeysSupported,
+  removePasskey,
+  type PasskeyInfo
+} from "../services/passkeys.js";
+
+function renderPasskeys(passkeys: PasskeyInfo[]): void {
+  const list = $("#passkey-list");
+  list.replaceChildren();
+
+  for (const passkey of passkeys) {
+    const item = document.createElement("li");
+    const label = document.createElement("span");
+    const added = new Date(passkey.createdAt).toLocaleDateString();
+    label.textContent = `${passkey.name} · added ${added}`;
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "button button-small button-danger";
+    remove.textContent = "Remove";
+    remove.addEventListener("click", async () => {
+      if (!confirm(`Remove the passkey "${passkey.name}"?`)) return;
+      try {
+        renderPasskeys(await removePasskey(passkey.id));
+      } catch (error) {
+        setStatus("account", errorMessage(error), "error");
+      }
+    });
+
+    item.append(label, " ", remove);
+    list.append(item);
+  }
+}
+
+async function refreshPasskeys(): Promise<void> {
+  try {
+    renderPasskeys(await listPasskeys());
+  } catch {
+    // The list is a convenience; the rest of the page still works.
+  }
+}
 
 async function onImport(input: HTMLInputElement): Promise<void> {
   const file = input.files?.[0];
@@ -35,7 +79,23 @@ async function onImport(input: HTMLInputElement): Promise<void> {
 }
 
 export function mountAccountPanel(): void {
+  $("#passkey-card").hidden = !passkeysSupported();
+
+  $("#add-passkey").addEventListener("click", async () => {
+    const nameInput = $<HTMLInputElement>("#passkey-name");
+    try {
+      await addPasskey(nameInput.value.trim());
+      nameInput.value = "";
+      setStatus("account", "Passkey added.", "success");
+      await refreshPasskeys();
+    } catch (error) {
+      setStatus("account", passkeyErrorMessage(error), "error");
+    }
+  });
+
   userStore.subscribe((user) => {
+    if (user && passkeysSupported()) void refreshPasskeys();
+    if (!user) $("#passkey-list").replaceChildren();
     $("#account-uuid").textContent = user?.id ?? "";
     if (!user) {
       $<HTMLInputElement>("#delete-password").value = "";

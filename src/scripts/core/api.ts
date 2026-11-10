@@ -15,6 +15,8 @@ const AUTH_PATHS = new Set([
   "/api/session",
   "/api/login",
   "/api/register",
+  "/api/passkey/login/options",
+  "/api/passkey/login",
   "/api/account",
   "/api/account/token"
 ]);

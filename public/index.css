@@ -1820,3 +1820,5 @@ textarea { resize: vertical; line-height: 1.6; }
   flex: 0 0 20px;
   stroke-width: 2.25;
 }
+.passkey-list { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 8px; }
+.passkey-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; }

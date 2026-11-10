@@ -23,6 +23,22 @@
               </div>
             </section>
 
+            <section id="passkey-card" class="panel save-card" hidden>
+              <div class="panel-head"><h2>Passkeys</h2></div>
+              <div class="panel-body">
+                <p class="view-intro">
+                  Log in with your fingerprint, face, or device PIN instead of your UUID and password.
+                  Your password keeps working as a fallback.
+                </p>
+                <ul id="passkey-list" class="passkey-list"></ul>
+                <div class="delete-controls">
+                  <input id="passkey-name" type="text" maxlength="60" placeholder="Name (e.g. MacBook)"
+                    aria-label="Name for the new passkey">
+                  <button id="add-passkey" class="button button-small" type="button">Add passkey</button>
+                </div>
+              </div>
+            </section>
+
             <section class="panel save-card">
               <div class="panel-head"><h2>Configuration backup</h2></div>
               <div class="panel-body">

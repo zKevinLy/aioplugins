@@ -13,6 +13,15 @@ import {
   resolveSelectedSources,
   type SavedSourceSelection
 } from "./providers/remote.js";
+import {
+  deletePasskey,
+  listPasskeys,
+  loginWithPasskey,
+  passkeyLoginOptions,
+  passkeyRegistrationOptions,
+  registerPasskey,
+  type RelyingParty
+} from "./passkeys.js";
 import { loadAppVersion } from "./lib/app-info.js";
 import { STREAM_FIELD_CATALOG } from "./providers/stream-middleware.js";
 
@@ -375,6 +384,23 @@ async function handleApi(
     return startSession(user, db);
   }
 
+  const rp: RelyingParty = { rpId: url.hostname, origin: url.origin };
+
+  if (pathname === "/api/passkey/login/options" && method === "POST") {
+    const limited = enforceRateLimit(clientIp, "passkey-options", 30, 15 * 60 * 1000);
+    if (limited) return limited;
+
+    return sendJson(200, await passkeyLoginOptions(rp, db));
+  }
+
+  if (pathname === "/api/passkey/login" && method === "POST") {
+    const limited = enforceRateLimit(clientIp, "passkey-login", 20, 15 * 60 * 1000);
+    if (limited) return limited;
+
+    const body = await readJsonBody(request);
+    return startSession(await loginWithPasskey(rp, body, db), db);
+  }
+
   if (pathname === "/api/logout" && method === "POST") {
     await destroySession(sessionToken, db);
 
@@ -389,6 +415,25 @@ async function handleApi(
 
   if (!user) {
     throw new HttpError(401, "Please log in");
+  }
+
+  if (pathname === "/api/passkeys" && method === "GET") {
+    return sendJson(200, { passkeys: await listPasskeys(user.id, db) });
+  }
+
+  if (pathname === "/api/passkeys/options" && method === "POST") {
+    return sendJson(200, await passkeyRegistrationOptions(user, rp, db));
+  }
+
+  if (pathname === "/api/passkeys" && method === "POST") {
+    const body = await readJsonBody(request);
+    return sendJson(201, { passkey: await registerPasskey(user, rp, body, db) });
+  }
+
+  if (pathname === "/api/passkeys" && method === "DELETE") {
+    const body = await readJsonBody(request);
+    await deletePasskey(user.id, body.id, db);
+    return sendJson(200, { passkeys: await listPasskeys(user.id, db) });
   }
 
   if (pathname === "/api/config" && method === "GET") {
