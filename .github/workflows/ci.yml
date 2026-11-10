@@ -9,8 +9,60 @@ permissions:
   contents: read
 
 jobs:
+  # Fixes what can be fixed and commits it, so nobody has to remember to run the fixers.
+  # It runs `lint:fix` and `format` if package.json defines them (--if-present), so it does
+  # nothing until ESLint/Prettier are added to this repo. Skipped for Dependabot and fork
+  # PRs, whose tokens are read-only.
+  # Commits pushed with GITHUB_TOKEN don't start new workflow runs, so this run tests and
+  # deploys the fixed commit itself (see `needs.autofix.outputs.sha`).
+  autofix:
+    name: Auto-fix lint & formatting
+    if: >-
+      github.actor != 'dependabot[bot]' &&
+      (github.event_name == 'push' ||
+      github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          # A PR run would otherwise check out the merge commit, which can't be pushed to.
+          ref: ${{ github.head_ref || github.ref_name }}
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22.23.4
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Fix lint and formatting
+        run: |
+          # Problems that can't be auto-fixed are left for the test job to report.
+          npm run lint:fix --if-present || true
+          npm run format --if-present
+      - name: Commit and push the fixes
+        id: commit
+        run: |
+          if git diff --quiet; then
+            echo "Nothing to fix."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -u
+            git commit -m "style: auto-fix lint and formatting"
+            git push
+          fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
   codeql:
     name: CodeQL analysis
+    needs: autofix
+    # Run even when autofix was skipped, but not when it failed (e.g. a push race).
+    if: ${{ !cancelled() && contains(fromJSON('["success","skipped"]'), needs.autofix.result) }}
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -19,6 +71,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.autofix.outputs.sha || github.sha }}
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
@@ -28,7 +82,8 @@ jobs:
 
   test:
     name: Node.js ${{ matrix.node-version }}
-    needs: codeql
+    needs: [autofix, codeql]
+    if: ${{ !cancelled() && contains(fromJSON('["success","skipped"]'), needs.autofix.result) }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -37,6 +92,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.autofix.outputs.sha || github.sha }}
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
@@ -49,8 +106,9 @@ jobs:
 
   release-deploy:
     name: Release and deploy
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: test
+    # Not plain success(): autofix may be skipped, which would otherwise skip the deploy.
+    if: ${{ !cancelled() && needs.test.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    needs: [autofix, test]
     runs-on: ubuntu-latest
     environment: prod
     permissions:
@@ -59,6 +117,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7
         with:
+          ref: ${{ needs.autofix.outputs.sha || github.sha }} # includes the auto-fix commit
           fetch-depth: 0
           fetch-tags: true
 
@@ -73,14 +132,16 @@ jobs:
 
       - name: Determine next release version
         id: version
+        env:
+          SHA: ${{ needs.autofix.outputs.sha || github.sha }}
         run: |
           LAST="$(git tag --list 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)"
 
           if [ -z "$LAST" ]; then
             LAST="v$(node -p "require('./package.json').version")"
-            COMMITS="$(git log -1 --format='%s%n%b' "$GITHUB_SHA")"
+            COMMITS="$(git log -1 --format='%s%n%b' "$SHA")"
           else
-            COMMITS="$(git log --format='%s%n%b' "$LAST..$GITHUB_SHA")"
+            COMMITS="$(git log --format='%s%n%b' "$LAST..$SHA")"
           fi
 
           if printf '%s\n' "$COMMITS" | grep -Eiq '^[[:alnum:]_-]+(\([^)]*\))?!:|^[[:space:]]*BREAKING CHANGE:|^[[:space:]]*BREAKING-CHANGE:'; then
@@ -106,7 +167,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
-        run: gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" --generate-notes
+          SHA: ${{ needs.autofix.outputs.sha || github.sha }}
+        run: gh release create "$TAG" --target "$SHA" --title "$TAG" --generate-notes
 
       - name: Generate app version
         env:
