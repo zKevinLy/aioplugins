@@ -127,23 +127,112 @@ export function renderAioStreamsFormat(
     const releaseText = raw
       .replace(/\s{0,8}\d{1,15}(?:\.\d{1,6})?\s{0,8}(?:B|KB|MB|GB|TB)\s{0,8}$/i, "")
       .replace(/\.(mkv|mp4|avi|mov|m4v|webm|ts|m2ts)$/i, "");
-    const marker = markerPattern.exec(releaseText);
-    const titlePart = marker ? releaseText.slice(0, marker.index) : releaseText;
+    // Release text can use "." "_" "~" or spaces as word separators. Same-length
+    // swaps keep marker indices valid for the original releaseText.
+    const currentYear = new Date().getUTCFullYear();
+    const isPlausibleYear = (value: string): boolean =>
+      /^(?:19|20)\d{2}$/.test(value) && Number(value) <= currentYear + 1;
+    // First real marker. A bare year is ignored when it opens the name
+    // ("2012", "1917", "2001 A Space Odyssey") or is implausible ("Blade
+    // Runner 2049"), otherwise the title would be cut to nothing.
+    let marker: RegExpMatchArray | null = null;
+    for (const candidate of releaseText.matchAll(new RegExp(markerPattern.source, "gi"))) {
+      if (/^(?:19|20)\d{2}$/.test(candidate[0]) &&
+        (candidate.index === 0 || !isPlausibleYear(candidate[0]))) continue;
+      marker = candidate;
+      break;
+    }
+    const markerIndex = marker?.index ?? -1;
     // Trim separators with plain loops: the equivalent /^[\s.\-]+|[\s.\-]+$/
     // regex backtracks quadratically on long runs of whitespace.
+    const isTitleSeparator = (ch: string): boolean =>
+      /[\s.\-\u2013\u2014,:;|~\u00B7\u2022\u00BB\/\\()\[\]{}]/.test(ch);
     const trimSeparators = (value: string): string => {
-      const isSeparator = (ch: string): boolean => ch === "." || ch === "-" || /\s/.test(ch);
       let start = 0;
       let end = value.length;
-      while (start < end && isSeparator(value[start]!)) start++;
-      while (end > start && isSeparator(value[end - 1]!)) end--;
+      while (start < end && isTitleSeparator(value[start]!)) start++;
+      while (end > start && isTitleSeparator(value[end - 1]!)) end--;
       return value.slice(start, end);
     };
-    const cleanTitle = trimSeparators(
-      collapseWhitespace(titlePart.replace(/[._]/g, " "))
-    );
-    const parsedTitle = cleanTitle ||
-      collapseWhitespace(releaseText.replace(/[._]/g, " ")).trim();
+    const hasTitleText = (value: string): boolean => /[\p{L}\p{N}]/u.test(value);
+    // Sentinel-based cut so no regex ever runs over unbounded input twice.
+    const cutAt = (value: string, index: number): string =>
+      index > 0 && hasTitleText(value.slice(0, index)) ? value.slice(0, index) : value;
+    const buildTitle = (source: string): { title: string; leadingJunk: boolean } => {
+      // Dots stay for now so "0.4mbps" is still recognizable as one token.
+      let text = collapseWhitespace(source.replace(/[_~]/g, " "));
+      // "[HubCloud] Movie" / "{FSL} Movie": drop leading tag groups.
+      for (let guard = 0; guard < 4; guard++) {
+        const tag = /^\s*[\[{][^\]}]{0,40}[\]}]\s*/.exec(text);
+        if (!tag || !hasTitleText(text.slice(tag[0].length))) break;
+        text = text.slice(tag[0].length);
+      }
+      // "Mp4~0.4mbps720pmp4~0.4mbps Pad": leading container/bitrate debris.
+      let leadingJunk = false;
+      for (let guard = 0; guard < 12; guard++) {
+        const junk = /^\s*(?:mp4|mkv|m3u8|hls|avi|\d+(?:\.\d+)?\s*[mk]bps|\d{3,4}[pi](?=mp4|mkv|m3u8|[^a-z]|$))\s*/i.exec(text);
+        if (!junk || !hasTitleText(text.slice(junk[0].length))) break;
+        text = text.slice(junk[0].length);
+        leadingJunk = true;
+      }
+      text = collapseWhitespace(text.replace(/\./g, " "));
+      // Always-safe delimiters, never part of a real title: "Title | Subtitle",
+      // "Title • Site", "Title » Site", "Title :: Site".
+      const hard = /\s*[|\u2022\u00B7\u00BB]\s*|\s+::\s+/.exec(text);
+      if (hard) text = cutAt(text, hard.index);
+      // Opening bracket: "Title (", "Title [FSL", "Title {x}" -> "Title".
+      const bracket = /[(\[{]/.exec(text);
+      if (bracket) text = cutAt(text, bracket.index);
+      // " - " / " – " / " — ": usually "Title - Provider - Tag", but also real
+      // subtitles ("Mission: Impossible - Fallout"). Cut only when what follows
+      // looks like provider/tag text: more than one segment, digits, or a
+      // known host/tag word.
+      const dashes = [...text.matchAll(/\s+[-\u2013\u2014]+\s+/g)];
+      const firstDash = dashes[0];
+      if (firstDash && firstDash.index !== undefined) {
+        const rest = text.slice(firstDash.index + firstDash[0].length);
+        const looksLikeTag = dashes.length > 1 || /\d/.test(rest) ||
+          /\b(?:hubcloud|vidlink|pixeldrain|gdflix|gdrive|drive|fsl|vegamovies|moviesdrive|playimdb|server|mirror|direct|download|dl|stream|hls|link|cloud|sub(?:s|bed|title)?|dub(?:bed)?|ph\u1EE5 \u0111\u1EC1)\b/i.test(rest);
+        if (looksLikeTag) text = cutAt(text, firstDash.index);
+      }
+      return { title: trimSeparators(collapseWhitespace(text)), leadingJunk };
+    };
+    let titleSource = marker ? releaseText.slice(0, markerIndex) : releaseText;
+    let episodeTitle = "";
+    // "S1 E1 - Rose | Doctor Who 1080p | Dual-Audio ...": the name opens with
+    // the episode marker, so the title lives in a later segment. The segment
+    // that carries the quality marker is the show; segments before it are the
+    // episode title.
+    const leadingEpisode = markerIndex === 0
+      ? /^\s*(?:S\d{1,2}[ ._-]*E\d{1,3}|\d{1,2}x\d{1,3}|E\d{1,3})\s*[-\u2013\u2014:|.]*\s*/i.exec(releaseText)
+      : null;
+    if (leadingEpisode) {
+      const segments = releaseText.slice(leadingEpisode[0].length)
+        .split(/\s*[|\u2022\u00B7\u00BB]\s*|\s+[-\u2013\u2014]\s+/)
+        .filter(hasTitleText);
+      const segmentMarker = new RegExp(markerPattern.source, "i");
+      const markerSegment = segments.findIndex(segment =>
+        (segmentMarker.exec(segment)?.index ?? 0) > 0);
+      const showIndex = markerSegment >= 0 ? markerSegment : 0;
+      const showSegment = segments[showIndex];
+      if (showSegment !== undefined) {
+        const showMarker = segmentMarker.exec(showSegment);
+        titleSource = showMarker && (showMarker.index ?? 0) > 0
+          ? showSegment.slice(0, showMarker.index)
+          : showSegment;
+        if (showIndex > 0) {
+          episodeTitle = buildTitle(segments.slice(0, showIndex).join(" ")).title;
+        }
+      }
+    }
+    const built = buildTitle(titleSource);
+    // Nothing usable before the first marker: fall back to the whole name, and
+    // finally to the requested media's title when one is supplied.
+    const metadataTitle = typeof previewData.metadata?.title === "string"
+      ? collapseWhitespace(previewData.metadata.title).trim() : "";
+    const parsedTitle = (built.leadingJunk && metadataTitle) ? metadataTitle
+      : built.title || buildTitle(releaseText).title || metadataTitle ||
+        collapseWhitespace(releaseText.replace(/[._~]/g, " ")).trim();
     const resolutionMatch = releaseText.match(/(?:2160|1440|1080|720|576|480|360|240|144)[pi]?|\b(?:4k|uhd|qhd|fhd)\b/i);
     const resolutionText = resolutionMatch?.[0].toLowerCase();
     const resolution = resolutionText
@@ -152,7 +241,16 @@ export function renderAioStreamsFormat(
           : /fhd/.test(resolutionText) ? "1080p"
             : `${resolutionText.replace(/[pi]$/, "")}p`
       : undefined;
-    const yearMatch = releaseText.match(/\b((?:19|20)\d{2})\b/);
+    // Prefer a year in brackets "(2021)" / "[2021]", then the first plausible
+    // year that is not the opening token, then any plausible year.
+    const yearMatch = (() => {
+      const all = [...releaseText.matchAll(/\b((?:19|20)\d{2})\b/g)]
+        .filter(match => isPlausibleYear(match[1]!));
+      const bracketed = all.find(match =>
+        /[(\[]\s*$/.test(releaseText.slice(0, match.index)) &&
+        /^\s*[)\]]/.test(releaseText.slice((match.index ?? 0) + match[0].length)));
+      return bracketed ?? all.find(match => match.index !== 0) ?? all[0] ?? null;
+    })();
     const episodeMatch = releaseText.match(/\bS(\d{1,2})(?:[ ._-]*E(\d{1,3}))?/i);
     const seasonOnlyMatch = releaseText.match(/\bSeason\s*0*(\d{1,2})\b/i);
     const episodeOnlyMatch = releaseText.match(/\b(?:Episode|Ep)\s*0*(\d{1,3})\b/i)
@@ -167,8 +265,8 @@ export function renderAioStreamsFormat(
       : /\bWEB[ ._-]?RIP\b/i.test(releaseText) ? "WEBRip"
         : /\bBlu[ ._-]?Ray\b/i.test(releaseText) ? "BluRay"
           : /\b(?:BDRip|BRRip|HDTV|DVDRip|HDRip|Remux)\b/i.exec(releaseText)?.[0];
-    const encode = /\b(?:H\.?265|X265|HEVC)\b/i.test(releaseText) ? "HEVC"
-      : /\b(?:H\.?264|X264|AVC)\b/i.test(releaseText) ? "AVC"
+    const encode = /\b(?:H[ .]?265|X265|HEVC)\b/i.test(releaseText) ? "HEVC"
+      : /\b(?:H[ .]?264|X264|AVC)\b/i.test(releaseText) ? "AVC"
         : /\bAV1\b/i.test(releaseText) ? "AV1" : undefined;
     const visualTags = [
       /\bHDR10(?:\+|PLUS)?(?![\w])/i.test(releaseText) ? "HDR10+" : /\bHDR\b/i.test(releaseText) ? "HDR" : "",
@@ -201,7 +299,7 @@ export function renderAioStreamsFormat(
       "Italian", "Japanese", "Korean", "Portuguese", "Russian", "Spanish",
       "Tamil", "Telugu", "Thai", "Turkish", "Ukrainian", "Vietnamese"
     ];
-    const languageSource = marker ? releaseText.slice(marker.index) : "";
+    const languageSource = markerIndex >= 0 ? releaseText.slice(markerIndex) : "";
     const languages = languageNames.filter(language =>
       new RegExp(`\\b${language}\\b`, "i").test(languageSource)
     );
@@ -218,6 +316,7 @@ export function renderAioStreamsFormat(
     const seasonEpisode = [seasonCode, episodeCode].filter(Boolean);
     const extracted: Record<string, unknown> = {
       ...(parsedTitle ? { title: parsedTitle } : {}),
+      ...(episodeTitle ? { episodeTitle } : {}),
       filename: original.filename ?? original.fileName ?? (raw || undefined),
       ...(yearMatch ? { year: Number(yearMatch[1]) } : {}),
       ...(resolution ? { resolution } : {}),
@@ -592,7 +691,7 @@ export function renderAioStreamsFormat(
         return index < 0 ? character : [...to][index] ?? character;
       }).join("");
     }
-    if (name === "title" && typeof value === "string") return stringValue.replace(/\b\w/g, character => character.toUpperCase());
+    if (name === "title" && typeof value === "string") return stringValue.replace(/(^|[\s\-_/([{:|"\u201C])(\p{Ll})/gu, (_match, lead: string, letter: string) => lead + letter.toUpperCase());
     if (name === "replace") {
       let find = stringify(args[0] ?? "");
       if (find.includes("{")) find = renderTemplate(find, currentContext);

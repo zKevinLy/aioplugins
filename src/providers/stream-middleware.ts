@@ -779,7 +779,7 @@ export function wrapPluginStreams(
           }
 
           if (operation === "title") {
-            value = stringify(value).replace(/\\b\\w/g, character => character.toUpperCase());
+            value = stringify(value).replace(/(^|[\\s\\-_/([{:|"\\u201C])(\\p{Ll})/gu, (_match, lead, letter) => lead + letter.toUpperCase());
           } else if (operation === "sbytes" && Number.isFinite(Number(value))) {
             const units = ["B", "KB", "MB", "GB", "TB"];
             let size = Number(value);
