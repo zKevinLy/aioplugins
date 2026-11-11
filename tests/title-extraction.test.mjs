@@ -46,3 +46,29 @@ test("episode-first names resolve to the show title", () => {
   assert.equal(stream.formattedEpisodes, "E01");
   assert.equal(stream.encode, "AVC");
 });
+
+test("tags are detected outside the title and release groups must be one token", () => {
+  const s = { title: "S1 E1 - Rose | Doctor Who 1080p | Dual-Audio | • M3U8 • H 264 • AAC | 47 Min" };
+  renderAioStreamsFormat("{stream.title}", s, "test");
+  assert.deepEqual(s.languages, ["Dual Audio"]);
+  assert.deepEqual(s.audioTags, ["AAC"]);
+  assert.equal(s.releaseGroup, undefined);
+
+  // Words inside the title must not become tags ("Dual", "Cam").
+  const t = { title: "Dual.Cam.Chronicles.2020.1080p.WEB-DL.DDP5.1.Atmos.H.265-GRP.mkv" };
+  renderAioStreamsFormat("{stream.title}", t, "test");
+  assert.equal(t.title, "Dual Cam Chronicles");
+  assert.equal(t.quality, "WEB-DL");
+  assert.equal(t.languages, undefined);
+  assert.deepEqual(t.audioTags, ["Atmos", "DD+"]);
+  assert.deepEqual(t.audioChannels, ["5.1"]);
+  assert.equal(t.encode, "HEVC");
+  assert.equal(t.releaseGroup, "GRP");
+});
+
+test("multi-line descriptions pick the line that looks like a release name", () => {
+  const s = { description: "🎬 Provider\n📦 2 GB\nName: The.Movie.2021.1080p.BluRay.x264-GRP" };
+  renderAioStreamsFormat("{stream.title}", s, "test");
+  assert.equal(s.title, "The Movie");
+  assert.equal(s.year, 2021);
+});

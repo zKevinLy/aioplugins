@@ -90,10 +90,28 @@ export function renderAioStreamsFormat(
       original.fileName,
       behaviorHints.filename,
       original.title,
-      original.name
+      original.name,
+      original.description
     ]
       .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
-      .map(value => value.trim());
+      .map(value => value.trim())
+      .flatMap((value): string[] => {
+        // Descriptions often hold several lines ("🎬 Name\n📦 2 GB\n..."). Like
+        // AIOStreams, look at the first few lines and drop leading emoji and
+        // short "Label:" prefixes so the best line can be picked below.
+        if (!/[\r\n]/.test(value)) return [value];
+        return value.split(/\r?\n/)
+          .map(line => line.trim())
+          .filter(Boolean)
+          .slice(0, 5)
+          .map(line => {
+            const text = line.replace(/^\p{Emoji_Presentation}+\s*/u, "");
+            const label = /^([^\s:]{1,16}):\s+(.+)$/.exec(text);
+            return label && /\b(?:19|20)\d{2}\b|\bS\d{1,2}|\d{3,4}p/i.test(label[2]!)
+              ? label[2]! : text;
+          })
+          .filter(Boolean);
+      });
     const markerPattern = /\bS\d{1,2}(?:[ ._-]*E\d{1,3})?\b|\b(?:season\s*0*\d{1,2}|episode|ep)\s*0*\d{1,3}\b|\bE0*\d{1,3}\b|\b(?:2160p?|1440p?|1080[pi]?|720[pi]?|576p?|480[pi]?|360p?|240p?|144p?|4k|uhd|qhd|fhd|hdtv|web[ ._-]?(?:dl|rip)|blu[ ._-]?ray|brrip|bdrip|dvdrip|hdrip|remux|h\.?264|h\.?265|x264|x265|hevc|avc|av1|aac|eac3|ddp|ac3|dts|truehd|flac|opus|hdr10\+?|dolby[ ._-]?vision|proper|repack|internal|limited|uncut|dubbed?|subbed?|multi|dual[ ._-]?audio|\b(?:19|20)\d{2})\b/i;
     // Prefer an actual release filename over short provider labels such as
     // "FHD". Some providers put that label in `filename` while the useful
@@ -261,17 +279,60 @@ export function renderAioStreamsFormat(
       : episodeOnlyMatch ? Number(episodeOnlyMatch[1]) : undefined;
     const seasonCode = season === undefined ? undefined : `S${String(season).padStart(2, "0")}`;
     const episodeCode = episode === undefined ? undefined : `E${String(episode).padStart(2, "0")}`;
-    const quality = /\bWEB[ ._-]?DL\b/i.test(releaseText) ? "WEB-DL"
-      : /\bWEB[ ._-]?RIP\b/i.test(releaseText) ? "WEBRip"
-        : /\bBlu[ ._-]?Ray\b/i.test(releaseText) ? "BluRay"
-          : /\b(?:BDRip|BRRip|HDTV|DVDRip|HDRip|Remux)\b/i.exec(releaseText)?.[0];
-    const encode = /\b(?:H[ .]?265|X265|HEVC)\b/i.test(releaseText) ? "HEVC"
-      : /\b(?:H[ .]?264|X264|AVC)\b/i.test(releaseText) ? "AVC"
-        : /\bAV1\b/i.test(releaseText) ? "AV1" : undefined;
-    const visualTags = [
-      /\bHDR10(?:\+|PLUS)?(?![\w])/i.test(releaseText) ? "HDR10+" : /\bHDR\b/i.test(releaseText) ? "HDR" : "",
-      /\b(?:DV|DoVi|Dolby[ ._-]?Vision)\b/i.test(releaseText) ? "DV" : ""
-    ].filter(Boolean);
+    // ---- Tag detection, modelled on AIOStreams' PARSE_REGEX ----
+    // 1. The parsed title is removed first so words inside it ("Dual", "Cam",
+    //    "Ice Age") can never be read as tags.
+    // 2. Tags match only between separators/brackets, never inside a longer
+    //    word, so "AAC2.0", "H.264-GRP" and "[1080p]" all work.
+    const escapeRegExp = (value: string): string =>
+      value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const tagText = parsedTitle.length > 4
+      ? releaseText.replace(
+        new RegExp(escapeRegExp(parsedTitle).replace(/ /g, "[._ ~]"), "i"),
+        " "
+      )
+      : releaseText;
+    const sep = "[ .\\-_]?";
+    const tagRegex = (pattern: string): RegExp =>
+      new RegExp(`(?<![^\\s\\[(_\\-.,~|])(?:${pattern})(?=[\\s\\[()\\]_.\\-,~|]|$)`, "i");
+    const firstTag = (rules: Array<[string, string]>): string | undefined =>
+      rules.find(([, pattern]) => tagRegex(pattern).test(tagText))?.[0];
+    const allTags = (rules: Array<[string, string]>): string[] =>
+      rules.filter(([, pattern]) => tagRegex(pattern).test(tagText)).map(([tag]) => tag);
+    const quality = firstTag([
+      ["BluRay REMUX", `(?<!dvd.*)(?:bd|br|b|uhd)?remux(?!.*dvd)`],
+      ["BluRay", `(?<!remux.*)(?:(?:bd|blu${sep}ray)(?:${sep}rip)?|br${sep}rip)(?!.*remux)`],
+      ["WEB-DL", `web${sep}(?:dl)?(?!${sep}(?:rip|dlrip|cam))`],
+      ["WEBRip", `web${sep}rip`],
+      ["HDRip", `hd${sep}rip|web${sep}dl${sep}rip`],
+      ["DVD REMUX", `(?:hd${sep})?dvd.*remux|remux.*(?:hd${sep})?dvd`],
+      ["DVDRip", `dvd${sep}(?:rip|mux|r|full|5|9)?`],
+      ["HDTV", `(?:hd|pd)tv|tv${sep}rip|dsr(?:ip)?|sat${sep}rip`],
+      ["CAM", `cam|hdcam|cam${sep}rip`],
+      ["TS", `telesync|hd${sep}ts|pdvd|predvd(?:rip)?`],
+      ["TC", `telecine|hd${sep}tc`],
+      ["SCR", `(?:dvd|bd|web|hd)?${sep}?scr(?:eener)?`]
+    ]);
+    const encode = firstTag([
+      ["HEVC", `hevc${sep}(?:10)?|[xh]${sep}265`],
+      ["AVC", `avc|[xh]${sep}264`],
+      ["AV1", `av1`],
+      ["VC-1", `vc${sep}1`],
+      ["XviD", `xvid`],
+      ["DivX", `divx|dvix`],
+      ["MPEG-4", `mpeg${sep}4`]
+    ]);
+    const visualTags = allTags([
+      ["10bit", `10${sep}bit|hi10p?`],
+      ["HDR10+", `hdr${sep}10${sep}(?:p(?:lus)?|[+])`],
+      ["HDR10", `hdr${sep}10(?!${sep}(?:\\+|p(?:lus)?|bit|hi))`],
+      ["HDR", `hdr(?!${sep}(?:10(?!${sep}(?:bit|hi))|\\+|p(?:lus)?))`],
+      ["HLG", `hlg`],
+      ["DV", `do?(?:lby)?${sep}vi?(?:sion)?(?:${sep}atmos)?|dv`],
+      ["3D", `(?:bd)?(?:3|three)${sep}(?:d(?:imension)?(?:al)?)`],
+      ["IMAX", `imax`],
+      ["SDR", `sdr`]
+    ]);
     const networkMap: Array<[RegExp, string]> = [
       [/\b(?:NF|Netflix)\b/i, "Netflix"], [/\b(?:AMZN|Amazon)\b/i, "Amazon"],
       [/\b(?:DSNP|Disney\+?)\b/i, "Disney+"], [/\b(?:ATVP|AppleTV\+?)\b/i, "Apple TV+"],
@@ -279,39 +340,70 @@ export function renderAioStreamsFormat(
       [/\bPCOK\b/i, "Peacock"], [/\bPMTP\b/i, "Paramount+"],
       [/\bCRAV\b/i, "Crave"]
     ];
-    const network = networkMap.find(([pattern]) => pattern.test(releaseText))?.[1];
-    const audioRules: Array<[RegExp, string]> = [
-      [/\bDTS[ ._-]?HD[ ._-]?MA\b/i, "DTS-HD MA"], [/\bDTS[ ._-]?X\b/i, "DTS:X"],
-      [/\bTrue[ ._-]?HD\b/i, "TrueHD"], [/\bAtmos\b/i, "Atmos"],
-      [/\b(?:EAC3|DDP|DD\+)\b/i, "EAC3"], [/\b(?:AC3|DD)\b/i, "AC3"],
-      [/\bDTS\b/i, "DTS"], [/\bAAC(?:[ ._-]*\d(?:\.\d+)?)?/i, "AAC"],
-      [/\bFLAC\b/i, "FLAC"], [/\bOpus\b/i, "Opus"], [/\bMP3\b/i, "MP3"]
+    const network = networkMap.find(([pattern]) => pattern.test(tagText))?.[1];
+    const audioTags = allTags([
+      ["Atmos", `atmos|ddpa\\d?`],
+      ["DD+", `d(?:olby)?${sep}d(?:igital)?${sep}(?:p(?:lus)?|\\+)a?(?:${sep}(?:2${sep}0|5${sep}1|7${sep}1))?|e${sep}ac${sep}3`],
+      ["DD", `d(?:olby)?${sep}d(?:igital)?(?:${sep}(?:5${sep}1|7${sep}1|2${sep}0?))?|(?<!e[ .\\-_]?)ac${sep}3`],
+      ["DTS:X", `dts[ .\\-:_]?x`],
+      ["DTS-HD MA", `dts${sep}hd${sep}ma`],
+      ["DTS-HD", `dts${sep}hd(?!${sep}ma)`],
+      ["DTS-ES", `dts${sep}es`],
+      ["DTS", `dts(?![ .\\-:_]?(?:x|hd${sep}(?:ma)?|es))`],
+      ["TrueHD", `true${sep}hd`],
+      ["PCM", `l?pcm`],
+      ["OPUS", `opus`],
+      ["AAC", `q?aac(?:${sep}2)?`],
+      ["FLAC", `flac(?:${sep}(?:lossless|2\\.0|x[2-4]))?`],
+      ["MP3", `mp3`]
+    ]);
+    // Channel counts are looked up on their own so "AAC2.0" still counts.
+    const audioChannels = ["1.0", "2.0", "2.1", "5.0", "5.1", "6.1", "7.0", "7.1", "7.2"]
+      .filter(channels => new RegExp(
+        `(?<![\\d.])${channels.replace(".", "[ .\\-_]?")}(?:ch)?(?!\\d)`, "i"
+      ).test(tagText));
+    const languageRules: Array<[string, string]> = [
+      ["Multi", `multi`],
+      ["Dual Audio", `dual${sep}(?:audio|lang(?:uage)?|flac|ac3|aac2?)`],
+      ["English", `english|eng`], ["Japanese", `japanese|jap|jpn`],
+      ["Chinese", `chinese|chi`], ["Russian", `russian|rus`],
+      ["Arabic", `arabic|ara`], ["Portuguese", `portuguese`],
+      ["Portuguese (Brazil)", `portuguese${sep}brazil|pt${sep}br`],
+      ["Spanish", `spanish|spa|esp`],
+      ["French", `french|fra|fr|vf|vff|vfi|vf2|vfq|truefrench`],
+      ["German", `deu(?:tsch)?(?:land)?|ger(?:man)?`],
+      ["Italian", `italian|ita`], ["Korean", `korean|kor`],
+      ["Hindi", `hindi|hin`], ["Tamil", `tamil|tam`], ["Telugu", `telugu`],
+      ["Kannada", `kannada`], ["Malayalam", `malayalam`], ["Bengali", `bengali`],
+      ["Punjabi", `punjabi`], ["Marathi", `marathi`], ["Gujarati", `gujarati`],
+      ["Thai", `thai|tha`], ["Vietnamese", `vietnamese|vie`],
+      ["Indonesian", `indonesian`], ["Turkish", `turkish|tur`],
+      ["Hebrew", `hebrew|heb`], ["Persian", `persian`],
+      ["Ukrainian", `ukrainian|ukr`], ["Greek", `greek`],
+      ["Polish", `polish|pol`], ["Czech", `czech|cze`], ["Hungarian", `hungarian|hun`],
+      ["Romanian", `romanian`], ["Dutch", `dutch|dut`], ["Danish", `danish`],
+      ["Finnish", `finnish`], ["Swedish", `swedish`], ["Norwegian", `norwegian`],
+      ["Latino", `latino`]
     ];
-    const audioTags = [...new Set(audioRules
-      .filter(([pattern]) => pattern.test(releaseText))
-      .map(([, tag]) => tag))];
-    const audioChannels = [...new Set(
-      [...releaseText.matchAll(/\b(1\.0|2\.0|5\.1|7\.1|5\.0|7\.0|2\.1|6\.1|7\.2)\b/g)]
-        .map(match => match[1]!)
-    )];
-    const languageNames = [
-      "Arabic", "Chinese", "Dutch", "English", "French", "German", "Hindi",
-      "Italian", "Japanese", "Korean", "Portuguese", "Russian", "Spanish",
-      "Tamil", "Telugu", "Thai", "Turkish", "Ukrainian", "Vietnamese"
-    ];
-    const languageSource = markerIndex >= 0 ? releaseText.slice(markerIndex) : "";
-    const languages = languageNames.filter(language =>
-      new RegExp(`\\b${language}\\b`, "i").test(languageSource)
-    );
+    // A language directly followed by "sub(s/titles)" describes subtitles.
+    const languages = languageRules
+      .filter(([, pattern]) => tagRegex(`(?:${pattern})(?!${sep}sub(?:title)?s?)`).test(tagText))
+      .map(([language]) => language);
+    // A release group is the token after the last "-", e.g. "...H.264-GRP".
+    // It must come after the first marker and be one unbroken token, so
+    // "Dual-Audio | M3U8 | 47 Min" or "S1 E1 - Rose" never count as groups.
     const groupIndex = releaseText.lastIndexOf("-");
-    const releaseGroup = groupIndex >= 0 ? releaseText.slice(groupIndex + 1) : "";
+    const groupCandidate = groupIndex >= 0 ? releaseText.slice(groupIndex + 1).trim() : "";
+    const releaseGroup = groupIndex > markerIndex && markerIndex >= 0 &&
+      /^[^\s|\u2022\u00B7\u00BB\[\](){}~,]{2,30}$/.test(groupCandidate)
+      ? groupCandidate : "";
     const extensionMatch = raw.match(/\.([a-z0-9]{2,5})(?:\s|$)/i);
     const editions = [
       [/\bDirector(?:'|\.)?s?[ ._-]+Cut\b/i, "Director's Cut"],
       [/\bExtended\b/i, "Extended"], [/\bTheatrical\b/i, "Theatrical"],
       [/\bUnrated\b/i, "Unrated"], [/\bRemastered\b/i, "Remastered"],
       [/\bCriterion\b/i, "Criterion"]
-    ].filter(([pattern]) => (pattern as RegExp).test(releaseText)).map(([, edition]) => edition as string);
+    ].filter(([pattern]) => (pattern as RegExp).test(tagText)).map(([, edition]) => edition as string);
     const dateMatch = releaseText.match(/\b((?:19|20)\d{2})[ ._-](\d{2})[ ._-](\d{2})\b/);
     const seasonEpisode = [seasonCode, episodeCode].filter(Boolean);
     const extracted: Record<string, unknown> = {
