@@ -72,3 +72,59 @@ test("multi-line descriptions pick the line that looks like a release name", () 
   assert.equal(s.title, "The Movie");
   assert.equal(s.year, 2021);
 });
+
+const withMetadata = (title, metadata) => {
+  const stream = { title };
+  renderAioStreamsFormat("{stream.title}", stream, "test", { metadata });
+  return stream;
+};
+
+test("requested metadata repairs near-miss titles and reports whether they matched", () => {
+  const meta = { title: "A Dog's Perfect Christmas", year: 2026 };
+  assert.equal(withMetadata("A Dogs Perfect Christmas (2026) 1080p", meta).title, "A Dog's Perfect Christmas");
+  assert.equal(withMetadata("A Dog's Perfect Christmas HubCloud FSL", meta).title, "A Dog's Perfect Christmas");
+  assert.equal(withMetadata("A Dog's Perfect Christmas (2026)", meta).titleMatched, true);
+  assert.equal(withMetadata("Totally Different Movie (2026)", meta).titleMatched, false);
+  assert.equal(
+    withMetadata("Ngoi Nha Ve Dem 2021 1080p", { title: "Ngôi Nhà Về Đêm", aliases: ["The Night House"] }).title,
+    "Ngôi Nhà Về Đêm"
+  );
+  // Digit tokens must agree: a sequel is not a match.
+  assert.equal(withMetadata("Toy Story 3 2010 1080p", { title: "Toy Story 2" }).titleMatched, false);
+});
+
+test("requested year wins when several years appear", () => {
+  assert.equal(withMetadata("Movie 2019 2021 1080p", { title: "Movie", year: 2021 }).year, 2021);
+});
+
+test("usenet repost suffixes are not read as the release group", () => {
+  const s = { title: "The.Movie.2021.1080p.WEB-DL.H.264-GRP-NZBGeek.mkv" };
+  renderAioStreamsFormat("{stream.title}", s, "test");
+  assert.equal(s.releaseGroup, "GRP");
+});
+
+test("wrapped plugins use the most common title when no media title is passed", async () => {
+  const { DEFAULT_STREAM_MIDDLEWARE, wrapPluginStreams } = await import("../dist/providers/stream-middleware.js");
+  const fixtures = [
+    { title: "A.Dog's.Perfect.Christmas.2026.1080p.WEB-DL.mkv", url: "https://x/1" },
+    { title: "A Dog's Perfect Christmas (2026) 720p", url: "https://x/2" },
+    { title: "A Dog's Perfect Christmas HubCloud FSL", url: "https://x/3" },
+    { title: "Unrelated Thing (2020) 1080p", url: "https://x/4" }
+  ];
+  const run = async (args) => {
+    const module = { exports: {} };
+    new Function("module", "exports", "fixtures", wrapPluginStreams(
+      "module.exports = { getStreams: async () => fixtures.map(item => ({ ...item })) };",
+      { ...DEFAULT_STREAM_MIDDLEWARE, format: "{stream.title}|{stream.titleMatched}" }
+    ))(module, module.exports, fixtures);
+    return module.exports.getStreams(...args);
+  };
+
+  const byUrl = (streams) => Object.fromEntries(streams.map((item) => [item.url, item.title]));
+  const inferred = byUrl(await run(["603", "movie"]));
+  assert.equal(inferred["https://x/3"], "A Dog's Perfect Christmas|true");
+  assert.equal(inferred["https://x/4"], "Unrelated Thing|false");
+
+  const explicit = byUrl(await run([{ id: "1", title: "A Dog's Perfect Christmas", year: 2026 }]));
+  assert.equal(explicit["https://x/3"], "A Dog's Perfect Christmas|true");
+});

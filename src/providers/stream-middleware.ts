@@ -856,6 +856,71 @@ export function wrapPluginStreams(
       return output;
     };
 
+    // Requested media for title matching. Plugins that receive an object
+    // (title, year, aliases) pass it straight through. Plugins that only get a
+    // TMDB id have no title, so the most common title across this response
+    // stands in for it: nearly every result is the same movie or show.
+    const mediaArg = args.find(arg => arg && typeof arg === "object" && !Array.isArray(arg));
+    const textOf = value => typeof value === "string" ? value.trim() : "";
+    const listOf = value => Array.isArray(value) ? value.map(textOf).filter(Boolean) : [];
+    const requestedMetadata = (() => {
+      const media = mediaArg ?? {};
+      const nested = media.metadata && typeof media.metadata === "object" ? media.metadata : {};
+      const yearText = String(media.year ?? media.releaseYear ?? nested.year ?? media.release_date ?? media.first_air_date ?? "").slice(0, 4);
+      return {
+        title: textOf(media.title) || textOf(media.name) || textOf(nested.title) || textOf(nested.name),
+        originalTitle: textOf(media.originalTitle) || textOf(media.original_title) || textOf(media.original_name),
+        titles: [...listOf(media.aliases), ...listOf(media.titles), ...listOf(media.alternativeTitles)],
+        ...(/^\\d{4}$/.test(yearText) ? { year: Number(yearText) } : {})
+      };
+    })();
+
+    if (!requestedMetadata.title) {
+      const foldKey = value => stringify(value).normalize("NFD")
+        .replace(/[\\u0300-\\u036f]/g, "").toLowerCase()
+        .replace(/['\\u2019\\u0060]/g, "").replace(/[^\\p{L}\\p{N}]+/gu, " ").trim();
+      const tally = new Map();
+      let counted = 0;
+
+      for (const stream of result) {
+        if (!stream || typeof stream !== "object") continue;
+
+        try {
+          const probe = { ...stream };
+          for (const key of ["name", "title", "description"]) {
+            if (typeof probe[key] === "string") probe[key] = stripDecorativeCharacters(probe[key]);
+          }
+          renderAioStreamsFormat("", probe, addonName);
+          const key = foldKey(probe.title);
+          if (key.length < 2) continue;
+          const entry = tally.get(key) ?? { count: 0, spellings: new Map() };
+          entry.count++;
+          entry.spellings.set(probe.title, (entry.spellings.get(probe.title) ?? 0) + 1);
+          tally.set(key, entry);
+          counted++;
+        } catch {
+          // A stream the probe cannot parse simply does not vote.
+        }
+      }
+
+      let top = null;
+      for (const entry of tally.values()) {
+        if (!top || entry.count > top.count) top = entry;
+      }
+
+      if (top && top.count >= 2 && top.count * 2 >= counted) {
+        let spelling = "";
+        let spellingCount = 0;
+        for (const [text, count] of top.spellings) {
+          if (count > spellingCount) {
+            spelling = text;
+            spellingCount = count;
+          }
+        }
+        requestedMetadata.title = spelling;
+      }
+    }
+
     const candidates = result
       .filter(stream => stream && typeof stream === "object")
       .map((stream, index) => {
@@ -876,7 +941,8 @@ export function wrapPluginStreams(
           name = renderAioStreamsFormat(
             config.nameFormat,
             prepareFormatterStream(normalized),
-            addonName
+            addonName,
+            { metadata: requestedMetadata }
           );
         } catch {
           name = formatFallback(config.nameFormat, normalized) || name;
@@ -889,7 +955,8 @@ export function wrapPluginStreams(
           description = renderAioStreamsFormat(
             config.descriptionFormat,
             descriptionInput,
-            addonName
+            addonName,
+            { metadata: requestedMetadata }
           );
         } catch {
           description = formatFallback(config.descriptionFormat, normalized) || description;

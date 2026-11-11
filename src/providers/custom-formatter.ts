@@ -142,9 +142,24 @@ export function renderAioStreamsFormat(
       : streamSizeMatch
         ? Number(streamSizeMatch[1]) * unitFactors[streamSizeMatch[2]!.toUpperCase()]!
         : undefined;
+    // Usenet reposts append tags such as "-NZBGeek" or "-xpost" after the real
+    // release group. Strip them (list from AIOStreams) so they are not parsed
+    // as the group.
+    const repostSuffixPattern = new RegExp(
+      `(?:-(?:${[
+        "RP", "1", "NZBGeek", "[N-Z-B]", "Obfuscated", "Obfuscation", "Scrambled",
+        "sample", "Pre", "postbot", "xpost", "Rakuv*", "WhiteRev", "BUYMORE",
+        "AsRequested", "AlternativeToRequested", "GEROV", "Z0iDS3N", "Chamele0n",
+        "4P", "4Planet", "AlteZachen", "RePACKPOST", "FTP", "xpo"
+      ].map(suffix => suffix.endsWith("*")
+        ? `${suffix.slice(0, -1).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[a-z0-9]*`
+        : suffix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")}))+(?=(?:\\.[a-z0-9]{2,4})?$)`,
+      "i"
+    );
     const releaseText = raw
       .replace(/\s{0,8}\d{1,15}(?:\.\d{1,6})?\s{0,8}(?:B|KB|MB|GB|TB)\s{0,8}$/i, "")
-      .replace(/\.(mkv|mp4|avi|mov|m4v|webm|ts|m2ts)$/i, "");
+      .replace(/\.(mkv|mp4|avi|mov|m4v|webm|ts|m2ts)$/i, "")
+      .replace(repostSuffixPattern, "");
     // Release text can use "." "_" "~" or spaces as word separators. Same-length
     // swaps keep marker indices valid for the original releaseText.
     const currentYear = new Date().getUTCFullYear();
@@ -172,6 +187,7 @@ export function renderAioStreamsFormat(
       while (end > start && isTitleSeparator(value[end - 1]!)) end--;
       return value.slice(start, end);
     };
+    const providerTagWords = /\b(?:hubcloud|vidlink|pixeldrain|gdflix|gdrive|drive|fsl|vegamovies|moviesdrive|playimdb|server|mirror|direct|download|dl|stream|hls|link|cloud|sub(?:s|bed|title)?|dub(?:bed)?|ph\u1EE5 \u0111\u1EC1)\b/i;
     const hasTitleText = (value: string): boolean => /[\p{L}\p{N}]/u.test(value);
     // Sentinel-based cut so no regex ever runs over unbounded input twice.
     const cutAt = (value: string, index: number): string =>
@@ -210,7 +226,7 @@ export function renderAioStreamsFormat(
       if (firstDash && firstDash.index !== undefined) {
         const rest = text.slice(firstDash.index + firstDash[0].length);
         const looksLikeTag = dashes.length > 1 || /\d/.test(rest) ||
-          /\b(?:hubcloud|vidlink|pixeldrain|gdflix|gdrive|drive|fsl|vegamovies|moviesdrive|playimdb|server|mirror|direct|download|dl|stream|hls|link|cloud|sub(?:s|bed|title)?|dub(?:bed)?|ph\u1EE5 \u0111\u1EC1)\b/i.test(rest);
+          providerTagWords.test(rest);
         if (looksLikeTag) text = cutAt(text, firstDash.index);
       }
       return { title: trimSeparators(collapseWhitespace(text)), leadingJunk };
@@ -244,13 +260,97 @@ export function renderAioStreamsFormat(
       }
     }
     const built = buildTitle(titleSource);
+    // ---- Requested-title matching (modelled on AIOStreams' title matching) ----
+    // The caller may pass the requested media in previewData.metadata:
+    // { title, originalTitle?, titles?: string[], aliases?: string[], year? }.
+    // A parsed title that is close to a requested title is replaced by that
+    // clean title, which repairs stray prefixes, accents, "&" vs "and" and
+    // leftover provider tags.
+    const requestedMeta = previewData.metadata ?? {};
+    const textOf = (value: unknown): string =>
+      typeof value === "string" ? collapseWhitespace(value).trim() : "";
+    const listOf = (value: unknown): string[] =>
+      Array.isArray(value) ? value.map(textOf) : [];
+    const requestedTitles = [...new Set([
+      textOf(requestedMeta.title), textOf(requestedMeta.originalTitle),
+      textOf(requestedMeta.original_title),
+      ...listOf(requestedMeta.titles), ...listOf(requestedMeta.aliases)
+    ].filter(Boolean))].slice(0, 20);
+    const requestedYear = isPlausibleYear(String(requestedMeta.year ?? ""))
+      ? Number(requestedMeta.year) : undefined;
+    const metadataTitle = requestedTitles[0] ?? "";
+    const foldTitle = (value: string): string => {
+      const specials: Record<string, string> = {
+        "\u00DF": "ss", "\u0131": "i", "\u00F8": "o", "\u00D8": "O", "\u0142": "l", "\u0141": "L",
+        "\u0111": "d", "\u0110": "D", "\u00E6": "ae", "\u00C6": "Ae", "\u0153": "oe", "\u0152": "Oe",
+        "\u00F0": "d", "\u00D0": "D", "\u00FE": "th", "\u00DE": "Th"
+      };
+      return value
+        .replace(/[\u00DF\u0131\u00F8\u00D8\u0142\u0141\u0111\u0110\u00E6\u00C6\u0153\u0152\u00F0\u00D0\u00FE\u00DE]/g, ch => specials[ch] ?? ch)
+        .normalize("NFD")
+        .replace(/[\u0300-\u036F]/g, "")
+        .toLowerCase()
+        .replace(/&/g, " and ")
+        .replace(/['\u2019`]/g, "")
+        .replace(/[^\p{L}\p{N}]+/gu, " ")
+        .trim();
+    };
+    // Indel similarity (what fuzzball's ratio measures): 2 * LCS / total length.
+    // Digit tokens must agree so "Toy Story 2" never matches "Toy Story 3".
+    const titleSimilarity = (left: string, right: string): number => {
+      if (!left || !right) return 0;
+      if (left === right) return 1;
+      const digitTokens = (value: string): string =>
+        value.split(" ").filter(token => /\d/.test(token)).sort().join(" ");
+      if (digitTokens(left) !== digitTokens(right)) return 0;
+      const a = left.slice(0, 160);
+      const b = right.slice(0, 160);
+      let previous = new Array<number>(b.length + 1).fill(0);
+      for (let i = 1; i <= a.length; i++) {
+        const current = new Array<number>(b.length + 1).fill(0);
+        for (let j = 1; j <= b.length; j++) {
+          current[j] = a[i - 1] === b[j - 1]
+            ? previous[j - 1]! + 1
+            : Math.max(previous[j]!, current[j - 1]!);
+        }
+        previous = current;
+      }
+      return (2 * previous[b.length]!) / (a.length + b.length);
+    };
+    const matchRequestedTitle = (candidate: string, wholeName: string, hasMarker: boolean): string | undefined => {
+      const foldedCandidate = foldTitle(candidate);
+      let best: string | undefined;
+      let bestScore = 0;
+      for (const requested of requestedTitles) {
+        const score = titleSimilarity(foldedCandidate, foldTitle(requested));
+        if (score > bestScore) {
+          bestScore = score;
+          best = requested;
+        }
+      }
+      if (best !== undefined && bestScore >= 0.85) return best;
+      // No marker to cut at, so provider text may trail the title: accept the
+      // requested title as an exact word prefix when the remainder is clearly
+      // provider/tag text ("A Dog's Perfect Christmas HubCloud FSL").
+      if (!hasMarker) {
+        const foldedName = foldTitle(wholeName);
+        return requestedTitles.find(requested => {
+          const folded = foldTitle(requested);
+          return folded.length >= 4 && foldedName.startsWith(`${folded} `) &&
+            providerTagWords.test(foldedName.slice(folded.length));
+        });
+      }
+      return undefined;
+    };
     // Nothing usable before the first marker: fall back to the whole name, and
     // finally to the requested media's title when one is supplied.
-    const metadataTitle = typeof previewData.metadata?.title === "string"
-      ? collapseWhitespace(previewData.metadata.title).trim() : "";
-    const parsedTitle = (built.leadingJunk && metadataTitle) ? metadataTitle
+    const parsedTitleRaw = (built.leadingJunk && metadataTitle) ? metadataTitle
       : built.title || buildTitle(releaseText).title || metadataTitle ||
         collapseWhitespace(releaseText.replace(/[._~]/g, " ")).trim();
+    const matchedTitle = requestedTitles.length
+      ? matchRequestedTitle(parsedTitleRaw, releaseText, marker !== null)
+      : undefined;
+    const parsedTitle = matchedTitle ?? parsedTitleRaw;
     const resolutionMatch = releaseText.match(/(?:2160|1440|1080|720|576|480|360|240|144)[pi]?|\b(?:4k|uhd|qhd|fhd)\b/i);
     const resolutionText = resolutionMatch?.[0].toLowerCase();
     const resolution = resolutionText
@@ -267,7 +367,9 @@ export function renderAioStreamsFormat(
       const bracketed = all.find(match =>
         /[(\[]\s*$/.test(releaseText.slice(0, match.index)) &&
         /^\s*[)\]]/.test(releaseText.slice((match.index ?? 0) + match[0].length)));
-      return bracketed ?? all.find(match => match.index !== 0) ?? all[0] ?? null;
+      const requested = requestedYear === undefined
+        ? undefined : all.find(match => Number(match[1]) === requestedYear);
+      return bracketed ?? requested ?? all.find(match => match.index !== 0) ?? all[0] ?? null;
     })();
     const episodeMatch = releaseText.match(/\bS(\d{1,2})(?:[ ._-]*E(\d{1,3}))?/i);
     const seasonOnlyMatch = releaseText.match(/\bSeason\s*0*(\d{1,2})\b/i);
@@ -286,12 +388,11 @@ export function renderAioStreamsFormat(
     //    word, so "AAC2.0", "H.264-GRP" and "[1080p]" all work.
     const escapeRegExp = (value: string): string =>
       value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const tagText = parsedTitle.length > 4
-      ? releaseText.replace(
-        new RegExp(escapeRegExp(parsedTitle).replace(/ /g, "[._ ~]"), "i"),
-        " "
-      )
-      : releaseText;
+    const stripTitle = (text: string, title: string): string =>
+      title.length > 4
+        ? text.replace(new RegExp(escapeRegExp(title).replace(/ /g, "[._ ~]"), "i"), " ")
+        : text;
+    const tagText = stripTitle(stripTitle(releaseText, parsedTitleRaw), matchedTitle ?? "");
     const sep = "[ .\\-_]?";
     const tagRegex = (pattern: string): RegExp =>
       new RegExp(`(?<![^\\s\\[(_\\-.,~|])(?:${pattern})(?=[\\s\\[()\\]_.\\-,~|]|$)`, "i");
@@ -409,6 +510,7 @@ export function renderAioStreamsFormat(
     const extracted: Record<string, unknown> = {
       ...(parsedTitle ? { title: parsedTitle } : {}),
       ...(episodeTitle ? { episodeTitle } : {}),
+      ...(requestedTitles.length ? { titleMatched: matchedTitle !== undefined } : {}),
       filename: original.filename ?? original.fileName ?? (raw || undefined),
       ...(yearMatch ? { year: Number(yearMatch[1]) } : {}),
       ...(resolution ? { resolution } : {}),
