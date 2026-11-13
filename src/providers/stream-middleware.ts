@@ -444,7 +444,7 @@ export function normalizeStreamMiddlewareSettings(
   const requestedTimeout = Number(rawProbe.timeoutMs);
 
   const probe: StreamProbeSettings = {
-    enabled: rawProbe.enabled === true,
+    enabled: rawProbe.enabled !== false,
     requireSeekable: rawProbe.requireSeekable !== false,
     timeoutMs: Number.isFinite(requestedTimeout) && rawProbe.timeoutMs !== null && rawProbe.timeoutMs !== ""
       ? Math.min(MAX_PROBE_TIMEOUT_MS, Math.max(MIN_PROBE_TIMEOUT_MS, Math.round(requestedTimeout)))
@@ -549,111 +549,6 @@ export function toJsLiteral(value: unknown): string {
     /[<>/\u2028\u2029]/g,
     ch => UNSAFE_JS_CHARS[ch]!
   );
-}
-
-/**
- * True when a provider file uses ES module syntax. Nuvio evaluates plugins as
- * scripts, so such a file cannot run there at all; it is left out of a
- * combined plugin rather than letting it break the copies that do run.
- */
-export function usesModuleSyntax(source: string): boolean {
-  return /^[ \t]*(?:import[ \t{*"']|export[ \t{*]|export\s+default\b)/m.test(source);
-}
-
-/**
- * Joins several copies of one plugin (the same plugin ID selected from more
- * than one source) into a single plugin file. Each copy runs in its own scope
- * with its own `module`, so they cannot overwrite each other's functions.
- * At run time every copy's `getStreams` is called, and a stream whose
- * `infoHash` or URL was already returned by an earlier copy is dropped. That
- * is the "are these really the same stream" check: it runs in Nuvio, on the
- * results, so it needs nothing from the AIOPlugins server.
- */
-export function combineVariantSources(sources: string[]): string {
-  const loaders = sources
-    .map(source => `    function (module, exports) {\n${source}\n    }`)
-    .join(",\n");
-
-  return `;(() => {
-  const loaders = [
-${loaders}
-  ];
-
-  const variants = [];
-
-  for (const load of loaders) {
-    const hadGlobal = Object.prototype.hasOwnProperty.call(globalThis, "getStreams");
-    const before = globalThis.getStreams;
-    const scope = { exports: {} };
-    let loaded = true;
-
-    try {
-      load.call(globalThis, scope, scope.exports);
-    } catch (error) {
-      loaded = false;
-    }
-
-    // Plugins publish getStreams on module.exports, or (older style) on the
-    // global object. Take it, then restore the global for the next copy.
-    const published = scope.exports && typeof scope.exports.getStreams === "function"
-      ? { run: scope.exports.getStreams, self: scope.exports }
-      : typeof globalThis.getStreams === "function" && globalThis.getStreams !== before
-        ? { run: globalThis.getStreams, self: globalThis }
-        : null;
-
-    if (hadGlobal) globalThis.getStreams = before;
-    else try { delete globalThis.getStreams; } catch (error) { globalThis.getStreams = undefined; }
-
-    if (loaded && published) variants.push(published);
-  }
-
-  if (variants.length === 0) return;
-
-  const identityOf = stream => {
-    if (!stream || typeof stream !== "object") return "";
-    const hash = typeof stream.infoHash === "string" ? stream.infoHash.trim().toLowerCase() : "";
-    if (hash) return "hash:" + hash + ":" + (stream.fileIdx == null ? "" : stream.fileIdx);
-    const url = typeof stream.url === "string" ? stream.url.trim() : "";
-    return url ? "url:" + url.split("#")[0] : "";
-  };
-
-  const target = typeof module !== "undefined" && module.exports
-    ? module.exports
-    : typeof exports !== "undefined" ? exports : null;
-
-  if (!target) return;
-
-  target.getStreams = async function (...args) {
-    const outcomes = await Promise.all(variants.map(async variant => {
-      try {
-        const result = await variant.run.apply(variant.self, args);
-        return Array.isArray(result) ? result : [];
-      } catch (error) {
-        return [];
-      }
-    }));
-
-    const seen = new Set();
-    const merged = [];
-
-    for (const streams of outcomes) {
-      const own = [];
-
-      for (const stream of streams) {
-        const identity = identityOf(stream);
-        if (identity && seen.has(identity)) continue;
-        if (identity) own.push(identity);
-        merged.push(stream);
-      }
-
-      // Duplicates inside one copy are left for Nuvio; only an earlier copy's
-      // streams count as already seen.
-      for (const identity of own) seen.add(identity);
-    }
-
-    return merged;
-  };
-})();`;
 }
 
 export function wrapPluginStreams(

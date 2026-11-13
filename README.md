@@ -206,14 +206,16 @@ the finished list. Nuvio plugins return once, so the list cannot be updated afte
 is shown.
 
 **Same plugin from several sources.** You can tick the same plugin ID in more than one
-source. Nuvio needs unique IDs within a repository, so AIOPlugins lists it once and
-serves a single file that runs every selected source's copy and drops streams another
-copy already returned (same `infoHash` or URL). Byte-identical copies run once, and a
-copy that fails to load or uses ES module syntax is skipped. The comparison runs in
-Nuvio on the results; the server only fetches each copy's file.
+source. Nuvio needs unique IDs within a repository, so when you save, AIOPlugins keeps
+only the copy whose provider file was changed most recently (judged from the file's
+commit history on GitHub, falling back to the repository's latest commit if that cannot
+be read; ties go to the source listed first) and removes the plugin from the other
+sources. The saved setup contains each plugin once, so serving a plugin only ever
+fetches that one file.
 
-**Playback check (optional).** Under *Stream filters*, "Remove streams that
-cannot be played" adds a check to the generated plugin file. The check runs
+**Playback check (on by default).** Under *Stream filters*, "Remove streams that
+cannot be played" adds a check to the generated plugin file; untick it to turn the
+check off. The check runs
 inside Nuvio, on the viewer's device, after the provider returns its streams:
 for each `http(s)` stream URL it sends one small `Range: bytes=0-31` request,
 using the stream's own headers, and reads only those first bytes. AIOPlugins
@@ -231,7 +233,7 @@ server requests.
     magnet links, or a plugin runtime without `fetch`.
 -   Each distinct URL is checked once, up to eight at a time, and the wait
     per stream is configurable (3 to 12 seconds). Checking adds a delay
-    while results load, so the option is off by default.
+    while results load, so turn it off if you would rather have results sooner.
 
 This is a best-effort heuristic. A host can answer a probe differently from
 Nuvio's player (for example, by user agent), so a stream can still fail to

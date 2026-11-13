@@ -3,13 +3,11 @@ import { createServer } from "node:http";
 import { after, before, test } from "node:test";
 import {
   DEFAULT_STREAM_MIDDLEWARE,
-  combineVariantSources,
   normalizeStreamMiddlewareSettings,
   toJsLiteral,
-  usesModuleSyntax,
   wrapPluginStreams
 } from "../dist/providers/stream-middleware.js";
-import { getPluginRepositoryManifest, getRemotePluginFile } from "../dist/providers/remote.js";
+import { getPluginRepositoryManifest, getRemotePluginFile, resolveSelectedSources } from "../dist/providers/remote.js";
 
 const MEDIA = Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), Buffer.alloc(300_000)]);
 const requests = [];
@@ -54,7 +52,9 @@ async function run(streams, ranking, sorts = []) {
     streams.map(item => ({ ...item, url: item.url.startsWith("/") ? base + item.url : item.url }))
   )} };`;
   new Function("module", "exports", wrapPluginStreams(source, {
-    ...DEFAULT_STREAM_MIDDLEWARE, sorts, ranking
+    // The playback check is on by default; these tests are about ranking alone.
+    ...DEFAULT_STREAM_MIDDLEWARE, sorts, ranking,
+    probe: { ...DEFAULT_STREAM_MIDDLEWARE.probe, enabled: false }
   }))(module, module.exports);
   return (await module.exports.getStreams({})).map(stream => stream.url.replace(base, ""));
 }
@@ -149,99 +149,160 @@ test("the cap works without speed ranking and measures each URL once", async () 
 
 // ---------- same plugin ID from several sources ----------
 
-async function combined(sources) {
-  const module = { exports: {} };
-  new Function("module", "exports", wrapPluginStreams(
-    combineVariantSources(sources),
-    { ...DEFAULT_STREAM_MIDDLEWARE, ranking: { preferFastest: false, perQuality: 0 } }
-  ))(module, module.exports);
-  return module.exports.getStreams({});
+const sha = ch => ch.repeat(40);
+const entry = { id: "kurage", name: "Kurage", filename: "providers/kurage.js", supportedTypes: ["movie", "tv"] };
+const other = { id: "other", name: "Other", filename: "providers/other.js", supportedTypes: ["movie"] };
+const atom = (commit, updated) =>
+  `<feed><updated>2030-01-01T00:00:00Z</updated><entry><id>tag:github.com,2008:Grit::Commit/${commit}</id><updated>${updated}</updated></entry></feed>`;
+
+// repos: { name: { commit, repoUpdated, manifest, files: { path: updated | null } } }
+// A null file time means GitHub has no commit feed for that file.
+function mockGitHub(repos) {
+  const original = globalThis.fetch;
+  const calls = [];
+
+  globalThis.fetch = async input => {
+    const url = new URL(input);
+    calls.push(url.href);
+    const [, owner, name, kind, ...rest] = url.pathname.split("/");
+    const repo = repos[name];
+    if (!repo || owner !== "owner") return new Response("", { status: 404 });
+
+    if (url.hostname === "raw.githubusercontent.com") {
+      return new Response(JSON.stringify(repo.manifest), { status: 200 });
+    }
+    if (kind === "commits" && rest.length === 1) {
+      return new Response(atom(repo.commit, repo.repoUpdated), { status: 200 });
+    }
+    if (kind === "commits") {
+      const updated = repo.files[rest.slice(1).join("/").replace(/\.atom$/, "")];
+      return updated ? new Response(atom(repo.commit, updated), { status: 200 }) : new Response("", { status: 404 });
+    }
+    return new Response("", { status: 404 });
+  };
+
+  return { calls, restore: () => { globalThis.fetch = original; } };
 }
 
-const variant = streams => `module.exports = { getStreams: async () => ${toJsLiteral(streams)} };`;
-
-test("combined copies drop streams another copy already returned", async () => {
-  const result = await combined([
-    variant([{ title: "One 1080p", url: "https://h.example/a.mp4" }, { title: "Hash", infoHash: "ABC123" }]),
-    variant([
-      { title: "One again 1080p", url: "https://h.example/a.mp4#frag" },
-      { title: "Hash again", infoHash: "abc123" },
-      { title: "Only here 720p", url: "https://h.example/b.mp4" }
-    ])
-  ]);
-  assert.deepEqual(result.map(s => s.url ?? s.infoHash), ["https://h.example/a.mp4", "abc123".toUpperCase(), "https://h.example/b.mp4"]);
+const pick = (name, providerIds = ["kurage"]) => ({
+  repository: `https://github.com/owner/${name}`, ref: "main", providerIds
 });
 
-test("combined copies keep duplicates inside one copy and survive a failing copy", async () => {
-  const result = await combined([
-    variant([{ title: "A", url: "https://h.example/x.mp4" }, { title: "A", url: "https://h.example/x.mp4" }]),
-    "throw new Error('broken on load');",
-    "module.exports = { getStreams: async () => { throw new Error('boom'); } };",
-    variant([{ title: "B", url: "https://h.example/y.mp4" }])
-  ]);
-  assert.equal(result.length, 3);
+const repo = (letter, repoUpdated, fileUpdated, entries = [entry]) => ({
+  commit: sha(letter),
+  repoUpdated,
+  manifest: entries,
+  files: Object.fromEntries(entries.map(e => [e.filename, fileUpdated]))
 });
 
-test("copies cannot overwrite each other's getStreams, even via the global", async () => {
-  const result = await combined([
-    "globalThis.getStreams = async () => [{ title: 'G1', url: 'https://h.example/g1.mp4' }];",
-    "globalThis.getStreams = async () => [{ title: 'G2', url: 'https://h.example/g2.mp4' }];"
-  ]);
-  assert.deepEqual(result.map(s => s.url), ["https://h.example/g1.mp4", "https://h.example/g2.mp4"]);
-  assert.equal(typeof globalThis.getStreams, "undefined");
+test("a plugin selected from several sources is saved once, from the newest file", async () => {
+  const github = mockGitHub({
+    stale: repo("a", "2026-11-01T00:00:00Z", "2024-02-01T00:00:00Z"),
+    fresh: repo("b", "2025-01-01T00:00:00Z", "2026-06-01T00:00:00Z"),
+    middle: repo("c", "2026-11-01T00:00:00Z", "2025-05-01T00:00:00Z")
+  });
+
+  try {
+    const result = await resolveSelectedSources([pick("stale"), pick("fresh"), pick("middle")]);
+
+    assert.equal(result.plugins, 1);
+    assert.equal(result.deduped, 1);
+    assert.deepEqual(result.sources.map(s => s.repository), ["https://github.com/owner/fresh"]);
+    assert.deepEqual(result.sources[0].providerIds, ["kurage"]);
+    assert.deepEqual(result.sources[0].providers.map(p => p.id), ["kurage"]);
+  } finally {
+    github.restore();
+  }
 });
 
-test("module syntax is detected", () => {
-  assert.equal(usesModuleSyntax("import x from 'y';\nmodule.exports={}"), true);
-  assert.equal(usesModuleSyntax("export const a = 1;"), true);
-  assert.equal(usesModuleSyntax("const important = 1;\nmodule.exports = {};"), false);
+test("only the duplicated plugin moves; a source keeps its other selections", async () => {
+  const github = mockGitHub({
+    old: repo("a", "2026-01-01T00:00:00Z", "2024-01-01T00:00:00Z", [entry, other]),
+    new: repo("b", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z", [entry])
+  });
+
+  try {
+    const result = await resolveSelectedSources([pick("old", ["kurage", "other"]), pick("new")]);
+
+    assert.equal(result.plugins, 2);
+    assert.equal(result.deduped, 1);
+    const old = result.sources.find(s => s.repository.endsWith("/old"));
+    assert.deepEqual(old.providerIds, ["other"]);
+    assert.deepEqual(old.providers.map(p => p.id), ["other"]);
+    assert.deepEqual(result.sources.find(s => s.repository.endsWith("/new")).providerIds, ["kurage"]);
+  } finally {
+    github.restore();
+  }
 });
 
-const hash = "c".repeat(40);
-const entry = { id: "kurage", name: "Kurage", filename: "providers/kurage.js", supportedTypes: ["movie", "tv"] };
-const select = repo => ({
-  repository: `https://github.com/owner/${repo}`, ref: "main", commit: hash,
+test("without a file history the repository's latest commit decides, and ties keep the first source", async () => {
+  const fallback = mockGitHub({
+    a: repo("a", "2024-01-01T00:00:00Z", null),
+    b: repo("b", "2026-01-01T00:00:00Z", null)
+  });
+  try {
+    const result = await resolveSelectedSources([pick("a"), pick("b")]);
+    assert.deepEqual(result.sources.map(s => s.repository), ["https://github.com/owner/b"]);
+  } finally {
+    fallback.restore();
+  }
+
+  const tie = mockGitHub({
+    a: repo("a", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"),
+    b: repo("b", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z")
+  });
+  try {
+    const result = await resolveSelectedSources([pick("a"), pick("b")]);
+    assert.deepEqual(result.sources.map(s => s.repository), ["https://github.com/owner/a"]);
+  } finally {
+    tie.restore();
+  }
+});
+
+test("no dates are looked up when nothing is duplicated", async () => {
+  const github = mockGitHub({
+    a: repo("a", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z", [entry]),
+    b: repo("b", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z", [other])
+  });
+
+  try {
+    const result = await resolveSelectedSources([pick("a"), pick("b", ["other"])]);
+    assert.equal(result.deduped, 0);
+    assert.equal(result.plugins, 2);
+    assert.equal(github.calls.filter(url => url.endsWith(".js.atom")).length, 0);
+  } finally {
+    github.restore();
+  }
+});
+
+// ---------- serving ----------
+
+const saved = (name, letter) => ({
+  repository: `https://github.com/owner/${name}`, ref: "main", commit: sha(letter),
   providerIds: ["kurage"], providers: [{ ...entry }]
 });
 
-test("one plugin per ID is listed, with every source recorded", async () => {
-  const manifest = await getPluginRepositoryManifest(
-    "u", [select("yoru"), select("allinone")], {}, { appVersion: "1.0.0", origin: "https://x.test" }
-  );
-  assert.equal(manifest.scrapers.length, 1);
-  assert.equal(manifest.scrapers[0].id, "kurage");
-  assert.deepEqual(manifest.scrapers[0].aioplugins.alsoFrom, [`owner/allinone@${hash}`]);
-  assert.match(manifest.description, /1 plugin from 2 sources/);
-
-  const single = await getPluginRepositoryManifest(
-    "u", [select("yoru")], {}, { appVersion: "1.0.0", origin: "https://x.test" }
-  );
-  assert.equal(single.scrapers[0].aioplugins.alsoFrom, undefined);
-  assert.notEqual(single.scrapers[0].filename, manifest.scrapers[0].filename);
-});
-
-test("the served file runs both copies; identical code is served once", async () => {
+test("a setup saved with duplicates serves the first source's file and fetches only that", async () => {
   const original = globalThis.fetch;
-  const files = {
-    yoru: variant([{ title: "Y 1080p", url: "https://h.example/y.mp4" }]),
-    allinone: variant([{ title: "A 1080p", url: "https://h.example/a.mp4" }]),
-    twin: variant([{ title: "Y 1080p", url: "https://h.example/y.mp4" }])
-  };
+  const fetched = [];
   globalThis.fetch = async input => {
-    const repo = new URL(input).pathname.split("/")[2];
-    return new Response(files[repo] ?? "", { status: files[repo] ? 200 : 404 });
+    fetched.push(new URL(input).pathname);
+    return new Response("module.exports = { getStreams: async () => [] };", { status: 200 });
   };
 
   try {
-    const sources = [select("yoru"), select("allinone")];
-    const manifest = await getPluginRepositoryManifest("u", sources, {}, { appVersion: "1", origin: "https://x.test" });
-    const code = await getRemotePluginFile(sources, manifest.scrapers[0].filename, {});
-    assert.match(code, /function \(module, exports\)/);
+    const sources = [saved("yoru", "a"), saved("allinone", "b")];
+    const manifest = await getPluginRepositoryManifest(
+      "u", sources, {}, { appVersion: "1.0.0", origin: "https://x.test" }
+    );
 
-    const twins = [select("yoru"), select("twin")];
-    const twinManifest = await getPluginRepositoryManifest("u", twins, {}, { appVersion: "1", origin: "https://x.test" });
-    const single = await getRemotePluginFile(twins, twinManifest.scrapers[0].filename, {});
-    assert.doesNotMatch(single, /function \(module, exports\)/);
+    assert.equal(manifest.scrapers.length, 1);
+    assert.equal(manifest.scrapers[0].aioplugins.source, "owner/yoru");
+    assert.match(manifest.description, /1 plugin from 1 source\./);
+
+    const code = await getRemotePluginFile(sources, manifest.scrapers[0].filename, {});
+    assert.ok(code.startsWith("module.exports"));
+    assert.deepEqual(fetched, [`/owner/yoru/${sha("a")}/providers/kurage.js`]);
   } finally {
     globalThis.fetch = original;
   }

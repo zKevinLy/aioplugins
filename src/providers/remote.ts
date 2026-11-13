@@ -2,9 +2,7 @@
 import { createHash } from "node:crypto";
 import { HttpError } from "../lib/http-error.js";
 import {
-  combineVariantSources,
   normalizeStreamMiddlewareSettings,
-  usesModuleSyntax,
   wrapPluginStreams
 } from "./stream-middleware.js";
 import { buildNuvioManifest } from "./nuvio-manifest.js";
@@ -16,6 +14,8 @@ const MAX_JSON_BYTES = 2 * 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 15_000;
 const GITHUB_MAX_ATTEMPTS = 2;
 const GITHUB_RETRY_DELAY_MS = 250;
+/** Parallel "when was this file last changed" lookups while saving. */
+const UPDATED_LOOKUP_CONCURRENCY = 6;
 export const STREAM_MIDDLEWARE_VERSION = "19";
 
 const GITHUB_RAW = "https://raw.githubusercontent.com";
@@ -36,24 +36,14 @@ interface SelectedProviderEntry extends ProviderEntry {
   filename: string;
 }
 
-/** One source's copy of a plugin. */
-interface PluginVariant {
+/** One plugin as Nuvio sees it: one provider file from one source. */
+interface RemotePluginFile {
   entry: ProviderEntry;
   owner: string;
   repo: string;
   commit: string;
   originalFilename: string;
-}
-
-/**
- * One plugin as Nuvio sees it. When several selected sources offer the same
- * plugin ID, the first source is the primary copy and the rest are `others`;
- * they are served together as one plugin whose copies are compared at run
- * time (see `combineVariantSources`).
- */
-interface RemotePluginFile extends PluginVariant {
   filename: string;
-  others: PluginVariant[];
 }
 
 interface SourceSelection {
@@ -352,10 +342,22 @@ async function githubFetch(
   throw new HttpError(502, "GitHub request exhausted retry attempts");
 }
 
+/**
+ * Time of the newest entry in a GitHub commit feed (feeds are newest-first),
+ * or null when the feed has no entry or no usable timestamp.
+ */
+function parseAtomUpdated(atom: string): number | null {
+  const entry = atom.match(/<entry[\s>][\s\S]*?<\/entry>/i)?.[0];
+  const stamp = entry?.match(/<updated>\s*([^<\s]+)\s*<\/updated>/i)?.[1];
+  const time = stamp ? Date.parse(stamp) : Number.NaN;
+
+  return Number.isFinite(time) ? time : null;
+}
+
 async function fetchAtomCommit(
   repository: GitHubRepository,
   ref: string
-): Promise<string> {
+): Promise<{ commit: string; updatedAt: number | null }> {
   const encodedRef = ref
     .split("/")
     .map(encodeURIComponent)
@@ -400,7 +402,10 @@ async function fetchAtomCommit(
     const match = atom.match(pattern);
 
     if (match?.[1]) {
-      return validateCommit(match[1]);
+      return {
+        commit: validateCommit(match[1]),
+        updatedAt: parseAtomUpdated(atom)
+      };
     }
   }
 
@@ -485,7 +490,7 @@ async function loadSource(
   const ref = validateRef(refValue);
 
   // Resolve the branch or tag without using api.github.com.
-  const commit = await fetchAtomCommit(repository, ref);
+  const { commit, updatedAt } = await fetchAtomCommit(repository, ref);
 
   const manifestUrl =
     `${GITHUB_RAW}/${repository.owner}/${repository.repo}` +
@@ -497,6 +502,7 @@ async function loadSource(
     ...repository,
     ref,
     commit,
+    updatedAt,
     manifest,
     entries: manifestEntries(manifest)
   };
@@ -534,6 +540,139 @@ export async function inspectGitHubSource(
         logo: stringValue(entry.logo)
       }))
       .filter(entry => Boolean(entry.id))
+  };
+}
+
+// ---------- choosing between duplicate plugins ----------
+
+/**
+ * When the newest commit touching one file was made, from the file's own
+ * commit feed. Null when it cannot be found: choosing a copy must never make
+ * saving fail.
+ */
+async function fetchFileUpdatedAt(
+  owner: string,
+  repo: string,
+  commit: string,
+  filename: string
+): Promise<number | null> {
+  const path = safeProviderPath(filename)
+    .split("/")
+    .map(encodeURIComponent)
+    .join("/");
+
+  try {
+    const response = await githubFetch(
+      `${GITHUB_WEB}/${owner}/${repo}/commits/${validateCommit(commit)}/${path}.atom`,
+      "github.com"
+    );
+
+    if (!response.ok) {
+      await response.body?.cancel();
+      return null;
+    }
+
+    return parseAtomUpdated(
+      await readLimitedResponse(
+        response,
+        MAX_JSON_BYTES,
+        "GitHub commit feed is larger than 2 MB"
+      )
+    );
+  } catch {
+    return null;
+  }
+}
+
+async function mapLimit<T, R>(
+  items: T[],
+  limit: number,
+  task: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+
+  const workers = Array.from(
+    { length: Math.min(limit, items.length) },
+    async () => {
+      while (next < items.length) {
+        const index = next++;
+        results[index] = await task(items[index]!);
+      }
+    }
+  );
+
+  await Promise.all(workers);
+  return results;
+}
+
+/**
+ * Nuvio needs one plugin per ID. For every ID selected from more than one
+ * source, keeps only the source whose provider file changed most recently
+ * (ties and unknown dates go to the earlier source) and drops the ID from
+ * the others, along with any source left with nothing selected.
+ */
+async function keepNewestCopies(
+  sources: SavedSourceSelection[],
+  sourceUpdatedAt: (number | null)[]
+): Promise<{ sources: SavedSourceSelection[]; deduped: number }> {
+  const selectedBy = new Map<string, number[]>();
+
+  sources.forEach((source, index) => {
+    for (const id of source.providerIds) {
+      selectedBy.set(id, [...(selectedBy.get(id) ?? []), index]);
+    }
+  });
+
+  const lookups = [...selectedBy]
+    .filter(([, indexes]) => indexes.length > 1)
+    .flatMap(([id, indexes]) =>
+      indexes.map(index => ({ id, index }))
+    );
+
+  if (lookups.length === 0) return { sources, deduped: 0 };
+
+  const times = await mapLimit(
+    lookups,
+    UPDATED_LOOKUP_CONCURRENCY,
+    async ({ id, index }) => {
+      const source = sources[index]!;
+      const entry = source.providers?.find(provider => provider.id === id);
+      const { owner, repo } = parseRepository(source.repository);
+
+      const fileTime = entry
+        ? await fetchFileUpdatedAt(owner, repo, source.commit, entry.filename)
+        : null;
+
+      // No feed for the file: fall back to the repository's latest commit.
+      return fileTime ?? sourceUpdatedAt[index] ?? null;
+    }
+  );
+
+  const winner = new Map<string, { index: number; time: number }>();
+
+  lookups.forEach(({ id, index }, position) => {
+    const time = times[position] ?? Number.NEGATIVE_INFINITY;
+    const best = winner.get(id);
+
+    // Lookups run in source order, so a strict > keeps the earlier source on ties.
+    if (!best || time > best.time) winner.set(id, { index, time });
+  });
+
+  const keeps = (id: string, index: number) =>
+    !winner.has(id) || winner.get(id)!.index === index;
+
+  return {
+    sources: sources
+      .map((source, index): SavedSourceSelection => ({
+        ...source,
+        providerIds: source.providerIds.filter(id => keeps(id, index)),
+        ...(source.providers
+          ? { providers: source.providers.filter(entry => keeps(entry.id, index)) }
+          : {})
+      }))
+      .filter(source => source.providerIds.length > 0),
+    deduped: winner.size
   };
 }
 
@@ -579,41 +718,24 @@ async function getRemotePluginFiles(
     );
 
     for (const entry of selected) {
-      const variant: PluginVariant = {
+      // Saving keeps one copy of each plugin ID (see keepNewestCopies). A
+      // setup saved before that can still list an ID twice; the earlier
+      // source wins, so serving never has to compare copies.
+      if (byId.has(entry.id)) continue;
+
+      byId.set(entry.id, {
         entry,
         owner,
         repo,
         commit,
-        originalFilename: safeProviderPath(entry.filename)
-      };
-
-      const existing = byId.get(entry.id);
-
-      if (!existing) {
-        byId.set(entry.id, { ...variant, filename: "", others: [] });
-        continue;
-      }
-
-      // The same ID from another source (or listed twice in one manifest):
-      // keep it as another copy, unless it is literally the same file.
-      const known = [existing, ...existing.others].some(
-        other =>
-          other.owner === owner &&
-          other.repo === repo &&
-          other.commit === commit &&
-          other.originalFilename === variant.originalFilename
-      );
-
-      if (!known) existing.others.push(variant);
+        originalFilename: safeProviderPath(entry.filename),
+        filename: ""
+      });
     }
   }
 
   for (const [id, plugin] of byId) {
-    // A single copy keeps the file name it always had, so existing installs
-    // are unaffected; combined plugins hash every copy into the name.
-    const identity = [plugin, ...plugin.others]
-      .map(variant => `${variant.owner}/${variant.repo}/${variant.commit}/${id}`)
-      .join("|");
+    const identity = `${plugin.owner}/${plugin.repo}/${plugin.commit}/${id}`;
 
     const suffix = createHash("sha256")
       .update(`${identity}/${middlewareFingerprint}`)
@@ -641,17 +763,12 @@ export async function getPluginRepositoryManifest(
     appVersion: context.appVersion,
     origin: context.origin,
     middlewareVersion: STREAM_MIDDLEWARE_VERSION,
-    plugins: plugins.map(({ entry, filename, owner, repo, commit, others }) => ({
+    plugins: plugins.map(({ entry, filename, owner, repo, commit }) => ({
       entry: entry as Record<string, unknown>,
       filename,
       owner,
       repo,
-      commit,
-      alsoFrom: others.map(other => ({
-        owner: other.owner,
-        repo: other.repo,
-        commit: other.commit
-      }))
+      commit
     }))
   });
 }
@@ -679,65 +796,19 @@ export async function getRemotePluginFile(
 
   if (!plugin) return null;
 
-  const fetchVariant = (variant: PluginVariant) => {
-    const urlPath = variant.originalFilename
-      .split("/")
-      .map(encodeURIComponent)
-      .join("/");
+  const urlPath = plugin.originalFilename
+    .split("/")
+    .map(encodeURIComponent)
+    .join("/");
 
-    return fetchText(
-      `${GITHUB_RAW}/${variant.owner}/${variant.repo}/${variant.commit}/${urlPath}`
-    );
-  };
-
-  const addonName = typeof plugin.entry.name === "string" ? plugin.entry.name : "";
-
-  if (plugin.others.length === 0) {
-    return wrapPluginStreams(
-      await fetchVariant(plugin),
-      middlewareSettings,
-      addonName
-    );
-  }
-
-  // Same plugin ID selected from several sources: fetch every copy.
-  const fetched = await Promise.allSettled(
-    [plugin, ...plugin.others].map(fetchVariant)
+  const code = await fetchText(
+    `${GITHUB_RAW}/${plugin.owner}/${plugin.repo}/${plugin.commit}/${urlPath}`
   );
 
-  const codes: string[] = [];
-  let total = 0;
-
-  for (const outcome of fetched) {
-    if (outcome.status !== "fulfilled") continue;
-
-    const code = outcome.value;
-    // Identical code is the same plugin: running it twice only costs time.
-    if (codes.some(existing => existing.trim() === code.trim())) continue;
-    // A copy that cannot run in Nuvio would break the ones that can.
-    if (usesModuleSyntax(code) && fetched.length > 1) continue;
-    if (total + code.length > MAX_PROVIDER_BYTES) continue;
-
-    total += code.length;
-    codes.push(code);
-  }
-
-  if (codes.length === 0) {
-    // Nothing usable: surface the first real failure (or serve the primary
-    // as-is so the error matches the single-source behaviour).
-    const failure = fetched.find(outcome => outcome.status === "rejected");
-    if (failure && failure.status === "rejected") throw failure.reason;
-    return wrapPluginStreams(
-      (fetched[0] as PromiseFulfilledResult<string>).value,
-      middlewareSettings,
-      addonName
-    );
-  }
-
   return wrapPluginStreams(
-    codes.length === 1 ? codes[0]! : combineVariantSources(codes),
+    code,
     middlewareSettings,
-    addonName
+    typeof plugin.entry.name === "string" ? plugin.entry.name : ""
   );
 }
 
@@ -748,8 +819,8 @@ export async function resolveSelectedSources(
 ): Promise<{
   sources: SavedSourceSelection[];
   plugins: number;
-  /** Plugin IDs selected from more than one source (served as one plugin). */
-  merged: number;
+  /** Plugin IDs selected from several sources, reduced to the newest copy. */
+  deduped: number;
 }> {
   if (!Array.isArray(value)) {
     throw new HttpError(400, "Selections must be a list");
@@ -799,13 +870,9 @@ export async function resolveSelectedSources(
     })
     .filter(selection => selection.providerIds.length > 0);
 
-  // The same plugin ID may be selected from several sources. Each source
-  // keeps its own selection; they are served as one plugin whose copies are
-  // compared at run time (see getRemotePluginFiles).
-
   // Sources are independent, so resolve them concurrently.
-  const saved = await Promise.all(
-    selections.map(async (selection): Promise<SavedSourceSelection> => {
+  const resolved = await Promise.all(
+    selections.map(async (selection) => {
       const source = await loadSource(
         selection.repository,
         selection.ref
@@ -851,26 +918,28 @@ export async function resolveSelectedSources(
         };
       });
 
-      return {
+      const saved: SavedSourceSelection = {
         ...selection,
         repository: source.url,
         commit: source.commit,
         providers
       };
+
+      return { saved, updatedAt: source.updatedAt };
     })
   );
 
-  // What Nuvio will list: one plugin per distinct ID.
-  const seenIds = new Map<string, number>();
-  for (const source of saved) {
-    for (const id of source.providerIds) {
-      seenIds.set(id, (seenIds.get(id) ?? 0) + 1);
-    }
-  }
+  // Nuvio lists one plugin per ID, so keep only the most recently updated
+  // copy of any plugin selected from more than one source. Doing this once
+  // here means nothing has to scan the duplicates when the plugin is served.
+  const { sources: saved, deduped } = await keepNewestCopies(
+    resolved.map(item => item.saved),
+    resolved.map(item => item.updatedAt)
+  );
 
   return {
     sources: saved,
-    plugins: seenIds.size,
-    merged: [...seenIds.values()].filter(count => count > 1).length
+    plugins: saved.reduce((total, source) => total + source.providerIds.length, 0),
+    deduped
   };
 }

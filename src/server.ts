@@ -481,11 +481,11 @@ async function handleApi(
 
     const body = await readJsonBody(request);
 
-    const { sources, plugins, merged } = await resolveSelectedSources(body.sources);
+    const { sources, plugins, deduped } = await resolveSelectedSources(body.sources);
 
     await saveUserConfig(user.id, sources, body.middleware, db);
 
-    return sendJson(200, { plugins, merged });
+    return sendJson(200, { plugins, deduped });
   }
 
   if (pathname === "/api/profiles" && method === "GET") {
@@ -517,11 +517,11 @@ async function handleApi(
         ? body.name.trim().slice(0, 100)
         : "") || "Default Profile";
 
-    const { sources, plugins, merged } = await resolveSelectedSources(body.sources);
+    const { sources, plugins, deduped } = await resolveSelectedSources(body.sources);
 
     await saveProfileAndSources(user.id, profileId, name, sources, db);
 
-    return sendJson(200, { profileId, plugins, merged });
+    return sendJson(200, { profileId, plugins, deduped });
   }
 
   if (

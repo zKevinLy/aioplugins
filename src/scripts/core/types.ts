@@ -89,8 +89,8 @@ export interface ProfilesResponse {
 
 export interface ApplyResponse {
   plugins: number;
-  /** Plugin IDs selected from more than one source (served as one plugin). */
-  merged: number;
+  /** Plugin IDs selected from several sources, reduced to the newest copy. */
+  deduped: number;
 }
 
 export interface ProfileBackup {

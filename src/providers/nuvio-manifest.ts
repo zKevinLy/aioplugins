@@ -15,8 +15,6 @@ export interface ManifestPluginInput {
   owner: string;
   repo: string;
   commit: string;
-  /** Other sources whose copy of this plugin is served inside the same file. */
-  alsoFrom?: { owner: string; repo: string; commit: string }[];
 }
 
 export interface NuvioManifestOptions {
@@ -145,10 +143,7 @@ export function sanitizeScraper(
     middleware: middlewareVersion,
     source: `${plugin.owner}/${plugin.repo}`,
     commit: plugin.commit,
-    upstreamVersion: text(entry.version) ?? null,
-    ...(plugin.alsoFrom && plugin.alsoFrom.length > 0
-      ? { alsoFrom: plugin.alsoFrom.map(other => `${other.owner}/${other.repo}@${other.commit}`) }
-      : {})
+    upstreamVersion: text(entry.version) ?? null
   };
 
   return result;
@@ -157,10 +152,7 @@ export function sanitizeScraper(
 export function buildNuvioManifest(options: NuvioManifestOptions) {
   const { appVersion, origin, middlewareVersion, plugins } = options;
   const label = versionLabel(appVersion);
-  const sources = new Set(plugins.flatMap(plugin => [
-    `${plugin.owner}/${plugin.repo}`,
-    ...(plugin.alsoFrom ?? []).map(other => `${other.owner}/${other.repo}`)
-  ])).size;
+  const sources = new Set(plugins.map(plugin => `${plugin.owner}/${plugin.repo}`)).size;
   const count = plugins.length;
 
   return {

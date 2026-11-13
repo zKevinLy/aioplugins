@@ -20,8 +20,8 @@ export async function runSave(
     const result = await saveSetup();
     if (!result) return false;
 
-    const note = result.merged > 0
-      ? ` ${result.merged} ${result.merged === 1 ? "plugin is" : "plugins are"} selected from more than one source and will run every selected copy, dropping streams that are identical.`
+    const note = result.deduped > 0
+      ? ` ${result.deduped} ${result.deduped === 1 ? "plugin was" : "plugins were"} selected from more than one source; only the most recently updated copy ${result.deduped === 1 ? "was" : "were"} kept.`
       : "";
 
     setStatus(channel, `Saved ${result.plugins} selected plugins and all middleware settings. Your Nuvio repository is ready.${note}`, "success");

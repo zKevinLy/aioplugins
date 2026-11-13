@@ -116,9 +116,18 @@ async function run(urls, probe, { headers } = {}) {
 
 const on = { enabled: true, requireSeekable: true, timeoutMs: 1500 };
 
-test("probe is off by default and does not touch the network", async () => {
+test("probe is on by default and removes dead streams", async () => {
+  const kept = await run(["/ok", "/404", "/html"], DEFAULT_STREAM_MIDDLEWARE.probe);
+
+  assert.deepEqual(kept, ["/ok"]);
+});
+
+test("probe can be turned off, and then does not touch the network", async () => {
   requests.length = 0;
-  const kept = await run(["/404", "/html", "/no-range"], DEFAULT_STREAM_MIDDLEWARE.probe);
+  const kept = await run(
+    ["/404", "/html", "/no-range"],
+    { ...DEFAULT_STREAM_MIDDLEWARE.probe, enabled: false }
+  );
 
   assert.deepEqual(kept, ["/404", "/html", "/no-range"]);
   assert.equal(requests.length, 0);
@@ -184,7 +193,7 @@ test("keeps everything when fetch is not available in the plugin runtime", async
 
 test("normalizes probe settings", () => {
   assert.deepEqual(normalizeStreamMiddlewareSettings({}).probe, {
-    enabled: false,
+    enabled: true,
     requireSeekable: true,
     timeoutMs: 5000
   });
@@ -198,8 +207,9 @@ test("normalizes probe settings", () => {
 
   assert.equal(normalizeStreamMiddlewareSettings({ probe: { timeoutMs: 10 } }).probe.timeoutMs, 1000);
   assert.equal(normalizeStreamMiddlewareSettings({ probe: { timeoutMs: "soon" } }).probe.timeoutMs, 5000);
-  assert.equal(normalizeStreamMiddlewareSettings({ probe: { enabled: "yes" } }).probe.enabled, false);
-  assert.equal(normalizeStreamMiddlewareSettings({ probe: [] }).probe.enabled, false);
+  assert.equal(normalizeStreamMiddlewareSettings({ probe: { enabled: false } }).probe.enabled, false);
+  assert.equal(normalizeStreamMiddlewareSettings({ probe: { enabled: "no" } }).probe.enabled, true);
+  assert.equal(normalizeStreamMiddlewareSettings({ probe: [] }).probe.enabled, true);
 });
 
 test("toJsLiteral escapes characters that can break out of generated code", () => {

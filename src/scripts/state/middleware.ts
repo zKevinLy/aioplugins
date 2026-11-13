@@ -37,13 +37,13 @@ function toSorts(settings: Record<string, unknown>): StreamSort[] {
     : [];
 }
 
-/** The probe options to edit, filled in with defaults where nothing was saved. */
+/** The probe options to edit; the playback check is on unless it was saved off. */
 function toProbe(settings: Record<string, unknown>): StreamProbeSettings {
   const raw = isRecord(settings.probe) ? settings.probe : {};
   const timeout = typeof raw.timeoutMs === "number" ? raw.timeoutMs : NaN;
 
   return {
-    enabled: raw.enabled === true,
+    enabled: raw.enabled !== false,
     requireSeekable: raw.requireSeekable !== false,
     timeoutMs: Number.isFinite(timeout)
       ? Math.min(MAX_PROBE_TIMEOUT_MS, Math.max(MIN_PROBE_TIMEOUT_MS, Math.round(timeout)))
