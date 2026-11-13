@@ -103,6 +103,11 @@ export const sourceStore = {
     changed();
   },
 
+  /**
+   * Ticks or unticks one provider in one source. The same provider ID may be
+   * ticked in several sources: the server serves it as one plugin that runs
+   * every selected source's copy and drops streams that are identical.
+   */
   setSelected(source: LoadedSource, providerId: string, checked: boolean): void {
     if (checked) source.selected.add(providerId);
     else source.selected.delete(providerId);
@@ -121,10 +126,25 @@ export const sourceStore = {
     changed();
   },
 
+  /**
+   * Distinct plugin IDs ticked across all sources. This is what Nuvio lists:
+   * an ID ticked in two sources is one plugin.
+   */
   selectionCount(): number {
-    let total = 0;
-    for (const source of sources.values()) total += source.selected.size;
-    return total;
+    const ids = new Set<string>();
+    for (const source of sources.values()) {
+      for (const id of source.selected) ids.add(id);
+    }
+    return ids.size;
+  },
+
+  /** How many plugin IDs are ticked in more than one source. */
+  combinedCount(): number {
+    const counts = new Map<string, number>();
+    for (const source of sources.values()) {
+      for (const id of source.selected) counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+    return [...counts.values()].filter((count) => count > 1).length;
   },
 
   /** The selection in the shape the server expects (sources with ticks only). */

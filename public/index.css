@@ -720,6 +720,14 @@ textarea { resize: vertical; line-height: 1.6; }
   font-size: 12px;
 }
 
+.filter-select {
+  width: auto;
+  min-width: 120px;
+  min-height: 36px;
+  padding: 7px 12px;
+  font-size: 12px;
+}
+
 .catalog-content {
   min-height: 0;
   max-height: none;

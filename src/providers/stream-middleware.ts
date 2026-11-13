@@ -1,13 +1,20 @@
 
 import { renderAioStreamsFormat } from "./custom-formatter.js";
-import { probeStreamUrl } from "./stream-probe.js";
+import { measureStreamSpeed, probeStreamUrl } from "./stream-probe.js";
 import { isUnknownValue, removeUnknownPlaceholders } from "./unknown-values.js";
 import {
   DEFAULT_PROBE_SETTINGS,
+  DEFAULT_RANKING_SETTINGS,
   MAX_FILTERS,
+  MAX_PER_QUALITY,
   MAX_PROBE_TIMEOUT_MS,
   MAX_SORTS,
-  MIN_PROBE_TIMEOUT_MS
+  MIN_PROBE_TIMEOUT_MS,
+  SPEED_BUDGET_MS,
+  SPEED_MAX_PER_GROUP,
+  SPEED_MAX_TOTAL,
+  SPEED_SAMPLE_BYTES,
+  SPEED_TIMEOUT_MS
 } from "../lib/middleware-limits.js";
 import {
   DEFAULT_STREAM_DESCRIPTION_FORMAT,
@@ -181,10 +188,25 @@ export interface StreamProbeSettings {
 
 export const DEFAULT_STREAM_PROBE: StreamProbeSettings = DEFAULT_PROBE_SETTINGS;
 
+/**
+ * Runs inside Nuvio, after the sort levels. Streams the sort cannot tell apart
+ * are put in order of measured speed, and a plugin can be capped to its best
+ * few streams per resolution.
+ */
+export interface StreamRankingSettings {
+  /** Among streams that tie on every sort level, put the fastest first. */
+  preferFastest: boolean;
+  /** Most streams of one resolution a plugin returns; 0 means no cap. */
+  perQuality: number;
+}
+
+export const DEFAULT_STREAM_RANKING: StreamRankingSettings = DEFAULT_RANKING_SETTINGS;
+
 export interface StreamMiddlewareSettings {
   filters: StreamFilter[];
   sorts: StreamSort[];
   probe: StreamProbeSettings;
+  ranking: StreamRankingSettings;
   nameFormat: string;
   descriptionFormat: string;
   format: string;
@@ -213,6 +235,7 @@ export const DEFAULT_STREAM_MIDDLEWARE: StreamMiddlewareSettings = {
   filters: [],
   sorts: [],
   probe: DEFAULT_STREAM_PROBE,
+  ranking: DEFAULT_STREAM_RANKING,
   nameFormat: DEFAULT_STREAM_NAME_FORMAT,
   descriptionFormat: DEFAULT_STREAM_DESCRIPTION_FORMAT,
   format: DEFAULT_STREAM_DESCRIPTION_FORMAT,
@@ -428,6 +451,20 @@ export function normalizeStreamMiddlewareSettings(
       : DEFAULT_STREAM_PROBE.timeoutMs
   };
 
+  const rawRanking =
+    candidate.ranking && typeof candidate.ranking === "object" && !Array.isArray(candidate.ranking)
+      ? candidate.ranking as Record<string, unknown>
+      : {};
+
+  const requestedLimit = Number(rawRanking.perQuality);
+
+  const ranking: StreamRankingSettings = {
+    preferFastest: rawRanking.preferFastest !== false,
+    perQuality: Number.isFinite(requestedLimit) && rawRanking.perQuality !== null && rawRanking.perQuality !== ""
+      ? Math.min(MAX_PER_QUALITY, Math.max(0, Math.round(requestedLimit)))
+      : DEFAULT_STREAM_RANKING.perQuality
+  };
+
   const requestedNameFormat = typeof candidate.nameFormat === "string"
     ? candidate.nameFormat.trim()
     : "";
@@ -484,6 +521,7 @@ export function normalizeStreamMiddlewareSettings(
     filters,
     sorts,
     probe,
+    ranking,
     nameFormat,
     descriptionFormat,
     format: descriptionFormat,
@@ -513,6 +551,111 @@ export function toJsLiteral(value: unknown): string {
   );
 }
 
+/**
+ * True when a provider file uses ES module syntax. Nuvio evaluates plugins as
+ * scripts, so such a file cannot run there at all; it is left out of a
+ * combined plugin rather than letting it break the copies that do run.
+ */
+export function usesModuleSyntax(source: string): boolean {
+  return /^[ \t]*(?:import[ \t{*"']|export[ \t{*]|export\s+default\b)/m.test(source);
+}
+
+/**
+ * Joins several copies of one plugin (the same plugin ID selected from more
+ * than one source) into a single plugin file. Each copy runs in its own scope
+ * with its own `module`, so they cannot overwrite each other's functions.
+ * At run time every copy's `getStreams` is called, and a stream whose
+ * `infoHash` or URL was already returned by an earlier copy is dropped. That
+ * is the "are these really the same stream" check: it runs in Nuvio, on the
+ * results, so it needs nothing from the AIOPlugins server.
+ */
+export function combineVariantSources(sources: string[]): string {
+  const loaders = sources
+    .map(source => `    function (module, exports) {\n${source}\n    }`)
+    .join(",\n");
+
+  return `;(() => {
+  const loaders = [
+${loaders}
+  ];
+
+  const variants = [];
+
+  for (const load of loaders) {
+    const hadGlobal = Object.prototype.hasOwnProperty.call(globalThis, "getStreams");
+    const before = globalThis.getStreams;
+    const scope = { exports: {} };
+    let loaded = true;
+
+    try {
+      load.call(globalThis, scope, scope.exports);
+    } catch (error) {
+      loaded = false;
+    }
+
+    // Plugins publish getStreams on module.exports, or (older style) on the
+    // global object. Take it, then restore the global for the next copy.
+    const published = scope.exports && typeof scope.exports.getStreams === "function"
+      ? { run: scope.exports.getStreams, self: scope.exports }
+      : typeof globalThis.getStreams === "function" && globalThis.getStreams !== before
+        ? { run: globalThis.getStreams, self: globalThis }
+        : null;
+
+    if (hadGlobal) globalThis.getStreams = before;
+    else try { delete globalThis.getStreams; } catch (error) { globalThis.getStreams = undefined; }
+
+    if (loaded && published) variants.push(published);
+  }
+
+  if (variants.length === 0) return;
+
+  const identityOf = stream => {
+    if (!stream || typeof stream !== "object") return "";
+    const hash = typeof stream.infoHash === "string" ? stream.infoHash.trim().toLowerCase() : "";
+    if (hash) return "hash:" + hash + ":" + (stream.fileIdx == null ? "" : stream.fileIdx);
+    const url = typeof stream.url === "string" ? stream.url.trim() : "";
+    return url ? "url:" + url.split("#")[0] : "";
+  };
+
+  const target = typeof module !== "undefined" && module.exports
+    ? module.exports
+    : typeof exports !== "undefined" ? exports : null;
+
+  if (!target) return;
+
+  target.getStreams = async function (...args) {
+    const outcomes = await Promise.all(variants.map(async variant => {
+      try {
+        const result = await variant.run.apply(variant.self, args);
+        return Array.isArray(result) ? result : [];
+      } catch (error) {
+        return [];
+      }
+    }));
+
+    const seen = new Set();
+    const merged = [];
+
+    for (const streams of outcomes) {
+      const own = [];
+
+      for (const stream of streams) {
+        const identity = identityOf(stream);
+        if (identity && seen.has(identity)) continue;
+        if (identity) own.push(identity);
+        merged.push(stream);
+      }
+
+      // Duplicates inside one copy are left for Nuvio; only an earlier copy's
+      // streams count as already seen.
+      for (const identity of own) seen.add(identity);
+    }
+
+    return merged;
+  };
+})();`;
+}
+
 export function wrapPluginStreams(
   source: string,
   value: unknown,
@@ -524,6 +667,14 @@ export function wrapPluginStreams(
   const unknownValueSource = isUnknownValue.toString();
   const removeUnknownSource = removeUnknownPlaceholders.toString();
   const probeSource = probeStreamUrl.toString();
+  const speedSource = measureStreamSpeed.toString();
+  const speedLimits = toJsLiteral({
+    sampleBytes: SPEED_SAMPLE_BYTES,
+    timeoutMs: SPEED_TIMEOUT_MS,
+    budgetMs: SPEED_BUDGET_MS,
+    maxPerGroup: SPEED_MAX_PER_GROUP,
+    maxTotal: SPEED_MAX_TOTAL
+  });
 
   const fieldTypes = toJsLiteral(
     Object.fromEntries(STREAM_FIELD_CATALOG.map(field => [field.key, field.type]))
@@ -548,6 +699,8 @@ export function wrapPluginStreams(
   ${unknownValueSource}
   ${removeUnknownSource}
   const probeStreamUrl = ${probeSource};
+  const measureStreamSpeed = ${speedSource};
+  const speedLimits = ${speedLimits};
   const unknownQualityLabels = ${toJsLiteral(NUVIO_UNKNOWN_QUALITY_LABELS)};
   const fieldTypes = ${fieldTypes};
   const fieldRanks = ${fieldRanks};
@@ -1070,7 +1223,152 @@ export function wrapPluginStreams(
       return left.index - right.index;
     });
 
-    return streams.map(item => {
+    // ---- Best stream first, and the per-resolution cap -----------------
+    // Streams the sort levels cannot tell apart are ordered by how fast they
+    // deliver a small sample, measured here in Nuvio. A stream only moves
+    // within the slots its tie group already occupies, so the order the sort
+    // levels produced is never disturbed. With no sort levels, streams of the
+    // same resolution count as tied and keep the provider's order between
+    // resolutions.
+    const qualityOf = item => resolutionNumber(item.source);
+
+    const sameRank = (left, right) =>
+      config.sorts.every(sort => compareBySort(left, right, sort) === 0);
+
+    const tieGroups = () => {
+      const groups = [];
+
+      if (config.sorts.length > 0) {
+        let run = [0];
+
+        for (let position = 1; position <= streams.length; position++) {
+          if (position < streams.length && sameRank(streams[position - 1], streams[position])) {
+            run.push(position);
+          } else {
+            if (run.length > 1) groups.push(run);
+            run = [position];
+          }
+        }
+      } else {
+        const byQuality = new Map();
+
+        streams.forEach((item, position) => {
+          const key = qualityOf(item);
+          if (!byQuality.has(key)) byQuality.set(key, []);
+          byQuality.get(key).push(position);
+        });
+
+        for (const positions of byQuality.values()) {
+          if (positions.length > 1) groups.push(positions);
+        }
+      }
+
+      return groups;
+    };
+
+    const limit = config.ranking.perQuality;
+
+    const rankByMeasuredSpeed = async () => {
+      // With a per-resolution cap, a group that lies wholly beyond the cap
+      // cannot reach the visible streams, so it is not worth measuring.
+      const seenByQuality = new Map();
+      const beyondCap = streams.map(item => {
+        const key = qualityOf(item);
+        const count = seenByQuality.get(key) ?? 0;
+        seenByQuality.set(key, count + 1);
+        return limit > 0 && count >= limit;
+      });
+
+      const groups = tieGroups().filter(group => !group.every(position => beyondCap[position]));
+      if (groups.length === 0) return;
+
+      const jobs = [];
+      for (const group of groups) {
+        for (const position of group.slice(0, speedLimits.maxPerGroup)) {
+          if (jobs.length < speedLimits.maxTotal) jobs.push(position);
+        }
+      }
+
+      const deadline = Date.now() + speedLimits.budgetMs;
+      const outcomes = new Map();
+      const shared = new Map();
+      let next = 0;
+
+      const worker = async () => {
+        while (next < jobs.length) {
+          const position = jobs[next++];
+          const url = streams[position].source.url;
+          if (typeof url !== "string" || Date.now() >= deadline) continue;
+
+          // The same URL is only ever measured once.
+          if (!shared.has(url)) {
+            shared.set(url, measureStreamSpeed(
+              url,
+              probeHeaders(streams[position].source),
+              speedLimits.timeoutMs,
+              speedLimits.sampleBytes
+            ));
+          }
+
+          outcomes.set(position, await shared.get(url));
+        }
+      };
+
+      await Promise.all(Array.from({ length: Math.min(6, jobs.length) }, worker));
+
+      // Higher is better. Streams that could not be measured (magnet links,
+      // HLS playlists, hosts that errored) count as a decent connection, so a
+      // measured-fast stream still beats them and a measured-slow one does not.
+      const bucket = bytesPerSecond => Math.round(Math.log2(Math.max(1, bytesPerSecond)) * 2);
+      const neutral = bucket(1000000);
+
+      const scoreOf = position => {
+        const outcome = outcomes.get(position);
+        if (!outcome) return [2, neutral];
+        if (outcome.playable === false) return [0, 0];
+        if (outcome.seekable === false) return [1, 0];
+        if (outcome.reason === "timed out") return [2, 0];
+        return [2, outcome.bytesPerSecond == null ? neutral : bucket(outcome.bytesPerSecond)];
+      };
+
+      for (const group of groups) {
+        const slots = [...group].sort((left, right) => left - right);
+        const scoreByItem = new Map(slots.map(position => [streams[position], scoreOf(position)]));
+
+        // Buckets are about 40% wide, so two streams of similar speed stay
+        // in the provider's order instead of swapping on measurement noise.
+        const reordered = slots.map(position => streams[position]).sort((left, right) => {
+          const a = scoreByItem.get(left);
+          const b = scoreByItem.get(right);
+          return b[0] - a[0] || b[1] - a[1] || left.index - right.index;
+        });
+
+        reordered.forEach((item, slot) => { streams[slots[slot]] = item; });
+      }
+    };
+
+    if (config.ranking.preferFastest && streams.length > 1) {
+      try {
+        await rankByMeasuredSpeed();
+      } catch {
+        // Ranking is a refinement; on any failure the sorted order stands.
+      }
+    }
+
+    let visible = streams;
+
+    if (limit > 0) {
+      const kept = new Map();
+
+      visible = streams.filter(item => {
+        const key = qualityOf(item);
+        const count = kept.get(key) ?? 0;
+        kept.set(key, count + 1);
+        return count < limit;
+      });
+    }
+
+    return visible.map(item => {
       return { ...item.stream };
     });
   };

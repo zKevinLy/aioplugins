@@ -20,7 +20,11 @@ export async function runSave(
     const result = await saveSetup();
     if (!result) return false;
 
-    setStatus(channel, `Saved ${result.plugins} selected plugins and all middleware settings. Your Nuvio repository is ready.`, "success");
+    const note = result.merged > 0
+      ? ` ${result.merged} ${result.merged === 1 ? "plugin is" : "plugins are"} selected from more than one source and will run every selected copy, dropping streams that are identical.`
+      : "";
+
+    setStatus(channel, `Saved ${result.plugins} selected plugins and all middleware settings. Your Nuvio repository is ready.${note}`, "success");
     savedStore.update((count) => count + 1);
     return true;
   } catch (error) {

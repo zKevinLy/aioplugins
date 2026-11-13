@@ -4,10 +4,12 @@ import {
   DEFAULT_STREAM_DESCRIPTION_FORMAT,
   DEFAULT_STREAM_NAME_FORMAT
 } from "../../lib/default-stream-format.js";
-import type { StreamFilter, StreamProbeSettings, StreamSort } from "../../providers/stream-middleware.js";
+import type { StreamFilter, StreamProbeSettings, StreamRankingSettings, StreamSort } from "../../providers/stream-middleware.js";
 import {
   DEFAULT_PROBE_SETTINGS,
+  DEFAULT_RANKING_SETTINGS,
   MAX_FILTERS,
+  MAX_PER_QUALITY,
   MAX_PROBE_TIMEOUT_MS,
   MAX_SORTS,
   MIN_PROBE_TIMEOUT_MS
@@ -49,6 +51,19 @@ function toProbe(settings: Record<string, unknown>): StreamProbeSettings {
   };
 }
 
+/** The ranking options to edit; "fastest first" is on unless it was saved off. */
+function toRanking(settings: Record<string, unknown>): StreamRankingSettings {
+  const raw = isRecord(settings.ranking) ? settings.ranking : {};
+  const limit = typeof raw.perQuality === "number" ? raw.perQuality : NaN;
+
+  return {
+    preferFastest: raw.preferFastest !== false,
+    perQuality: Number.isFinite(limit)
+      ? Math.min(MAX_PER_QUALITY, Math.max(0, Math.round(limit)))
+      : DEFAULT_RANKING_SETTINGS.perQuality
+  };
+}
+
 /** Turns whatever the server stored into complete editor settings. */
 export function toMiddlewareSettings(value: unknown): MiddlewareSettings {
   const settings = isRecord(value) ? value : {};
@@ -57,6 +72,7 @@ export function toMiddlewareSettings(value: unknown): MiddlewareSettings {
     filters: Array.isArray(settings.filters) ? settings.filters.filter(isStreamFilter) : [],
     sorts: toSorts(settings),
     probe: toProbe(settings),
+    ranking: toRanking(settings),
     nameFormat: nonEmpty(settings.nameFormat) ?? DEFAULT_STREAM_NAME_FORMAT,
     descriptionFormat:
       nonEmpty(settings.descriptionFormat) ??

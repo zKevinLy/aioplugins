@@ -187,6 +187,31 @@ The formatter has separate stream-name and description templates:
     same formatter code the plugin wrapper uses; no preview request is
     sent to AIOPlugins.
 
+**Best stream first (on by default).** Under *Stream order*, streams that your sort
+levels rank equally are ordered by how fast they deliver data. Inside Nuvio, on the
+viewer's device, the wrapper downloads a 128 KB sample (`Range` request) from up to
+8 tied streams per group (24 in total, within about six seconds) and puts the fastest
+first. A stream moves only within its tie group, so your sort levels always come first;
+with no sort levels, streams of the same resolution are tied. Streams that cannot be
+measured (magnet links, HLS playlists) count as average, non-seekable and unplayable
+streams go last, and speeds are bucketed so measurement noise does not reorder streams.
+AIOPlugins does not open or play the media and the check adds no server requests.
+Nuvio TV runs plugin requests one at a time, so the check adds a short delay there.
+
+**Streams per resolution.** *Show at most N per resolution* (off by default) keeps
+only the best N streams of each resolution after sorting. It counts each plugin's
+results separately: Nuvio runs plugins in isolated runtimes, so one plugin cannot see
+another's streams, and a plugin cannot stop its provider mid-fetch, so the cap trims
+the finished list. Nuvio plugins return once, so the list cannot be updated after it
+is shown.
+
+**Same plugin from several sources.** You can tick the same plugin ID in more than one
+source. Nuvio needs unique IDs within a repository, so AIOPlugins lists it once and
+serves a single file that runs every selected source's copy and drops streams another
+copy already returned (same `infoHash` or URL). Byte-identical copies run once, and a
+copy that fails to load or uses ES module syntax is skipped. The comparison runs in
+Nuvio on the results; the server only fetches each copy's file.
+
 **Playback check (optional).** Under *Stream filters*, "Remove streams that
 cannot be played" adds a check to the generated plugin file. The check runs
 inside Nuvio, on the viewer's device, after the provider returns its streams:

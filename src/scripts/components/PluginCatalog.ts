@@ -8,6 +8,7 @@ import { renderProviderListItem } from "./ProviderListItem.js";
 
 const catalog = () => $("#catalog");
 const search = () => $<HTMLInputElement>("#search");
+const selectionFilter = () => $<HTMLSelectElement>("#selection-filter");
 
 // Ticking a box updates the totals only; rebuilding the list on every click
 // would drop keyboard focus and scroll position.
@@ -16,9 +17,17 @@ let ignoreChanges = false;
 function matching(source: LoadedSource) {
   const query = search().value.trim().toLowerCase();
 
-  return source.providers.filter((provider) =>
-    `${provider.name} ${provider.id} ${provider.description}`.toLowerCase().includes(query)
-  );
+  const mode = selectionFilter().value;
+
+  return source.providers.filter((provider) => {
+    if (!`${provider.name} ${provider.id} ${provider.description}`.toLowerCase().includes(query)) {
+      return false;
+    }
+
+    if (mode === "selected") return source.selected.has(provider.id);
+    if (mode === "unselected") return !source.selected.has(provider.id);
+    return true;
+  });
 }
 
 function visibleTargets() {
@@ -31,12 +40,17 @@ function visibleTargets() {
 
 function updateSummary(): void {
   const count = sourceStore.selectionCount();
+  const combined = sourceStore.combinedCount();
   const targets = visibleTargets();
   const allSelected = targets.length > 0 &&
     targets.every(({ source, providerId }) => source.selected.has(providerId));
 
+  const label = count === 1 ? "1 plugin selected" : `${count} plugins selected`;
+
   $("#source-count").textContent = String(sourceStore.size);
-  $("#selection-count").textContent = count === 1 ? "1 plugin selected" : `${count} plugins selected`;
+  $("#selection-count").textContent = combined > 0
+    ? `${label} (${combined} combined from several sources)`
+    : label;
   $<HTMLButtonElement>("#go-save").disabled = count === 0;
 
   const selectAll = $<HTMLButtonElement>("#select-filtered");
@@ -105,7 +119,11 @@ function renderGroup(key: string, source: LoadedSource, providers: ReturnType<ty
           ignoreChanges = true;
           sourceStore.setSelected(source, provider.id, checked);
           ignoreChanges = false;
-          updateSummary();
+
+          // With a selection filter the row may need to leave the list;
+          // otherwise only the totals change.
+          if (selectionFilter().value !== "all") render();
+          else updateSummary();
         }
       })
     );
@@ -134,7 +152,11 @@ function render(): void {
     catalog().replaceChildren(...groups);
   } else {
     catalog().replaceChildren(
-      el("p", { text: search().value.trim() ? "No plugins match this search." : "No available plugins found." })
+      el("p", {
+        text: search().value.trim() || selectionFilter().value !== "all"
+          ? "No plugins match this search or filter."
+          : "No available plugins found."
+      })
     );
   }
 
@@ -149,6 +171,7 @@ export function mountPluginCatalog(): void {
   sourceStore.subscribe(refresh);
   sourcesLoading.subscribe(refresh);
   search().addEventListener("input", render);
+  selectionFilter().addEventListener("change", render);
 
   $("#select-filtered").addEventListener("click", () => {
     const targets = visibleTargets();

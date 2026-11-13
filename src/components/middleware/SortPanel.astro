@@ -9,5 +9,25 @@
     <div id="sort-levels" class="sort-levels"></div>
     <button id="add-stream-sort" class="button button-small" type="button">Add sort</button>
     <p class="field-hint">Streams that tie on every level keep the provider's order. A value is unknown when the provider left it out or wrote a placeholder such as Unknown or N/A; unknown streams go to the end you choose, whichever direction the level sorts.</p>
+    <div class="probe-options">
+      <h3 class="probe-heading">Best stream first</h3>
+      <label class="check probe-check">
+        <input id="ranking-fastest" type="checkbox">
+        <span>Among streams the sort cannot tell apart, put the fastest first</span>
+      </label>
+      <label class="probe-timeout">
+        <span>Show at most</span>
+        <select id="ranking-limit">
+          <option value="0">all</option>
+          <option value="1">1 stream</option>
+          <option value="2">2 streams</option>
+          <option value="3">3 streams</option>
+          <option value="5">5 streams</option>
+          <option value="10">10 streams</option>
+        </select>
+        <span>per resolution</span>
+      </label>
+      <p class="field-hint">Nuvio downloads a small sample (128 KB) from each stream's address on your device and times it, so streams from slow hosts, which tend to buffer, move behind faster ones. It only reorders streams that your sort levels rank equally (with no sort levels, streams of the same resolution), so your sorting always comes first. Streams it cannot measure, such as magnet links and HLS playlists, are treated as average. The cap is applied after sorting, so the ones kept are the best ones; it counts each plugin's results separately. Measuring is limited to a few streams and about six seconds, and adds a short delay while results load. AIOPlugins does not open or play the media.</p>
+    </div>
   </div>
 </section>

@@ -5,6 +5,7 @@ import type {
   StreamFieldDefinition,
   StreamFilter,
   StreamProbeSettings,
+  StreamRankingSettings,
   StreamSort
 } from "../../providers/stream-middleware.js";
 
@@ -51,6 +52,7 @@ export interface MiddlewareSettings {
   filters: StreamFilter[];
   sorts: StreamSort[];
   probe: StreamProbeSettings;
+  ranking: StreamRankingSettings;
   nameFormat: string;
   descriptionFormat: string;
   detailField: DetailField;
@@ -87,6 +89,8 @@ export interface ProfilesResponse {
 
 export interface ApplyResponse {
   plugins: number;
+  /** Plugin IDs selected from more than one source (served as one plugin). */
+  merged: number;
 }
 
 export interface ProfileBackup {

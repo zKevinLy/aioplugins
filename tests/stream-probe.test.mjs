@@ -105,7 +105,9 @@ async function run(urls, probe, { headers } = {}) {
 
   new Function("module", "exports", wrapPluginStreams(source, {
     ...DEFAULT_STREAM_MIDDLEWARE,
-    probe
+    probe,
+    // These tests are about the playback check alone.
+    ranking: { preferFastest: false, perQuality: 0 }
   }))(module, module.exports);
 
   const streams = await module.exports.getStreams({});

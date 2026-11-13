@@ -2,7 +2,9 @@
 import { createHash } from "node:crypto";
 import { HttpError } from "../lib/http-error.js";
 import {
+  combineVariantSources,
   normalizeStreamMiddlewareSettings,
+  usesModuleSyntax,
   wrapPluginStreams
 } from "./stream-middleware.js";
 import { buildNuvioManifest } from "./nuvio-manifest.js";
@@ -14,7 +16,7 @@ const MAX_JSON_BYTES = 2 * 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 15_000;
 const GITHUB_MAX_ATTEMPTS = 2;
 const GITHUB_RETRY_DELAY_MS = 250;
-export const STREAM_MIDDLEWARE_VERSION = "18";
+export const STREAM_MIDDLEWARE_VERSION = "19";
 
 const GITHUB_RAW = "https://raw.githubusercontent.com";
 const GITHUB_WEB = "https://github.com";
@@ -34,13 +36,24 @@ interface SelectedProviderEntry extends ProviderEntry {
   filename: string;
 }
 
-interface RemotePluginFile {
+/** One source's copy of a plugin. */
+interface PluginVariant {
   entry: ProviderEntry;
-  filename: string;
   owner: string;
   repo: string;
   commit: string;
   originalFilename: string;
+}
+
+/**
+ * One plugin as Nuvio sees it. When several selected sources offer the same
+ * plugin ID, the first source is the primary copy and the rest are `others`;
+ * they are served together as one plugin whose copies are compared at run
+ * time (see `combineVariantSources`).
+ */
+interface RemotePluginFile extends PluginVariant {
+  filename: string;
+  others: PluginVariant[];
 }
 
 interface SourceSelection {
@@ -552,6 +565,8 @@ async function getRemotePluginFiles(
     .digest("hex")
     .slice(0, 10);
 
+  const byId = new Map<string, RemotePluginFile>();
+
   for (const selection of sources) {
     const { owner, repo } = parseRepository(selection.repository);
     const commit = validateCommit(selection.commit);
@@ -564,24 +579,50 @@ async function getRemotePluginFiles(
     );
 
     for (const entry of selected) {
-      const id = entry.id;
-      const originalFilename = safeProviderPath(entry.filename);
-
-      const suffix = createHash("sha256")
-        .update(`${owner}/${repo}/${commit}/${id}/${middlewareFingerprint}`)
-        .digest("hex")
-        .slice(0, 10);
-
-      result.push({
+      const variant: PluginVariant = {
         entry,
-        filename:
-          `providers/${owner}-${repo}-${safeIdSlug(id)}-${suffix}.js`,
         owner,
         repo,
         commit,
-        originalFilename
-      });
+        originalFilename: safeProviderPath(entry.filename)
+      };
+
+      const existing = byId.get(entry.id);
+
+      if (!existing) {
+        byId.set(entry.id, { ...variant, filename: "", others: [] });
+        continue;
+      }
+
+      // The same ID from another source (or listed twice in one manifest):
+      // keep it as another copy, unless it is literally the same file.
+      const known = [existing, ...existing.others].some(
+        other =>
+          other.owner === owner &&
+          other.repo === repo &&
+          other.commit === commit &&
+          other.originalFilename === variant.originalFilename
+      );
+
+      if (!known) existing.others.push(variant);
     }
+  }
+
+  for (const [id, plugin] of byId) {
+    // A single copy keeps the file name it always had, so existing installs
+    // are unaffected; combined plugins hash every copy into the name.
+    const identity = [plugin, ...plugin.others]
+      .map(variant => `${variant.owner}/${variant.repo}/${variant.commit}/${id}`)
+      .join("|");
+
+    const suffix = createHash("sha256")
+      .update(`${identity}/${middlewareFingerprint}`)
+      .digest("hex")
+      .slice(0, 10);
+
+    plugin.filename =
+      `providers/${plugin.owner}-${plugin.repo}-${safeIdSlug(id)}-${suffix}.js`;
+    result.push(plugin);
   }
 
   return result;
@@ -600,12 +641,17 @@ export async function getPluginRepositoryManifest(
     appVersion: context.appVersion,
     origin: context.origin,
     middlewareVersion: STREAM_MIDDLEWARE_VERSION,
-    plugins: plugins.map(({ entry, filename, owner, repo, commit }) => ({
+    plugins: plugins.map(({ entry, filename, owner, repo, commit, others }) => ({
       entry: entry as Record<string, unknown>,
       filename,
       owner,
       repo,
-      commit
+      commit,
+      alsoFrom: others.map(other => ({
+        owner: other.owner,
+        repo: other.repo,
+        commit: other.commit
+      }))
     }))
   });
 }
@@ -633,18 +679,65 @@ export async function getRemotePluginFile(
 
   if (!plugin) return null;
 
-  const urlPath = plugin.originalFilename
-    .split("/")
-    .map(encodeURIComponent)
-    .join("/");
-  const source = await fetchText(
-    `${GITHUB_RAW}/${plugin.owner}/${plugin.repo}/${plugin.commit}/${urlPath}`
+  const fetchVariant = (variant: PluginVariant) => {
+    const urlPath = variant.originalFilename
+      .split("/")
+      .map(encodeURIComponent)
+      .join("/");
+
+    return fetchText(
+      `${GITHUB_RAW}/${variant.owner}/${variant.repo}/${variant.commit}/${urlPath}`
+    );
+  };
+
+  const addonName = typeof plugin.entry.name === "string" ? plugin.entry.name : "";
+
+  if (plugin.others.length === 0) {
+    return wrapPluginStreams(
+      await fetchVariant(plugin),
+      middlewareSettings,
+      addonName
+    );
+  }
+
+  // Same plugin ID selected from several sources: fetch every copy.
+  const fetched = await Promise.allSettled(
+    [plugin, ...plugin.others].map(fetchVariant)
   );
 
+  const codes: string[] = [];
+  let total = 0;
+
+  for (const outcome of fetched) {
+    if (outcome.status !== "fulfilled") continue;
+
+    const code = outcome.value;
+    // Identical code is the same plugin: running it twice only costs time.
+    if (codes.some(existing => existing.trim() === code.trim())) continue;
+    // A copy that cannot run in Nuvio would break the ones that can.
+    if (usesModuleSyntax(code) && fetched.length > 1) continue;
+    if (total + code.length > MAX_PROVIDER_BYTES) continue;
+
+    total += code.length;
+    codes.push(code);
+  }
+
+  if (codes.length === 0) {
+    // Nothing usable: surface the first real failure (or serve the primary
+    // as-is so the error matches the single-source behaviour).
+    const failure = fetched.find(outcome => outcome.status === "rejected");
+    if (failure && failure.status === "rejected") throw failure.reason;
+    return wrapPluginStreams(
+      (fetched[0] as PromiseFulfilledResult<string>).value,
+      middlewareSettings,
+      addonName
+    );
+  }
+
   return wrapPluginStreams(
-    source,
+    codes.length === 1 ? codes[0]! : combineVariantSources(codes),
     middlewareSettings,
-    typeof plugin.entry.name === "string" ? plugin.entry.name : ""
+    addonName
   );
 }
 
@@ -655,6 +748,8 @@ export async function resolveSelectedSources(
 ): Promise<{
   sources: SavedSourceSelection[];
   plugins: number;
+  /** Plugin IDs selected from more than one source (served as one plugin). */
+  merged: number;
 }> {
   if (!Array.isArray(value)) {
     throw new HttpError(400, "Selections must be a list");
@@ -704,19 +799,9 @@ export async function resolveSelectedSources(
     })
     .filter(selection => selection.providerIds.length > 0);
 
-  // The first selection wins when provider IDs are duplicated.
-  for (let i = 0; i < selections.length; i++) {
-    const selection = selections[i]!;
-
-    for (const id of selection.providerIds) {
-      for (let j = i + 1; j < selections.length; j++) {
-        selections[j]!.providerIds =
-          selections[j]!.providerIds.filter(
-            existingId => existingId !== id
-          );
-      }
-    }
-  }
+  // The same plugin ID may be selected from several sources. Each source
+  // keeps its own selection; they are served as one plugin whose copies are
+  // compared at run time (see getRemotePluginFiles).
 
   // Sources are independent, so resolve them concurrently.
   const saved = await Promise.all(
@@ -775,13 +860,17 @@ export async function resolveSelectedSources(
     })
   );
 
-  const plugins = saved.reduce(
-    (total, source) => total + source.providerIds.length,
-    0
-  );
+  // What Nuvio will list: one plugin per distinct ID.
+  const seenIds = new Map<string, number>();
+  for (const source of saved) {
+    for (const id of source.providerIds) {
+      seenIds.set(id, (seenIds.get(id) ?? 0) + 1);
+    }
+  }
 
   return {
     sources: saved,
-    plugins
+    plugins: seenIds.size,
+    merged: [...seenIds.values()].filter(count => count > 1).length
   };
 }
