@@ -7,7 +7,14 @@ import { after, before, test } from "node:test";
 import { handleRequest } from "../dist/server.js";
 import { renderAioStreamsFormat } from "../dist/providers/custom-formatter.js";
 import { buildFormatterPreview } from "../dist/lib/formatter-preview.js";
-import { DEFAULT_STREAM_MIDDLEWARE, normalizeStreamMiddlewareSettings, toJsLiteral, wrapPluginStreams } from "../dist/providers/stream-middleware.js";
+import { DEFAULT_STREAM_MIDDLEWARE as PRODUCTION_DEFAULTS, normalizeStreamMiddlewareSettings, toJsLiteral, wrapPluginStreams } from "../dist/providers/stream-middleware.js";
+
+// The playback check is on by default and would call the network for these
+// fixtures' fake URLs; these tests are about formatting, filtering and sorting.
+const DEFAULT_STREAM_MIDDLEWARE = {
+  ...PRODUCTION_DEFAULTS,
+  probe: { ...PRODUCTION_DEFAULTS.probe, enabled: false }
+};
 
 const commit = "b".repeat(40);
 const sourceManifest = {

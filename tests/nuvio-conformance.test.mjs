@@ -15,7 +15,14 @@ import {
   resolveLogo,
   sanitizeScraper
 } from "../dist/providers/nuvio-manifest.js";
-import { DEFAULT_STREAM_MIDDLEWARE, wrapPluginStreams } from "../dist/providers/stream-middleware.js";
+import { DEFAULT_STREAM_MIDDLEWARE as PRODUCTION_DEFAULTS, wrapPluginStreams } from "../dist/providers/stream-middleware.js";
+
+// The playback check is on by default and would call the network for these
+// fixtures' fake URLs; these tests are about formatting, filtering and sorting.
+const DEFAULT_STREAM_MIDDLEWARE = {
+  ...PRODUCTION_DEFAULTS,
+  probe: { ...PRODUCTION_DEFAULTS.probe, enabled: false }
+};
 
 // ---------- ports of Nuvio's consumers ----------
 

@@ -115,7 +115,11 @@ test("wrapped plugins use the most common title when no media title is passed", 
     const module = { exports: {} };
     new Function("module", "exports", "fixtures", wrapPluginStreams(
       "module.exports = { getStreams: async () => fixtures.map(item => ({ ...item })) };",
-      { ...DEFAULT_STREAM_MIDDLEWARE, format: "{stream.title}|{stream.titleMatched}" }
+      {
+        ...DEFAULT_STREAM_MIDDLEWARE,
+        probe: { ...DEFAULT_STREAM_MIDDLEWARE.probe, enabled: false },
+        format: "{stream.title}|{stream.titleMatched}"
+      }
     ))(module, module.exports, fixtures);
     return module.exports.getStreams(...args);
   };
