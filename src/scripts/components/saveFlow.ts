@@ -3,6 +3,7 @@
 import { errorMessage } from "../core/guards.js";
 import { setStatus, type StatusChannel } from "../core/status.js";
 import { saveSetup } from "../services/setup.js";
+import { isCuratedLocked } from "../state/curated.js";
 import { savedStore, savingStore } from "../state/setup.js";
 import { sourceStore } from "../state/sources.js";
 
@@ -10,7 +11,7 @@ export async function runSave(
   button: HTMLButtonElement,
   channel: StatusChannel
 ): Promise<boolean> {
-  if (savingStore.get() || sourceStore.selectionCount() === 0) return false;
+  if (savingStore.get() || sourceStore.selectionCount() === 0 || isCuratedLocked()) return false;
 
   button.disabled = true;
   button.setAttribute("aria-busy", "true");

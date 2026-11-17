@@ -2,6 +2,7 @@
 
 import { $, el } from "../core/dom.js";
 import type { LoadedSource } from "../core/types.js";
+import { curatedStore, isCuratedLocked } from "../state/curated.js";
 import { isSelectable, sourceStore, sourcesLoading } from "../state/sources.js";
 import { openReview } from "../state/view.js";
 import { renderProviderListItem } from "./ProviderListItem.js";
@@ -54,7 +55,7 @@ function updateSummary(): void {
   $<HTMLButtonElement>("#go-save").disabled = count === 0;
 
   const selectAll = $<HTMLButtonElement>("#select-filtered");
-  selectAll.disabled = targets.length === 0;
+  selectAll.disabled = targets.length === 0 || isCuratedLocked();
   selectAll.textContent = allSelected ? "Deselect all" : "Select all";
 }
 
@@ -80,7 +81,9 @@ function renderGroup(key: string, source: LoadedSource, providers: ReturnType<ty
     attrs: { href: source.repository, target: "_blank", rel: "noopener noreferrer" }
   });
 
+  const locked = isCuratedLocked();
   const selectVisible = el("button", { className: "button button-small", text: "Select visible", attrs: { type: "button" } });
+  selectVisible.disabled = locked;
   selectVisible.addEventListener("click", () => {
     sourceStore.setManySelected(
       providers.filter(isSelectable).map((provider) => ({ source, providerId: provider.id })),
@@ -93,6 +96,7 @@ function renderGroup(key: string, source: LoadedSource, providers: ReturnType<ty
     text: "Remove",
     attrs: { type: "button", "aria-label": `Remove ${source.repository}` }
   });
+  remove.disabled = locked;
   remove.addEventListener("click", () => sourceStore.remove(key));
 
   const group = el(
@@ -115,6 +119,7 @@ function renderGroup(key: string, source: LoadedSource, providers: ReturnType<ty
     group.append(
       renderProviderListItem(provider, {
         checked: source.selected.has(provider.id),
+        ...(locked ? { disabled: true } : {}),
         onChange: (checked) => {
           ignoreChanges = true;
           sourceStore.setSelected(source, provider.id, checked);
@@ -170,6 +175,7 @@ export function mountPluginCatalog(): void {
 
   sourceStore.subscribe(refresh);
   sourcesLoading.subscribe(refresh);
+  curatedStore.subscribe(render);
   search().addEventListener("input", render);
   selectionFilter().addEventListener("change", render);
 

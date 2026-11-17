@@ -26,11 +26,17 @@ import { loadAppVersion } from "./lib/app-info.js";
 import { STREAM_FIELD_CATALOG } from "./providers/stream-middleware.js";
 
 import {
+  countCuratedFollowers,
   createSession,
   deleteUser,
   destroySession,
+  getCuratedConfig,
+  getCuratedStatus,
   getProfiles,
   getUserConfig,
+  isServedCurated,
+  saveCuratedConfig,
+  setFollowCurated,
   loginUser,
   registerUser,
   rerollInstallToken,
@@ -256,11 +262,36 @@ function sessionCookie(
 
 // ---------- account helpers ----------
 
-function publicUser(user: User) {
+function isAdmin(user: User, platform: Platform): boolean {
+  return platform.adminUserIds.includes(user.id);
+}
+
+function publicUser(user: User, platform: Platform) {
   return {
     id: user.id,
-    installPath: `/u/${user.id}/${user.installToken}/manifest.json`
+    installPath: `/u/${user.id}/${user.installToken}/manifest.json`,
+    isAdmin: isAdmin(user, platform)
   };
+}
+
+function requireAdmin(user: User, platform: Platform): void {
+  if (!isAdmin(user, platform)) {
+    throw new HttpError(403, "Admin access is required");
+  }
+}
+
+// Saving a selection of one's own does nothing while the account is served
+// the curated one, so say so instead of silently accepting it.
+async function assertNotServedCurated(
+  userId: string,
+  db: Database
+): Promise<void> {
+  if (await isServedCurated(userId, db)) {
+    throw new HttpError(
+      409,
+      "You are following the curated plugins. Unsubscribe from them to make your own selection."
+    );
+  }
 }
 
 // What the browser may know about a saved source. The cached provider
@@ -290,24 +321,27 @@ async function loadProfiles(userId: string, db: Database) {
 // Everything the UI needs right after sign-in, in one round trip, so it can
 // start loading plugin sources immediately instead of chaining requests.
 async function loadWorkspace(userId: string, db: Database) {
-  const [{ sources, middleware }, profiles] = await Promise.all([
+  const [{ sources, middleware }, profiles, curated] = await Promise.all([
     getUserConfig(userId, db),
-    loadProfiles(userId, db)
+    loadProfiles(userId, db),
+    getCuratedStatus(userId, db)
   ]);
 
   return {
     sources: publicSources(sources, false),
     middleware,
     fields: STREAM_FIELD_CATALOG,
-    profiles
+    profiles,
+    curated
   };
 }
 
 async function startSession(
   user: User,
-  db: Database,
+  platform: Platform,
   status = 200
 ): Promise<Response> {
+  const { db } = platform;
   const [{ token, maxAgeSeconds }, workspace] = await Promise.all([
     createSession(user.id, db),
     loadWorkspace(user.id, db)
@@ -315,7 +349,7 @@ async function startSession(
 
   return sendJson(
     status,
-    { user: publicUser(user), workspace },
+    { user: publicUser(user, platform), workspace },
     {
       "set-cookie": sessionCookie(token, maxAgeSeconds)
     }
@@ -341,7 +375,7 @@ async function handleApi(
     if (!user) return sendJson(200, { user: null });
 
     return sendJson(200, {
-      user: publicUser(user),
+      user: publicUser(user, platform),
       workspace: await loadWorkspace(user.id, db)
     });
   }
@@ -359,7 +393,7 @@ async function handleApi(
     const body = await readJsonBody(request);
     const user = await registerUser(body.password, db);
 
-    return startSession(user, db, 201);
+    return startSession(user, platform, 201);
   }
 
   if (pathname === "/api/login" && method === "POST") {
@@ -381,7 +415,7 @@ async function handleApi(
       clientIp
     );
 
-    return startSession(user, db);
+    return startSession(user, platform);
   }
 
   const rp: RelyingParty = { rpId: url.hostname, origin: url.origin };
@@ -398,7 +432,7 @@ async function handleApi(
     if (limited) return limited;
 
     const body = await readJsonBody(request);
-    return startSession(await loginWithPasskey(rp, body, db), db);
+    return startSession(await loginWithPasskey(rp, body, db), platform);
   }
 
   if (pathname === "/api/logout" && method === "POST") {
@@ -481,6 +515,8 @@ async function handleApi(
 
     const body = await readJsonBody(request);
 
+    await assertNotServedCurated(user.id, db);
+
     const { sources, plugins, deduped } = await resolveSelectedSources(body.sources);
 
     await saveUserConfig(user.id, sources, body.middleware, db);
@@ -517,6 +553,8 @@ async function handleApi(
         ? body.name.trim().slice(0, 100)
         : "") || "Default Profile";
 
+    await assertNotServedCurated(user.id, db);
+
     const { sources, plugins, deduped } = await resolveSelectedSources(body.sources);
 
     await saveProfileAndSources(user.id, profileId, name, sources, db);
@@ -551,8 +589,78 @@ async function handleApi(
 
     return sendJson(200, {
       user: publicUser(
-        await rerollInstallToken(user.id, body.password, db, clientIp)
+        await rerollInstallToken(user.id, body.password, db, clientIp),
+        platform
       )
+    });
+  }
+
+  // Follow or stop following the curated plugin list. Answers with the
+  // account's new workspace so the page can show what is now being served.
+  if (pathname === "/api/account/curated" && method === "POST") {
+    const limited = enforceRateLimit(clientIp, "curated-follow", 20, 10 * 60 * 1000);
+    if (limited) return limited;
+
+    const body = await readJsonBody(request);
+
+    if (typeof body.follow !== "boolean") {
+      throw new HttpError(400, "Expected follow to be true or false");
+    }
+
+    await setFollowCurated(user.id, body.follow, db);
+
+    return sendJson(200, {
+      user: publicUser(user, platform),
+      workspace: await loadWorkspace(user.id, db)
+    });
+  }
+
+  if (pathname === "/api/admin/curated" && method === "GET") {
+    requireAdmin(user, platform);
+
+    const [curated, followers] = await Promise.all([
+      getCuratedConfig(db),
+      countCuratedFollowers(db)
+    ]);
+
+    return sendJson(200, {
+      sources: publicSources(curated.sources, true),
+      middleware: curated.middleware,
+      updatedAt: curated.updatedAt,
+      followers
+    });
+  }
+
+  if (pathname === "/api/admin/curated" && method === "POST") {
+    requireAdmin(user, platform);
+
+    const limited = enforceRateLimit(clientIp, "admin-curated", 10, 10 * 60 * 1000);
+    if (limited) return limited;
+
+    const body = await readJsonBody(request);
+
+    if (
+      body.middleware !== undefined &&
+      (typeof body.middleware !== "object" ||
+        body.middleware === null ||
+        Array.isArray(body.middleware))
+    ) {
+      throw new HttpError(400, "Middleware settings must be an object");
+    }
+
+    const { sources, plugins, deduped } = await resolveSelectedSources(body.sources);
+
+    // An empty list would switch the default off for everyone who follows it.
+    if (plugins === 0) {
+      throw new HttpError(400, "Select at least one plugin for the curated list");
+    }
+
+    await saveCuratedConfig(user.id, sources, body.middleware, db);
+
+    return sendJson(200, {
+      plugins,
+      deduped,
+      followers: await countCuratedFollowers(db)
     });
   }
 

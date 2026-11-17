@@ -2,6 +2,7 @@
 
 import { ApiError, api } from "../core/api.js";
 import type { ApplyResponse } from "../core/types.js";
+import { isCuratedLocked } from "../state/curated.js";
 import { middlewarePayload } from "../state/middleware.js";
 import { savingStore } from "../state/setup.js";
 import { sourceStore } from "../state/sources.js";
@@ -13,7 +14,7 @@ import { refreshSources } from "./sources.js";
  * Returns null when there is nothing to do (already saving, or no selection).
  */
 export async function saveSetup(): Promise<ApplyResponse | null> {
-  if (savingStore.get() || sourceStore.selectionCount() === 0) return null;
+  if (savingStore.get() || sourceStore.selectionCount() === 0 || isCuratedLocked()) return null;
 
   savingStore.set(true);
 

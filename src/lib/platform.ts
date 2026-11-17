@@ -24,4 +24,11 @@ export interface Platform {
    * the application validates it before use.
    */
   getClientIp(request: Request): string | null;
+
+  /**
+   * Account UUIDs allowed to manage the curated plugin list. Comes from
+   * deployment configuration, never from the database, so no request can
+   * grant it.
+   */
+  adminUserIds: readonly string[];
 }

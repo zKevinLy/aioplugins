@@ -513,31 +513,61 @@ export async function userFromInstallLink(
 
 // ---------- per-user config ----------
 
+export interface EffectiveConfig {
+  sources: SavedSourceSelection[];
+  middleware: StreamMiddlewareSettings;
+}
+
+function parseMiddleware(raw: string | null | undefined): StreamMiddlewareSettings {
+  try {
+    return normalizeStreamMiddlewareSettings(JSON.parse(raw ?? "{}"));
+  } catch {
+    return DEFAULT_STREAM_MIDDLEWARE;
+  }
+}
+
+/** What the account is served: the curated default if it follows one. */
 export async function getUserConfig(
   userId: string,
   db: Database
-): Promise<{
-  sources: SavedSourceSelection[];
-  middleware: StreamMiddlewareSettings;
-}> {
-  const row = await db.first<{ sources: string; settings: string }>(
-    "SELECT sources, settings FROM user_config WHERE user_id = ?",
+): Promise<EffectiveConfig & { following: boolean }> {
+  const row = await db.first<{
+    follow_curated: number | null;
+    sources: string | null;
+    settings: string | null;
+    curated_sources: string | null;
+    curated_settings: string | null;
+  }>(
+    `SELECT u.follow_curated,
+            uc.sources AS sources,
+            uc.settings AS settings,
+            cc.sources AS curated_sources,
+            cc.settings AS curated_settings
+       FROM users u
+       LEFT JOIN user_config uc ON uc.user_id = u.id
+       LEFT JOIN curated_config cc ON cc.id = 1
+       WHERE u.id = ?`,
     [userId]
   );
 
-  const sources = parseSources(row?.sources);
+  const following = row?.follow_curated === 1;
+  const curatedSources = parseSources(row?.curated_sources);
 
-  let middleware = DEFAULT_STREAM_MIDDLEWARE;
-
-  try {
-    middleware = normalizeStreamMiddlewareSettings(
-      JSON.parse(row?.settings ?? "{}")
-    );
-  } catch {
-    middleware = DEFAULT_STREAM_MIDDLEWARE;
+  // Until an admin publishes something, followers keep their own selection
+  // rather than being served nothing.
+  if (following && curatedSources.length > 0) {
+    return {
+      sources: curatedSources,
+      middleware: parseMiddleware(row?.curated_settings),
+      following
+    };
   }
 
-  return { sources, middleware };
+  return {
+    sources: parseSources(row?.sources),
+    middleware: parseMiddleware(row?.settings),
+    following
+  };
 }
 
 export async function saveUserConfig(
@@ -562,4 +592,168 @@ export async function saveUserConfig(
       Date.now()
     ]
   );
+}
+
+// ---------- curated default ----------
+
+export interface CuratedStatus {
+  /** The account follows the curated default. */
+  following: boolean;
+  /** An admin has published a selection. Following does nothing before that. */
+  available: boolean;
+  updatedAt: number | null;
+}
+
+interface CuratedRow {
+  sources: string;
+  settings: string;
+  updated_at: number;
+}
+
+async function readCurated(db: Database): Promise<CuratedRow | null> {
+  return db.first<CuratedRow>(
+    "SELECT sources, settings, updated_at FROM curated_config WHERE id = 1"
+  );
+}
+
+export async function getCuratedStatus(
+  userId: string,
+  db: Database
+): Promise<CuratedStatus> {
+  const [user, curated] = await Promise.all([
+    db.first<{ follow_curated: number }>(
+      "SELECT follow_curated FROM users WHERE id = ?",
+      [userId]
+    ),
+    readCurated(db)
+  ]);
+
+  return {
+    following: user?.follow_curated === 1,
+    available: curated !== null && parseSources(curated.sources).length > 0,
+    updatedAt: curated?.updated_at ?? null
+  };
+}
+
+/**
+ * True when the account is being served the curated selection, so saving its
+ * own would have no effect.
+ */
+export async function isServedCurated(
+  userId: string,
+  db: Database
+): Promise<boolean> {
+  const status = await getCuratedStatus(userId, db);
+  return status.following && status.available;
+}
+
+/**
+ * Starts or stops following the curated default.
+ *
+ * Following takes over what the account serves, so the account's own selection
+ * is first kept as the "Before curated plugins" profile. Unfollowing copies the
+ * curated selection into the account, so what Nuvio receives does not change
+ * at that moment; the account can edit it from there.
+ */
+export async function setFollowCurated(
+  userId: string,
+  follow: boolean,
+  db: Database
+): Promise<void> {
+  const now = Date.now();
+
+  if (follow) {
+    await db.batch([
+      {
+        sql: `INSERT OR REPLACE INTO profiles
+                (id, user_id, name, sources, updated_at)
+              SELECT 'pre-curated', user_id, 'Before curated plugins', sources, ?
+                FROM user_config
+               WHERE user_id = ?
+                 AND CASE WHEN json_valid(sources)
+                          THEN json_array_length(sources) > 0
+                          ELSE 0 END
+                 AND EXISTS (SELECT 1 FROM users
+                              WHERE id = ? AND follow_curated = 0)`,
+        params: [now, userId, userId]
+      },
+      {
+        sql: "UPDATE users SET follow_curated = 1 WHERE id = ?",
+        params: [userId]
+      }
+    ]);
+    return;
+  }
+
+  await db.batch([
+    {
+      sql: `INSERT INTO user_config (user_id, sources, settings, updated_at)
+            SELECT ?, cc.sources, cc.settings, ?
+              FROM curated_config cc
+             WHERE cc.id = 1
+               AND CASE WHEN json_valid(cc.sources)
+                        THEN json_array_length(cc.sources) > 0
+                        ELSE 0 END
+               AND EXISTS (SELECT 1 FROM users
+                            WHERE id = ? AND follow_curated = 1)
+            ON CONFLICT(user_id)
+            DO UPDATE SET
+              sources = excluded.sources,
+              settings = excluded.settings,
+              updated_at = excluded.updated_at`,
+      params: [userId, now, userId]
+    },
+    {
+      sql: "UPDATE users SET follow_curated = 0 WHERE id = ?",
+      params: [userId]
+    }
+  ]);
+}
+
+export async function getCuratedConfig(db: Database): Promise<{
+  sources: SavedSourceSelection[];
+  middleware: StreamMiddlewareSettings;
+  updatedAt: number | null;
+}> {
+  const row = await readCurated(db);
+
+  return {
+    sources: parseSources(row?.sources),
+    middleware: parseMiddleware(row?.settings),
+    updatedAt: row?.updated_at ?? null
+  };
+}
+
+export async function saveCuratedConfig(
+  adminId: string,
+  sources: SavedSourceSelection[],
+  settings: unknown,
+  db: Database
+): Promise<void> {
+  await db.run(
+    `INSERT INTO curated_config (id, sources, settings, updated_at, updated_by)
+       VALUES (1, ?, ?, ?, ?)
+       ON CONFLICT(id)
+       DO UPDATE SET
+         sources = excluded.sources,
+         settings = excluded.settings,
+         updated_at = excluded.updated_at,
+         updated_by = excluded.updated_by`,
+    [
+      JSON.stringify(sources),
+      JSON.stringify(normalizeStreamMiddlewareSettings(settings)),
+      Date.now(),
+      adminId
+    ]
+  );
+}
+
+export async function countCuratedFollowers(
+  db: Database
+): Promise<{ following: number; total: number }> {
+  const row = await db.first<{ following: number | null; total: number }>(
+    `SELECT SUM(follow_curated) AS following, COUNT(*) AS total FROM users`
+  );
+
+  return { following: row?.following ?? 0, total: row?.total ?? 0 };
 }

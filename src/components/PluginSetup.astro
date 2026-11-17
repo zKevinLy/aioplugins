@@ -1,9 +1,12 @@
 ---
 import CatalogPanel from './CatalogPanel.astro';
+import CuratedSubscription from './CuratedSubscription.astro';
 import SourcePanel from './SourcePanel.astro';
 ---
           <!-- STEP 1: Choose plugins -->
           <section id="configure-view" class="view">
+            <CuratedSubscription />
+
             <div class="workspace">
 
               <SourcePanel />

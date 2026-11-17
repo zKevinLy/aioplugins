@@ -19,6 +19,7 @@ the third-party services that providers may interact with.
 -   [How it works](#how-it-works)
 -   [Accounts, profiles, and repository
     URLs](#accounts-profiles-and-repository-urls)
+-   [Curated plugins](#curated-plugins)
 -   [Sources and execution](#sources-and-execution)
 -   [Manifest and stream processing](#manifest-and-stream-processing)
 -   [Architecture](#architecture)
@@ -80,6 +81,40 @@ install link. Keep your login details safe.
 Sources are pinned to exact commits. Changes made later in an upstream
 repository do not automatically change your configured source. To use an
 update, review the source again and apply it while logged in.
+
+## Curated plugins
+
+Admins can maintain one shared selection of plugins, with its filter,
+sorting, and formatter settings, so a new account works as soon as it is
+created.
+
+-   **Everyone follows it by default.** The **Curated plugins** card on
+    the Plugins page has a **Subscribe** checkbox. While it is ticked,
+    the account's install link serves the curated selection, and the
+    plugin list and stream settings are read-only. Publishing a change
+    reaches every subscriber immediately.
+-   **Unsubscribing** leaves the account on the same plugins, now its
+    own to edit and save as usual. Subscribing again keeps the account's
+    own selection as a profile named "Before curated plugins".
+-   **Existing accounts** were switched to follow the list when the
+    `0006` migration was applied. Their previous selection is kept as
+    that same profile. Until an admin publishes a list, subscribers keep
+    being served their own selection.
+-   **Admins** get a **Curated plugins** page in the sidebar. Choose
+    plugins, optionally edit the stream settings (JSON), and choose
+    **Publish for everyone**. **Import backup** loads an exported
+    `aioplugins-profile` file, which is the quickest way to publish a
+    setup you already have.
+
+Admins are set in deployment configuration, not in the app. Put the
+account UUIDs (shown in Account settings), separated by commas, in the
+`ADMIN_USER_IDS` secret:
+
+``` text
+npx wrangler secret put ADMIN_USER_IDS
+```
+
+For local development, add `ADMIN_USER_IDS=<uuid>` to `.dev.vars`.
 
 ## Sources and execution
 
@@ -426,12 +461,16 @@ it uses `node:crypto`.
 `GITHUB_TOKEN` is declared as an optional binding but is not currently
 used.
 
+`ADMIN_USER_IDS` is an optional secret: comma-separated account UUIDs
+that may manage the [curated plugins](#curated-plugins).
+
 The database needs these tables:
 
 -   `users`
 -   `user_config`
 -   `profiles`
 -   `sessions`
+-   `curated_config`
 
 Apply your schema to the local D1 database before first use. See the
 project's migrations.

@@ -209,7 +209,8 @@ before(() => {
         }
       }
     },
-    getClientIp: (request) => request.headers.get("cf-connecting-ip")
+    getClientIp: (request) => request.headers.get("cf-connecting-ip"),
+    adminUserIds: []
   };
 });
 
@@ -1408,4 +1409,101 @@ test("rate limits by the client IP supplied by the platform", async () => {
 
   // A different client is unaffected.
   assert.equal((await attempt("203.0.113.10")).status, 400);
+});
+
+test("curated plugins: admins publish, followers are served them, anyone can opt out", async () => {
+  const savedCookie = cookieJar;
+  const json = (body) => ({
+    method: "POST",
+    headers: { "content-type": "application/json", "cf-connecting-ip": ip },
+    body: JSON.stringify(body)
+  });
+  let ip = "198.51.100.101";
+  const source = {
+    repository: "https://github.com/example/plugins",
+    ref: "main",
+    commit,
+    providerIds: ["fixture-plugin"]
+  };
+
+  try {
+    // Three accounts, each with its own session cookie.
+    const signUp = async (address) => {
+      ip = address;
+      cookieJar = "";
+      const { user } = await testFetch("/api/register", json({ password: "CuratedPass!1" })).then((r) => r.json());
+      return { user, cookie: cookieJar };
+    };
+    const as = (account) => { cookieJar = account.cookie; };
+
+    const admin = await signUp("198.51.100.101");
+    const follower = await signUp("198.51.100.102");
+    const regular = await signUp("198.51.100.103");
+
+    platform.adminUserIds = [admin.user.id];
+
+    // Only the configured account is an admin, and only it may use the routes.
+    as(admin);
+    const session = await testFetch("/api/session").then((r) => r.json());
+    assert.equal(session.user.isAdmin, true);
+    as(regular);
+    assert.equal((await testFetch("/api/session").then((r) => r.json())).user.isAdmin, false);
+    assert.equal((await testFetch("/api/admin/curated")).status, 403);
+    assert.equal((await testFetch("/api/admin/curated", json({ sources: [source] }))).status, 403);
+
+    // Everyone follows by default, but there is nothing to follow yet.
+    const before = await testFetch("/api/session").then((r) => r.json());
+    assert.deepEqual(
+      [before.workspace.curated.following, before.workspace.curated.available],
+      [true, false]
+    );
+    // ...so they can still save their own setup, as before.
+    ip = "198.51.100.103";
+    assert.equal((await testFetch("/api/apply", json({ sources: [source], middleware: {} }))).status, 200);
+
+    // An empty list must not switch the default off for everyone.
+    as(admin);
+    ip = "198.51.100.101";
+    assert.equal((await testFetch("/api/admin/curated", json({ sources: [] }))).status, 400);
+
+    const published = await testFetch("/api/admin/curated", json({ sources: [source], middleware: { sorts: [] } }));
+    assert.equal(published.status, 200);
+    assert.equal((await published.json()).plugins, 1);
+
+    const view = await testFetch("/api/admin/curated").then((r) => r.json());
+    assert.equal(view.sources[0].providerIds[0], "fixture-plugin");
+    assert.ok(view.followers.total >= 3 && view.followers.following >= 3);
+
+    // A follower is served the published plugins without saving anything...
+    as(follower);
+    const manifest = await testFetch(follower.user.installPath).then((r) => r.json());
+    assert.equal(manifest.scrapers.length, 1);
+    const workspace = await testFetch("/api/session").then((r) => r.json()).then((r) => r.workspace);
+    assert.equal(workspace.curated.available, true);
+    assert.equal(workspace.sources[0].providerIds[0], "fixture-plugin");
+
+    // ...and saving their own would do nothing, so the server says so.
+    ip = "198.51.100.102";
+    const refused = await testFetch("/api/apply", json({ sources: [source], middleware: {} }));
+    assert.equal(refused.status, 409);
+    assert.match((await refused.json()).error, /curated/i);
+
+    // Opting out keeps the same plugins, and own selections work again.
+    const left = await testFetch("/api/account/curated", json({ follow: false })).then((r) => r.json());
+    assert.equal(left.workspace.curated.following, false);
+    assert.equal(left.workspace.sources[0].providerIds[0], "fixture-plugin");
+    assert.equal((await testFetch(follower.user.installPath).then((r) => r.json())).scrapers.length, 1);
+    assert.equal((await testFetch("/api/apply", json({ sources: [source], middleware: {} }))).status, 200);
+
+    // Rejects anything but a real boolean.
+    assert.equal((await testFetch("/api/account/curated", json({ follow: "yes" }))).status, 400);
+
+    // Subscribing again keeps their own setup as a profile.
+    const joined = await testFetch("/api/account/curated", json({ follow: true })).then((r) => r.json());
+    assert.equal(joined.workspace.curated.following, true);
+    assert.ok(joined.workspace.profiles.some((profile) => profile.id === "pre-curated"));
+  } finally {
+    platform.adminUserIds = [];
+    cookieJar = savedCookie;
+  }
 });

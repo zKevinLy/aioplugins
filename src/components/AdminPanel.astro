@@ -1,0 +1,76 @@
+<!-- Admin: the curated plugin list everyone can subscribe to -->
+<section id="admin-view" class="view" hidden>
+  <section class="panel save-card" aria-labelledby="admin-heading">
+    <div class="panel-head">
+      <div>
+        <h2 id="admin-heading">Curated plugins</h2>
+        <p class="panel-subtitle">
+          Choose the plugins and stream settings that accounts following the curated list receive.
+          Publishing updates them immediately.
+        </p>
+      </div>
+      <span id="admin-followers" class="source-summary"></span>
+    </div>
+
+    <div class="panel-body">
+      <div class="catalog-tools admin-tools">
+        <input id="admin-search" class="search" type="search"
+          placeholder="Search plugins" aria-label="Search curated plugins">
+        <button id="admin-reload" class="button button-small" type="button"
+          title="Look up the newest commit of every source">Reload sources</button>
+        <button id="admin-import" class="button button-small" type="button"
+          title="Replace this selection with an exported backup file">Import backup</button>
+        <input id="admin-import-file" type="file" accept="application/json,.json" hidden>
+      </div>
+    </div>
+
+    <div id="admin-catalog" class="catalog-empty">
+      <strong>Loading…</strong>
+    </div>
+
+    <div class="panel-body">
+      <details class="custom-source">
+        <summary>Add a custom GitHub source</summary>
+        <div class="custom-source-fields">
+          <div class="field">
+            <label for="admin-repository">GitHub repository URL</label>
+            <input id="admin-repository" type="url"
+              placeholder="https://github.com/username/repository" spellcheck="false">
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label for="admin-ref">Branch or tag</label>
+              <input id="admin-ref" type="text" value="main" spellcheck="false">
+            </div>
+            <div class="field">
+              <label aria-hidden="true">&nbsp;</label>
+              <button id="admin-add-source" class="button button-primary button-wide" type="button">
+                Add source
+              </button>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <details class="custom-source">
+        <summary>Filters, sorting and formatter (JSON)</summary>
+        <div class="custom-source-fields">
+          <p class="field-hint">
+            The stream settings sent to everyone following the list. Importing a backup fills this in.
+          </p>
+          <textarea id="admin-middleware" rows="12" spellcheck="false"
+            aria-label="Curated stream settings as JSON"></textarea>
+        </div>
+      </details>
+
+      <p id="admin-status" class="status" role="status" aria-live="polite"></p>
+    </div>
+
+    <div class="actionbar">
+      <span id="admin-count" class="selection-count">No plugins selected</span>
+      <button id="admin-publish" class="button button-primary" type="button" disabled>
+        Publish for everyone
+      </button>
+    </div>
+  </section>
+</section>

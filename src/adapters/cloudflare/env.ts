@@ -7,4 +7,6 @@ export interface Env {
   DB: D1Database;
   ASSETS: Fetcher;
   GITHUB_TOKEN?: string;
+  /** Comma-separated account UUIDs that may manage the curated plugin list. */
+  ADMIN_USER_IDS?: string;
 }

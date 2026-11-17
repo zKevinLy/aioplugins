@@ -5,6 +5,7 @@ import { copyText } from "../core/clipboard.js";
 import { errorMessage } from "../core/guards.js";
 import { setStatus } from "../core/status.js";
 import { refreshManifest } from "../services/manifest.js";
+import { curatedStore, isCuratedLocked } from "../state/curated.js";
 import { installUrl, userStore } from "../state/session.js";
 import { manifestStore, savedStore, savingStore } from "../state/setup.js";
 import { sourceStore } from "../state/sources.js";
@@ -28,6 +29,7 @@ function renderSelection(): void {
       list.append(
         renderProviderListItem(provider, {
           checked: true,
+          ...(isCuratedLocked() ? { disabled: true } : {}),
           onChange: (checked) => {
             if (!checked) sourceStore.setSelected(source, provider.id, false);
           }
@@ -44,7 +46,8 @@ function renderSelection(): void {
 }
 
 function renderButtons(): void {
-  $<HTMLButtonElement>("#apply").disabled = sourceStore.selectionCount() === 0 || savingStore.get();
+  $<HTMLButtonElement>("#apply").disabled =
+    sourceStore.selectionCount() === 0 || savingStore.get() || isCuratedLocked();
 }
 
 function renderOutput(): void {
@@ -80,6 +83,10 @@ export function mountReviewPanel(): void {
     renderButtons();
   });
   savingStore.subscribe(renderButtons);
+  curatedStore.subscribe(() => {
+    renderSelection();
+    renderButtons();
+  });
   manifestStore.subscribe(renderOutput);
   userStore.subscribe(renderUser);
 

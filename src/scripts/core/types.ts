@@ -12,6 +12,16 @@ import type {
 export interface PublicUser {
   id: string;
   installPath: string;
+  /** May manage the curated plugin list. */
+  isAdmin: boolean;
+}
+
+export interface CuratedStatus {
+  /** The account follows the curated default. */
+  following: boolean;
+  /** An admin has published a selection; following does nothing before that. */
+  available: boolean;
+  updatedAt: number | null;
 }
 
 export interface ProviderSummary {
@@ -65,6 +75,20 @@ export interface Workspace {
   middleware: unknown;
   fields: StreamFieldDefinition[];
   profiles: SavedProfile[];
+  curated: CuratedStatus;
+}
+
+export interface AdminCuratedResponse {
+  sources: SavedSource[];
+  middleware: unknown;
+  updatedAt: number | null;
+  followers: { following: number; total: number };
+}
+
+export interface PublishCuratedResponse {
+  plugins: number;
+  deduped: number;
+  followers: { following: number; total: number };
 }
 
 export interface SessionResponse {
@@ -100,6 +124,6 @@ export interface ProfileBackup {
   middleware?: unknown;
 }
 
-export type AppView = "configure" | "middleware" | "save" | "account" | "about" | "support";
+export type AppView = "configure" | "middleware" | "save" | "account" | "admin" | "about" | "support";
 export type MiddlewareTab = "filters" | "sorting" | "formatting";
 export type StatusKind = "" | "success" | "error";

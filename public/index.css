@@ -1830,3 +1830,30 @@ textarea { resize: vertical; line-height: 1.6; }
 }
 .passkey-list { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 8px; }
 .passkey-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+
+/* Curated plugins */
+.curated-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  cursor: pointer;
+}
+
+.curated-toggle input {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  accent-color: var(--accent);
+}
+
+.curated-toggle > span {
+  display: grid;
+  gap: 4px;
+}
+
+.curated-card { margin-bottom: 20px; }
+
+.admin-tools { margin-bottom: 8px; }
+
+[inert] { opacity: .55; }

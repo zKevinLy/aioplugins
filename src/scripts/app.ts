@@ -2,8 +2,10 @@
 // the others only through the stores in ./state; this file just starts them.
 
 import { mountAccountPanel } from "./components/AccountPanel.js";
+import { mountAdminPanel } from "./components/AdminPanel.js";
 import { mountAppShell } from "./components/AppShell.js";
 import { mountAuthPanel } from "./components/AuthPanel.js";
+import { mountCuratedPanel } from "./components/CuratedPanel.js";
 import { mountMiddlewarePanel } from "./components/MiddlewarePanel.js";
 import { mountPluginCatalog } from "./components/PluginCatalog.js";
 import { mountPluginSources } from "./components/PluginSources.js";
@@ -25,6 +27,8 @@ function start(): void {
   mountReviewPanel();
   mountProfilesPanel();
   mountAccountPanel();
+  mountCuratedPanel();
+  mountAdminPanel();
 
   // An expired session on any request sends the user back to the login form.
   onUnauthorized(() => {

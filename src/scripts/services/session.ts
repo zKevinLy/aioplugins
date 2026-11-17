@@ -4,11 +4,12 @@ import { api, withTransientRetry } from "../core/api.js";
 import { errorMessage } from "../core/guards.js";
 import { setStatus } from "../core/status.js";
 import type { PublicUser, SessionResponse, Workspace } from "../core/types.js";
+import { curatedStore } from "../state/curated.js";
 import { middlewareStore, toMiddlewareSettings } from "../state/middleware.js";
 import { sessionReady, userStore } from "../state/session.js";
 import { manifestStore } from "../state/setup.js";
 import { sourceKey, sourceStore, sourcesLoading } from "../state/sources.js";
-import { showView } from "../state/view.js";
+import { showView, viewStore } from "../state/view.js";
 import { fieldsStore, profilesStore } from "../state/workspace.js";
 import { clearDiscoveryCache, loadSources, suggestedSources, type SourceRequest } from "./sources.js";
 import { refreshManifest } from "./manifest.js";
@@ -43,6 +44,7 @@ export async function enterWorkspace(user: PublicUser, workspace: Workspace): Pr
   manifestStore.set(null);
   fieldsStore.set(workspace.fields);
   profilesStore.set(workspace.profiles);
+  curatedStore.set(workspace.curated);
   middlewareStore.set(toMiddlewareSettings(workspace.middleware));
   userStore.set(user);
   showView("configure");
@@ -92,7 +94,25 @@ export function leaveWorkspace(): void {
   sourcesLoading.set(false);
   manifestStore.set(null);
   profilesStore.set([]);
+  curatedStore.set({ following: false, available: false, updatedAt: null });
   userStore.set(null);
+}
+
+/**
+ * Reloads what the server is serving this account, staying on the current
+ * screen. Used after something outside the account's own editor changed it,
+ * such as an admin publishing a new curated list.
+ */
+export async function refreshWorkspace(): Promise<void> {
+  const { user, workspace } = await api<SessionResponse>("/api/session");
+  if (!user || !workspace) return;
+
+  const { view } = viewStore.get();
+  const loading = enterWorkspace(user, workspace);
+
+  // enterWorkspace returns to the plugin list; go back to where the user was.
+  showView(view);
+  await loading;
 }
 
 export async function signOut(): Promise<void> {

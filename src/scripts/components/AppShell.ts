@@ -7,6 +7,7 @@ import { signOut } from "../services/session.js";
 import { runSave } from "./saveFlow.js";
 import { savingStore } from "../state/setup.js";
 import { sourceStore } from "../state/sources.js";
+import { curatedStore, isCuratedLocked } from "../state/curated.js";
 import { sessionReady, userStore } from "../state/session.js";
 import { openReview, showMiddlewareTab, showView, viewStore } from "../state/view.js";
 
@@ -15,6 +16,7 @@ const VIEW_SECTIONS: Record<AppView, string> = {
   middleware: "#middleware-view",
   save: "#save-view",
   account: "#account-view",
+  admin: "#admin-view",
   about: "#about-view",
   support: "#support-view"
 };
@@ -26,6 +28,7 @@ const NAV_ITEMS: Record<string, string> = {
   formatting: "#formatting-tab",
   save: "#save-tab",
   account: "#account-nav",
+  admin: "#admin-nav",
   about: "#about-nav",
   support: "#support-nav"
 };
@@ -44,6 +47,10 @@ const PAGES: Record<Exclude<AppView, "middleware">, PageText> = {
   account: {
     title: "Account settings",
     description: "Manage your account and configuration backups."
+  },
+  admin: {
+    title: "Curated plugins",
+    description: "Choose the plugins and stream settings that subscribed accounts receive."
   },
   about: {
     title: "About AIOPlugins",
@@ -89,7 +96,10 @@ function renderSession(): void {
   $("#auth-view").hidden = signedIn || !sessionReady.get();
   $("#app-view").hidden = !signedIn;
   $("#session-bar").hidden = !signedIn;
+  $("#admin-group").hidden = user?.isAdmin !== true;
 
+  // The admin screen must not stay open for an account that cannot use it.
+  if (viewStore.get().view === "admin" && user?.isAdmin !== true) showView("configure");
 }
 
 function refreshIcons(): void {
@@ -116,6 +126,7 @@ export function mountAppShell(): void {
   $("#save-tab").addEventListener("click", openReview);
   $("#account-menu").addEventListener("click", () => showView("account"));
   $("#account-nav").addEventListener("click", () => showView("account"));
+  $("#admin-nav").addEventListener("click", () => showView("admin"));
   $("#about-nav").addEventListener("click", () => showView("about"));
   $("#support-nav").addEventListener("click", () => showView("support"));
   $("#support-shortcut").addEventListener("click", () => showView("support"));
@@ -123,12 +134,13 @@ export function mountAppShell(): void {
 
   const quickSave = $<HTMLButtonElement>("#quick-save");
   const updateQuickSave = () => {
-    quickSave.disabled = sourceStore.selectionCount() === 0 || savingStore.get();
+    quickSave.disabled = sourceStore.selectionCount() === 0 || savingStore.get() || isCuratedLocked();
     quickSave.title = savingStore.get() ? "Saving…" : "Quick save";
     quickSave.setAttribute("aria-label", quickSave.title);
   };
   sourceStore.subscribe(updateQuickSave);
   savingStore.subscribe(updateQuickSave);
+  curatedStore.subscribe(updateQuickSave);
   quickSave.addEventListener("click", () => void runSave(quickSave, "quick-save"));
   updateQuickSave();
 
