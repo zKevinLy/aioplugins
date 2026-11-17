@@ -1,24 +1,18 @@
 // "Available plugins": the searchable list of providers per source.
 
-import { $, el } from "../core/dom.js";
+import { el } from "../core/dom.js";
 import type { LoadedSource } from "../core/types.js";
-import { curatedStore, isCuratedLocked } from "../state/curated.js";
-import { isSelectable, sourceStore, sourcesLoading } from "../state/sources.js";
-import { openReview } from "../state/view.js";
+import { isSelectable } from "../state/sources.js";
+import type { PluginScope } from "./pluginScope.js";
 import { renderProviderListItem } from "./ProviderListItem.js";
-
-const catalog = () => $("#catalog");
-const search = () => $<HTMLInputElement>("#search");
-const selectionFilter = () => $<HTMLSelectElement>("#selection-filter");
 
 // Ticking a box updates the totals only; rebuilding the list on every click
 // would drop keyboard focus and scroll position.
-let ignoreChanges = false;
+const ignoring = new WeakSet<PluginScope>();
 
-function matching(source: LoadedSource) {
-  const query = search().value.trim().toLowerCase();
-
-  const mode = selectionFilter().value;
+function matching(scope: PluginScope, source: LoadedSource) {
+  const query = scope.ui<HTMLInputElement>("search").value.trim().toLowerCase();
+  const mode = scope.ui<HTMLSelectElement>("selection-filter").value;
 
   return source.providers.filter((provider) => {
     if (!`${provider.name} ${provider.id} ${provider.description}`.toLowerCase().includes(query)) {
@@ -31,39 +25,41 @@ function matching(source: LoadedSource) {
   });
 }
 
-function visibleTargets() {
-  return sourceStore.list().flatMap((source) =>
-    matching(source)
+function visibleTargets(scope: PluginScope) {
+  return scope.store.list().flatMap((source) =>
+    matching(scope, source)
       .filter(isSelectable)
       .map((provider) => ({ source, providerId: provider.id }))
   );
 }
 
-function updateSummary(): void {
-  const count = sourceStore.selectionCount();
-  const combined = sourceStore.combinedCount();
-  const targets = visibleTargets();
+function updateSummary(scope: PluginScope): void {
+  const { store, ui } = scope;
+  const count = store.selectionCount();
+  const combined = store.combinedCount();
+  const targets = visibleTargets(scope);
   const allSelected = targets.length > 0 &&
     targets.every(({ source, providerId }) => source.selected.has(providerId));
 
   const label = count === 1 ? "1 plugin selected" : `${count} plugins selected`;
 
-  $("#source-count").textContent = String(sourceStore.size);
-  $("#selection-count").textContent = combined > 0
+  ui("source-count").textContent = String(store.size);
+  ui("selection-count").textContent = combined > 0
     ? `${label} (${combined} combined from several sources)`
     : label;
-  $<HTMLButtonElement>("#go-save").disabled = count === 0;
+  ui<HTMLButtonElement>("go-save").disabled = count === 0;
 
-  const selectAll = $<HTMLButtonElement>("#select-filtered");
-  selectAll.disabled = targets.length === 0 || isCuratedLocked();
+  const selectAll = ui<HTMLButtonElement>("select-filtered");
+  selectAll.disabled = targets.length === 0 || scope.locked();
   selectAll.textContent = allSelected ? "Deselect all" : "Select all";
 }
 
-function renderEmpty(): void {
-  const loading = sourcesLoading.get();
+function renderEmpty(scope: PluginScope): void {
+  const loading = scope.store.loading.get();
+  const catalog = scope.ui("catalog");
 
-  catalog().className = "catalog-empty";
-  catalog().replaceChildren(
+  catalog.className = "catalog-empty";
+  catalog.replaceChildren(
     el("strong", { text: loading ? "Loading your plugin sources..." : "No plugin sources loaded." }),
     el("p", {
       text: loading
@@ -73,7 +69,13 @@ function renderEmpty(): void {
   );
 }
 
-function renderGroup(key: string, source: LoadedSource, providers: ReturnType<typeof matching>): HTMLElement {
+function renderGroup(
+  scope: PluginScope,
+  key: string,
+  source: LoadedSource,
+  providers: ReturnType<typeof matching>
+): HTMLElement {
+  const { store } = scope;
   const name = new URL(source.repository).pathname.split("/").filter(Boolean).slice(-1)[0] || source.repository;
 
   const link = el("a", {
@@ -81,11 +83,11 @@ function renderGroup(key: string, source: LoadedSource, providers: ReturnType<ty
     attrs: { href: source.repository, target: "_blank", rel: "noopener noreferrer" }
   });
 
-  const locked = isCuratedLocked();
+  const locked = scope.locked();
   const selectVisible = el("button", { className: "button button-small", text: "Select visible", attrs: { type: "button" } });
   selectVisible.disabled = locked;
   selectVisible.addEventListener("click", () => {
-    sourceStore.setManySelected(
+    store.setManySelected(
       providers.filter(isSelectable).map((provider) => ({ source, providerId: provider.id })),
       true
     );
@@ -97,7 +99,7 @@ function renderGroup(key: string, source: LoadedSource, providers: ReturnType<ty
     attrs: { type: "button", "aria-label": `Remove ${source.repository}` }
   });
   remove.disabled = locked;
-  remove.addEventListener("click", () => sourceStore.remove(key));
+  remove.addEventListener("click", () => store.remove(key));
 
   const group = el(
     "section",
@@ -121,14 +123,14 @@ function renderGroup(key: string, source: LoadedSource, providers: ReturnType<ty
         checked: source.selected.has(provider.id),
         ...(locked ? { disabled: true } : {}),
         onChange: (checked) => {
-          ignoreChanges = true;
-          sourceStore.setSelected(source, provider.id, checked);
-          ignoreChanges = false;
+          ignoring.add(scope);
+          store.setSelected(source, provider.id, checked);
+          ignoring.delete(scope);
 
           // With a selection filter the row may need to leave the list;
           // otherwise only the totals change.
-          if (selectionFilter().value !== "all") render();
-          else updateSummary();
+          if (scope.ui<HTMLSelectElement>("selection-filter").value !== "all") render(scope);
+          else updateSummary(scope);
         }
       })
     );
@@ -137,55 +139,56 @@ function renderGroup(key: string, source: LoadedSource, providers: ReturnType<ty
   return group;
 }
 
-function render(): void {
-  if (sourceStore.size === 0) {
-    renderEmpty();
-    updateSummary();
+function render(scope: PluginScope): void {
+  if (scope.store.size === 0) {
+    renderEmpty(scope);
+    updateSummary(scope);
     return;
   }
 
+  const catalog = scope.ui("catalog");
   const groups: HTMLElement[] = [];
 
-  for (const [key, source] of sourceStore.entries()) {
-    const providers = matching(source);
-    if (providers.length > 0) groups.push(renderGroup(key, source, providers));
+  for (const [key, source] of scope.store.entries()) {
+    const providers = matching(scope, source);
+    if (providers.length > 0) groups.push(renderGroup(scope, key, source, providers));
   }
 
-  catalog().className = groups.length > 0 ? "catalog-content" : "catalog-empty";
+  catalog.className = groups.length > 0 ? "catalog-content" : "catalog-empty";
 
   if (groups.length > 0) {
-    catalog().replaceChildren(...groups);
+    catalog.replaceChildren(...groups);
   } else {
-    catalog().replaceChildren(
-      el("p", {
-        text: search().value.trim() || selectionFilter().value !== "all"
-          ? "No plugins match this search or filter."
-          : "No available plugins found."
-      })
+    const filtered =
+      scope.ui<HTMLInputElement>("search").value.trim() ||
+      scope.ui<HTMLSelectElement>("selection-filter").value !== "all";
+
+    catalog.replaceChildren(
+      el("p", { text: filtered ? "No plugins match this search or filter." : "No available plugins found." })
     );
   }
 
-  updateSummary();
+  updateSummary(scope);
 }
 
-export function mountPluginCatalog(): void {
+export function mountPluginCatalog(scope: PluginScope): void {
   const refresh = () => {
-    if (!ignoreChanges) render();
+    if (!ignoring.has(scope)) render(scope);
   };
 
-  sourceStore.subscribe(refresh);
-  sourcesLoading.subscribe(refresh);
-  curatedStore.subscribe(render);
-  search().addEventListener("input", render);
-  selectionFilter().addEventListener("change", render);
+  scope.store.subscribe(refresh);
+  scope.store.loading.subscribe(refresh);
+  scope.onLockChange(() => render(scope));
+  scope.ui("search").addEventListener("input", () => render(scope));
+  scope.ui("selection-filter").addEventListener("change", () => render(scope));
 
-  $("#select-filtered").addEventListener("click", () => {
-    const targets = visibleTargets();
+  scope.ui("select-filtered").addEventListener("click", () => {
+    const targets = visibleTargets(scope);
     const shouldSelect = !targets.every(({ source, providerId }) => source.selected.has(providerId));
-    sourceStore.setManySelected(targets, shouldSelect);
+    scope.store.setManySelected(targets, shouldSelect);
   });
 
-  $("#go-save").addEventListener("click", openReview);
+  scope.ui("go-save").addEventListener("click", scope.onContinue);
 
-  render();
+  render(scope);
 }

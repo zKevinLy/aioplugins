@@ -24,138 +24,157 @@ export function pruneSelection(
   return new Set([...ids].filter((id) => selectable.has(id)));
 }
 
-const sources = new Map<string, LoadedSource>();
+/**
+ * One list of loaded sources and ticked providers. The account has one, and
+ * the admin has another for the curated list, so editing either never
+ * touches the other.
+ */
+export function createSourceStore() {
+  const loading = createStore(false);
 
-/** Display order; sources not listed keep insertion order after these. */
-let order: string[] = [];
+  const sources = new Map<string, LoadedSource>();
 
-/** Bumped on every change; subscribe to re-render. */
-const revision = createStore(0);
+  /** Display order; sources not listed keep insertion order after these. */
+  let order: string[] = [];
 
-/** True while sources are being fetched after sign-in. */
-export const sourcesLoading = createStore(false);
+  /** Bumped on every change; subscribe to re-render. */
+  const revision = createStore(0);
 
-function sortedEntries(): [string, LoadedSource][] {
-  const rank = (key: string): number => {
-    const index = order.indexOf(key);
-    return index === -1 ? Number.MAX_SAFE_INTEGER : index;
-  };
+  function sortedEntries(): [string, LoadedSource][] {
+    const rank = (key: string): number => {
+      const index = order.indexOf(key);
+      return index === -1 ? Number.MAX_SAFE_INTEGER : index;
+    };
 
-  return [...sources.entries()].sort(([a], [b]) => rank(a) - rank(b));
-}
+    return [...sources.entries()].sort(([a], [b]) => rank(a) - rank(b));
+  }
 
-function changed(): void {
-  revision.update((value) => value + 1);
-}
+  function changed(): void {
+    revision.update((value) => value + 1);
+  }
 
-export const sourceStore = {
-  subscribe: revision.subscribe,
+  return {
+    subscribe: revision.subscribe,
 
-  list(): LoadedSource[] {
-    return sortedEntries().map(([, source]) => source);
-  },
+    /** True while sources are being fetched (after sign-in, or when the admin opens its list). */
+    loading,
 
-  entries(): [string, LoadedSource][] {
-    return sortedEntries();
-  },
+    list(): LoadedSource[] {
+      return sortedEntries().map(([, source]) => source);
+    },
 
-  /**
-   * Fixes the display order. Sources load concurrently and arrive in any
-   * order; this keeps the list stable while they appear.
-   */
-  setOrder(keys: string[]): void {
-    order = keys;
-    changed();
-  },
+    entries(): [string, LoadedSource][] {
+      return sortedEntries();
+    },
 
-  get size(): number {
-    return sources.size;
-  },
+    /**
+     * Fixes the display order. Sources load concurrently and arrive in any
+     * order; this keeps the list stable while they appear.
+     */
+    setOrder(keys: string[]): void {
+      order = keys;
+      changed();
+    },
 
-  /**
-   * Adds or refreshes a source. A refresh keeps the user's ticks (minus any
-   * that are no longer valid) unless `selectedIds` says otherwise.
-   */
-  upsert(source: DiscoveredSource, selectedIds?: Iterable<string>): LoadedSource {
-    const key = sourceKey(source);
-    const kept = selectedIds ?? sources.get(key)?.selected ?? [];
-    const loaded: LoadedSource = { ...source, selected: pruneSelection(source, kept) };
+    get size(): number {
+      return sources.size;
+    },
 
-    sources.set(key, loaded);
-    changed();
-    return loaded;
-  },
+    /**
+     * Adds or refreshes a source. A refresh keeps the user's ticks (minus any
+     * that are no longer valid) unless `selectedIds` says otherwise.
+     */
+    upsert(source: DiscoveredSource, selectedIds?: Iterable<string>): LoadedSource {
+      const key = sourceKey(source);
+      const kept = selectedIds ?? sources.get(key)?.selected ?? [];
+      const loaded: LoadedSource = { ...source, selected: pruneSelection(source, kept) };
 
-  replaceAll(entries: LoadedSource[]): void {
-    sources.clear();
-    for (const entry of entries) sources.set(sourceKey(entry), entry);
-    changed();
-  },
+      sources.set(key, loaded);
+      changed();
+      return loaded;
+    },
 
-  remove(key: string): void {
-    if (sources.delete(key)) changed();
-  },
+    replaceAll(entries: LoadedSource[]): void {
+      sources.clear();
+      for (const entry of entries) sources.set(sourceKey(entry), entry);
+      changed();
+    },
 
-  clear(): void {
-    order = [];
-    if (sources.size === 0) return;
-    sources.clear();
-    changed();
-  },
+    remove(key: string): void {
+      if (sources.delete(key)) changed();
+    },
 
-  /**
-   * Ticks or unticks one provider in one source. The same provider ID may be
-   * ticked in several sources: the server serves it as one plugin that runs
-   * every selected source's copy and drops streams that are identical.
-   */
-  setSelected(source: LoadedSource, providerId: string, checked: boolean): void {
-    if (checked) source.selected.add(providerId);
-    else source.selected.delete(providerId);
-    changed();
-  },
+    clear(): void {
+      order = [];
+      if (sources.size === 0) return;
+      sources.clear();
+      changed();
+    },
 
-  /** Ticks or unticks many providers with a single re-render. */
-  setManySelected(
-    targets: { source: LoadedSource; providerId: string }[],
-    checked: boolean
-  ): void {
-    for (const { source, providerId } of targets) {
+    /**
+     * Ticks or unticks one provider in one source. The same provider ID may be
+     * ticked in several sources: the server serves it as one plugin that runs
+     * every selected source's copy and drops streams that are identical.
+     */
+    setSelected(source: LoadedSource, providerId: string, checked: boolean): void {
       if (checked) source.selected.add(providerId);
       else source.selected.delete(providerId);
-    }
-    changed();
-  },
+      changed();
+    },
 
-  /**
-   * Distinct plugin IDs ticked across all sources. This is what Nuvio lists:
-   * an ID ticked in two sources is one plugin.
-   */
-  selectionCount(): number {
-    const ids = new Set<string>();
-    for (const source of sources.values()) {
-      for (const id of source.selected) ids.add(id);
-    }
-    return ids.size;
-  },
+    /** Ticks or unticks many providers with a single re-render. */
+    setManySelected(
+      targets: { source: LoadedSource; providerId: string }[],
+      checked: boolean
+    ): void {
+      for (const { source, providerId } of targets) {
+        if (checked) source.selected.add(providerId);
+        else source.selected.delete(providerId);
+      }
+      changed();
+    },
 
-  /** How many plugin IDs are ticked in more than one source. */
-  combinedCount(): number {
-    const counts = new Map<string, number>();
-    for (const source of sources.values()) {
-      for (const id of source.selected) counts.set(id, (counts.get(id) ?? 0) + 1);
-    }
-    return [...counts.values()].filter((count) => count > 1).length;
-  },
+    /**
+     * Distinct plugin IDs ticked across all sources. This is what Nuvio lists:
+     * an ID ticked in two sources is one plugin.
+     */
+    selectionCount(): number {
+      const ids = new Set<string>();
+      for (const source of sources.values()) {
+        for (const id of source.selected) ids.add(id);
+      }
+      return ids.size;
+    },
 
-  /** The selection in the shape the server expects (sources with ticks only). */
-  toPayload(): SavedSource[] {
-    return sortedEntries()
-      .map(([, source]) => ({
-        repository: source.repository,
-        ref: source.ref,
-        commit: source.commit,
-        providerIds: [...source.selected]
-      }))
-      .filter((source) => source.providerIds.length > 0);
-  }
-};
+    /** How many plugin IDs are ticked in more than one source. */
+    combinedCount(): number {
+      const counts = new Map<string, number>();
+      for (const source of sources.values()) {
+        for (const id of source.selected) counts.set(id, (counts.get(id) ?? 0) + 1);
+      }
+      return [...counts.values()].filter((count) => count > 1).length;
+    },
+
+    /** The selection in the shape the server expects (sources with ticks only). */
+    toPayload(): SavedSource[] {
+      return sortedEntries()
+        .map(([, source]) => ({
+          repository: source.repository,
+          ref: source.ref,
+          commit: source.commit,
+          providerIds: [...source.selected]
+        }))
+        .filter((source) => source.providerIds.length > 0);
+    }
+  };
+}
+
+export type SourceStore = ReturnType<typeof createSourceStore>;
+
+/** The signed-in account's own sources and selection. */
+export const sourceStore = createSourceStore();
+
+/** The sources and selection an admin is drafting for the curated list. */
+export const adminSourceStore = createSourceStore();
+
+export const sourcesLoading = sourceStore.loading;

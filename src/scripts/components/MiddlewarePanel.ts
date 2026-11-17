@@ -2,7 +2,7 @@
 // The Filters / Sorting / Formatter screens edit the account's own settings;
 // the admin screen mounts the very same editors for the curated settings.
 
-import { $, $$ } from "../core/dom.js";
+import { $, $$, idLookup } from "../core/dom.js";
 import type { Store } from "../core/store.js";
 import type { MiddlewareSettings } from "../core/types.js";
 import { adminMiddlewareStore, middlewareStore } from "../state/middleware.js";
@@ -11,7 +11,7 @@ import { mountFilterEditor } from "./middleware/FilterEditor.js";
 import { mountFormatterEditor } from "./middleware/FormatterEditor.js";
 import { mountProbeEditor } from "./middleware/ProbeEditor.js";
 import { mountRankingEditor } from "./middleware/RankingEditor.js";
-import { idLookup, type MiddlewareScope } from "./middleware/scope.js";
+import type { MiddlewareScope } from "./middleware/scope.js";
 import { mountSortControls } from "./middleware/SortControls.js";
 
 function mountEditors(scope: MiddlewareScope): void {

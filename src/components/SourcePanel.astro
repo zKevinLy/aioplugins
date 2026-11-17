@@ -1,12 +1,18 @@
+---
+// `prefix` keeps element ids unique when the picker is shown more than once
+// (the account's own plugins and the admin's curated plugins).
+// Anything placed inside the component appears above the custom-source form.
+const { prefix = "" } = Astro.props;
+---
 <!-- Sources -->
-<section class="panel" aria-labelledby="source-heading">
+<section class="panel" id={`${prefix}source-panel`} aria-labelledby={`${prefix}source-heading`}>
   <div class="panel-head">
     <div>
-      <h2 id="source-heading">Plugin sources</h2>
+      <h2 id={`${prefix}source-heading`}>Plugin sources</h2>
       <p class="panel-subtitle">Choose a source or add your own GitHub repository.</p>
     </div>
     <span class="source-summary">
-      <span id="source-count">0</span> loaded
+      <span id={`${prefix}source-count`}>0</span> loaded
     </span>
   </div>
 
@@ -39,26 +45,28 @@
       <p class="field-hint">These sources load automatically when you log in.</p>
     </div>
 
+    <slot />
+
     <details class="custom-source">
       <summary>Add a custom GitHub source</summary>
 
       <div class="custom-source-fields">
         <div class="field">
-          <label for="repository">GitHub repository URL</label>
-          <input id="repository" type="url"
+          <label for={`${prefix}repository`}>GitHub repository URL</label>
+          <input id={`${prefix}repository`} type="url"
             placeholder="https://github.com/username/repository"
             autocomplete="url" spellcheck="false">
         </div>
 
         <div class="field-row">
           <div class="field">
-            <label for="ref">Branch or tag</label>
-            <input id="ref" type="text" value="main" spellcheck="false">
+            <label for={`${prefix}ref`}>Branch or tag</label>
+            <input id={`${prefix}ref`} type="text" value="main" spellcheck="false">
           </div>
 
           <div class="field">
             <label aria-hidden="true">&nbsp;</label>
-            <button id="discover" class="button button-primary button-wide" type="button">
+            <button id={`${prefix}discover`} class="button button-primary button-wide" type="button">
               Add source
             </button>
           </div>
@@ -72,6 +80,6 @@
       Nuvio runs the plugin code after installation.
     </p>
 
-    <p id="status" class="status" role="status" aria-live="polite"></p>
+    <p id={`${prefix}status`} class="status" role="status" aria-live="polite"></p>
   </div>
 </section>

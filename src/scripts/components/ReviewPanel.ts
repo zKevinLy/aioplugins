@@ -1,6 +1,6 @@
-// "Save & Install": the selection, the save button and the install link.
+// "Save & Install": the save button and the install link.
 
-import { $, el } from "../core/dom.js";
+import { $ } from "../core/dom.js";
 import { copyText } from "../core/clipboard.js";
 import { errorMessage } from "../core/guards.js";
 import { setStatus } from "../core/status.js";
@@ -10,40 +10,9 @@ import { installUrl, userStore } from "../state/session.js";
 import { manifestStore, savedStore, savingStore } from "../state/setup.js";
 import { sourceStore } from "../state/sources.js";
 import { viewStore } from "../state/view.js";
-import { renderProviderListItem } from "./ProviderListItem.js";
 import { runSave } from "./saveFlow.js";
 
 const NO_LINK_TEXT = "Save your setup to generate a link.";
-
-function renderSelection(): void {
-  const count = sourceStore.selectionCount();
-  $("#review-count").textContent = count === 1 ? "1 plugin selected" : `${count} plugins selected`;
-
-  const container = $("#review-selection");
-  const list = el("div", { className: "review-list" });
-
-  for (const source of sourceStore.list()) {
-    for (const provider of source.providers) {
-      if (!source.selected.has(provider.id)) continue;
-
-      list.append(
-        renderProviderListItem(provider, {
-          checked: true,
-          ...(isCuratedLocked() ? { disabled: true } : {}),
-          onChange: (checked) => {
-            if (!checked) sourceStore.setSelected(source, provider.id, false);
-          }
-        })
-      );
-    }
-  }
-
-  container.replaceChildren(
-    count === 0
-      ? el("p", { className: "view-intro", text: "No plugins selected yet. Go back and choose some plugins." })
-      : list
-  );
-}
 
 function renderButtons(): void {
   $<HTMLButtonElement>("#apply").disabled =
@@ -78,15 +47,9 @@ export function mountReviewPanel(): void {
   const feedback = $("#copy-feedback");
   const apply = $<HTMLButtonElement>("#apply");
 
-  sourceStore.subscribe(() => {
-    renderSelection();
-    renderButtons();
-  });
+  sourceStore.subscribe(renderButtons);
   savingStore.subscribe(renderButtons);
-  curatedStore.subscribe(() => {
-    renderSelection();
-    renderButtons();
-  });
+  curatedStore.subscribe(renderButtons);
   manifestStore.subscribe(renderOutput);
   userStore.subscribe(renderUser);
 
@@ -123,7 +86,6 @@ export function mountReviewPanel(): void {
     }
   });
 
-  renderSelection();
   renderButtons();
   renderOutput();
   renderUser();

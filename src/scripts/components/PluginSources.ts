@@ -1,59 +1,64 @@
 // "Plugin sources": suggested one-click sources and the custom GitHub form.
 
-import { $, $$ } from "../core/dom.js";
+import { $$ } from "../core/dom.js";
 import { errorMessage } from "../core/guards.js";
 import { setStatus } from "../core/status.js";
 import { discoverSource } from "../services/sources.js";
-import { sourceStore, sourcesLoading } from "../state/sources.js";
+import type { PluginScope } from "./pluginScope.js";
 
-async function addSource(button: HTMLButtonElement, repository: string, ref: string): Promise<void> {
+async function addSource(
+  scope: PluginScope,
+  button: HTMLButtonElement,
+  repository: string,
+  ref: string
+): Promise<void> {
   if (!repository) {
-    setStatus("catalog", "Enter a GitHub repository URL.", "error");
+    setStatus(scope.status, "Enter a GitHub repository URL.", "error");
     return;
   }
 
   button.disabled = true;
   button.classList.add("loading");
-  setStatus("catalog", "Checking GitHub manifest…");
+  setStatus(scope.status, "Checking GitHub manifest…");
 
   try {
     // Explicit action: always look up the newest commit.
     const source = await discoverSource(repository, ref, { force: true });
-    sourceStore.upsert(source);
+    scope.store.upsert(source);
     setStatus(
-      "catalog",
+      scope.status,
       `Found ${source.providers.length} providers at commit ${source.commit.slice(0, 8)}.`,
       "success"
     );
   } catch (error) {
-    setStatus("catalog", errorMessage(error), "error");
+    setStatus(scope.status, errorMessage(error), "error");
   } finally {
     button.classList.remove("loading");
-    button.disabled = sourcesLoading.get();
+    button.disabled = scope.store.loading.get();
   }
 }
 
-export function mountPluginSources(): void {
-  const discover = $<HTMLButtonElement>("#discover");
-  const repository = $<HTMLInputElement>("#repository");
-  const ref = $<HTMLInputElement>("#ref");
+export function mountPluginSources(scope: PluginScope): void {
+  const discover = scope.ui<HTMLButtonElement>("discover");
+  const repository = scope.ui<HTMLInputElement>("repository");
+  const ref = scope.ui<HTMLInputElement>("ref");
 
-  sourcesLoading.subscribe((loading) => {
+  scope.store.loading.subscribe((loading) => {
     discover.disabled = loading;
   });
 
   discover.addEventListener("click", () => {
-    void addSource(discover, repository.value.trim(), ref.value.trim() || "main");
+    void addSource(scope, discover, repository.value.trim(), ref.value.trim() || "main");
   });
 
-  for (const button of $$<HTMLButtonElement>(".quick-source")) {
+  for (const button of $$<HTMLButtonElement>(".quick-source", scope.ui("source-panel"))) {
     button.addEventListener("click", () => {
       const url = button.dataset.repo;
       if (!url) return;
 
       repository.value = url;
       ref.value = "main";
-      void addSource(discover, url, "main");
+      void addSource(scope, discover, url, "main");
     });
   }
 }

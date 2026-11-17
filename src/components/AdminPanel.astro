@@ -1,83 +1,48 @@
 ---
+import CatalogPanel from './CatalogPanel.astro';
+import SourcePanel from './SourcePanel.astro';
 import FilterPanel from './middleware/FilterPanel.astro';
 import FormatterPanel from './middleware/FormatterPanel.astro';
 import SortPanel from './middleware/SortPanel.astro';
 ---
-<!-- Admin: the curated plugin list everyone can subscribe to. The filter, sorting and
-     formatter panels are the same ones the account uses, with their own element ids. -->
+<!-- Admin: the curated plugin list everyone can subscribe to. Every tab is the same
+     component the account uses (plugins, filters, sorting, formatter) with its own
+     element ids, plus a Publish tab that mirrors Save & Install. -->
 <section id="admin-view" class="view" hidden>
-  <section class="panel save-card" data-tab="plugins" aria-labelledby="admin-heading">
-    <div class="panel-head">
-      <div>
-        <h2 id="admin-heading">Curated plugins</h2>
-        <p class="panel-subtitle">
-          Choose the plugins and stream settings that accounts following the curated list receive.
-          Publishing updates them immediately.
-        </p>
-      </div>
-      <span id="admin-followers" class="source-summary"></span>
-    </div>
-
-    <div class="panel-body">
-      <div class="catalog-tools admin-tools">
-        <input id="admin-search" class="search" type="search"
-          placeholder="Search plugins" aria-label="Search curated plugins">
-        <button id="admin-reload" class="button button-small" type="button"
-          title="Look up the newest commit of every source">Reload sources</button>
-        <button id="admin-import" class="button button-small" type="button"
-          title="Replace this selection with an exported backup file">Import backup</button>
-        <input id="admin-import-file" type="file" accept="application/json,.json" hidden>
-      </div>
-    </div>
-
-    <div id="admin-catalog" class="catalog-empty">
-      <strong>Loading…</strong>
-    </div>
-
-    <div class="panel-body">
-      <details class="custom-source">
-        <summary>Add a custom GitHub source</summary>
-        <div class="custom-source-fields">
-          <div class="field">
-            <label for="admin-repository">GitHub repository URL</label>
-            <input id="admin-repository" type="url"
-              placeholder="https://github.com/username/repository" spellcheck="false">
-          </div>
-          <div class="field-row">
-            <div class="field">
-              <label for="admin-ref">Branch or tag</label>
-              <input id="admin-ref" type="text" value="main" spellcheck="false">
-            </div>
-            <div class="field">
-              <label aria-hidden="true">&nbsp;</label>
-              <button id="admin-add-source" class="button button-primary button-wide" type="button">
-                Add source
-              </button>
-            </div>
-          </div>
+  <div class="workspace" data-tab="plugins">
+    <SourcePanel prefix="admin-">
+      <div class="quick-source-section">
+        <label>Curated list</label>
+        <div class="quick-sources">
+          <button id="admin-reload" class="button button-small" type="button"
+            title="Look up the newest commit of every source">Reload sources</button>
+          <button id="admin-import" class="button button-small" type="button"
+            title="Replace this selection and its settings with an exported backup file">Import backup</button>
+          <input id="admin-import-file" type="file" accept="application/json,.json" hidden>
         </div>
-      </details>
-
-    </div>
-  </section>
+        <p class="field-hint">Importing a backup replaces the selection and the filter, sorting and formatter settings. Review them, then publish.</p>
+      </div>
+    </SourcePanel>
+    <CatalogPanel prefix="admin-" continueLabel="Continue to publish →" />
+  </div>
 
   <FilterPanel prefix="admin-" />
   <SortPanel prefix="admin-" />
   <FormatterPanel prefix="admin-" />
 
-  <!-- Shared by every admin tab: one draft, published together -->
-  <section class="panel save-card admin-publish" aria-label="Publish the curated list">
-    <div class="panel-body">
-      <p class="field-hint">
-        The plugins, filters, sorting and formatter below are published together and reach
-        everyone following the curated list at once.
-      </p>
-      <p id="admin-status" class="status" role="status" aria-live="polite"></p>
+  <section class="panel save-card" data-tab="publish" aria-labelledby="admin-publish-heading">
+    <div class="panel-head">
+      <div>
+        <h2 id="admin-publish-heading">Publish</h2>
+        <p class="panel-subtitle">Publish the selected plugins and all filter, sorting, and formatter settings together. Accounts following the curated list receive them immediately.</p>
+      </div>
+      <span id="admin-followers" class="source-summary"></span>
     </div>
 
-    <div class="actionbar">
-      <span id="admin-count" class="selection-count">No plugins selected</span>
-      <button id="admin-publish" class="button button-primary" type="button" disabled>
+    <div class="panel-body">
+      <p id="admin-count" class="field-hint">No plugins selected</p>
+      <p id="admin-publish-status" class="status" role="status" aria-live="polite"></p>
+      <button id="admin-publish" class="button button-primary button-wide" type="button" disabled>
         Publish for everyone
       </button>
     </div>

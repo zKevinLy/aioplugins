@@ -8,6 +8,7 @@ import { mountAuthPanel } from "./components/AuthPanel.js";
 import { mountCuratedPanel } from "./components/CuratedPanel.js";
 import { mountMiddlewarePanel } from "./components/MiddlewarePanel.js";
 import { mountPluginCatalog } from "./components/PluginCatalog.js";
+import { accountPlugins } from "./components/pluginScope.js";
 import { mountPluginSources } from "./components/PluginSources.js";
 import { mountProfilesPanel } from "./components/ProfilesPanel.js";
 import { mountReviewPanel } from "./components/ReviewPanel.js";
@@ -21,8 +22,8 @@ import { userStore } from "./state/session.js";
 function start(): void {
   mountAppShell();
   mountAuthPanel();
-  mountPluginSources();
-  mountPluginCatalog();
+  mountPluginSources(accountPlugins);
+  mountPluginCatalog(accountPlugins);
   mountMiddlewarePanel();
   mountReviewPanel();
   mountProfilesPanel();

@@ -32,6 +32,7 @@ const NAV_ITEMS: Record<string, string> = {
   "admin-filters": "#admin-filters-tab",
   "admin-sorting": "#admin-sorting-tab",
   "admin-formatting": "#admin-formatting-tab",
+  "admin-publish": "#admin-publish-tab",
   about: "#about-nav",
   support: "#support-nav"
 };
@@ -45,7 +46,7 @@ const PAGES: Record<Exclude<AppView, "middleware" | "admin">, PageText> = {
   },
   save: {
     title: "Save & Install",
-    description: "Check your selection, save your setup, and add it to Nuvio."
+    description: "Save your setup and add it to Nuvio."
   },
   account: {
     title: "Account settings",
@@ -64,11 +65,12 @@ const PAGES: Record<Exclude<AppView, "middleware" | "admin">, PageText> = {
 const ADMIN_PAGES: Record<AdminTab, PageText> = {
   plugins: {
     title: "Curated plugins",
-    description: "Choose the plugins that subscribed accounts receive."
+    description: "Select plugin sources and choose the providers subscribed accounts receive."
   },
   filters: { title: "Curated filters", description: "Choose which results subscribed accounts receive." },
   sorting: { title: "Curated sorting", description: "Choose the order subscribed accounts see results in." },
-  formatting: { title: "Curated formatter", description: "Choose how subscribed accounts see stream details." }
+  formatting: { title: "Curated formatter", description: "Choose how subscribed accounts see stream details." },
+  publish: { title: "Publish", description: "Publish the curated list and its stream settings to subscribed accounts." }
 };
 
 const MIDDLEWARE_PAGES: Record<MiddlewareTab, PageText> = {
@@ -140,6 +142,7 @@ export function mountAppShell(): void {
   $("#admin-filters-tab").addEventListener("click", () => showAdminTab("filters"));
   $("#admin-sorting-tab").addEventListener("click", () => showAdminTab("sorting"));
   $("#admin-formatting-tab").addEventListener("click", () => showAdminTab("formatting"));
+  $("#admin-publish-tab").addEventListener("click", () => showAdminTab("publish"));
   $("#about-nav").addEventListener("click", () => showView("about"));
   $("#support-nav").addEventListener("click", () => showView("support"));
   $("#support-shortcut").addEventListener("click", () => showView("support"));
@@ -181,8 +184,5 @@ export function mountAppShell(): void {
 
   refreshIcons();
 
-  // Every "back to the plugin list" control behaves the same.
-  for (const selector of ["#back-from-account", "#edit-selection"]) {
-    $(selector).addEventListener("click", () => showView("configure"));
-  }
+  $("#back-from-account").addEventListener("click", () => showView("configure"));
 }

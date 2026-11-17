@@ -16,6 +16,11 @@ export function $$<T extends Element = HTMLElement>(
   return [...root.querySelectorAll<T>(selector)];
 }
 
+/** Looks up elements by id under a prefix, for UI blocks that are rendered more than once. */
+export function idLookup(prefix: string) {
+  return <T extends HTMLElement = HTMLElement>(id: string): T => $<T>(`#${prefix}${id}`);
+}
+
 type Child = Node | string | null | undefined | false;
 
 interface ElementOptions {

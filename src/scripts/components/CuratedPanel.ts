@@ -34,7 +34,7 @@ function renderToggle(): void {
 function renderLock(): void {
   const locked = isCuratedLocked();
 
-  for (const element of $$("#configure-view .quick-source-section, #configure-view .custom-source, .middleware-panel, #profiles-card")) {
+  for (const element of $$("#configure-view .quick-source-section, #configure-view .custom-source, #middleware-view .middleware-panel, #profiles-card")) {
     element.toggleAttribute("inert", locked);
   }
 

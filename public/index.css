@@ -1124,15 +1124,6 @@ textarea { resize: vertical; line-height: 1.6; }
 .save-card { margin-bottom: 18px; }
 .save-card .panel-body { padding: 20px 22px; }
 
-.review-selection { padding: 8px 22px 16px; }
-.review-list { display: grid; gap: 0; }
-
-.review-footer {
-  display: flex;
-  justify-content: flex-end;
-  padding: 14px 20px;
-  border-top: 1px solid var(--line);
-}
 
 .backup-row {
   display: flex;
@@ -1865,12 +1856,5 @@ textarea { resize: vertical; line-height: 1.6; }
 }
 
 
-.admin-tools { margin-bottom: 8px; }
-
 [inert] { opacity: .55; }
 
-/* The admin page scrolls as a whole; the plugin list does not get its own scrollbar */
-#admin-catalog.catalog-content {
-  max-height: none;
-  overflow: visible;
-}

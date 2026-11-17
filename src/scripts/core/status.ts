@@ -4,7 +4,7 @@
 import { $ } from "./dom.js";
 import type { StatusKind } from "./types.js";
 
-export type StatusChannel = "auth" | "catalog" | "review" | "account" | "quick-save" | "curated" | "admin";
+export type StatusChannel = "auth" | "catalog" | "review" | "account" | "quick-save" | "curated" | "admin" | "admin-publish";
 
 const ELEMENT_IDS: Record<StatusChannel, string> = {
   auth: "auth-status",
@@ -13,7 +13,8 @@ const ELEMENT_IDS: Record<StatusChannel, string> = {
   account: "account-status",
   "quick-save": "quick-save-status",
   curated: "curated-status",
-  admin: "admin-status"
+  admin: "admin-status",
+  "admin-publish": "admin-publish-status"
 };
 
 export function setStatus(channel: StatusChannel, message: string, kind: StatusKind = ""): void {
