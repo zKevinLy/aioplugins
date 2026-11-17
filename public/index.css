@@ -418,7 +418,17 @@ h1 {
 #configure-view {
   flex: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
   overflow: hidden;
+}
+
+#configure-view > .curated-card { flex: 0 0 auto; }
+
+#configure-view > .workspace {
+  flex: 1;
+  height: auto;
 }
 
 /* Workspace and panels */
@@ -882,7 +892,7 @@ textarea { resize: vertical; line-height: 1.6; }
 
 /* Review, middleware and account views */
 
-#save-view, #account-view, #middleware-view {
+#save-view, #account-view, #middleware-view, #admin-view {
   flex: 1;
   min-height: 0;
   padding: 0 8px 32px 0;
@@ -1466,6 +1476,8 @@ textarea { resize: vertical; line-height: 1.6; }
 
   #configure-view { overflow: visible; }
 
+  #configure-view > .workspace { flex: initial; }
+
   .workspace {
     height: auto;
     grid-template-columns: 1fr;
@@ -1483,7 +1495,7 @@ textarea { resize: vertical; line-height: 1.6; }
 
   .catalog-content { flex: 1; min-height: 0; }
 
-  #save-view, #account-view, #middleware-view {
+  #save-view, #account-view, #middleware-view, #admin-view {
     flex: initial;
     padding-right: 0;
     overflow: visible;
@@ -1852,8 +1864,13 @@ textarea { resize: vertical; line-height: 1.6; }
   gap: 4px;
 }
 
-.curated-card { margin-bottom: 20px; }
 
 .admin-tools { margin-bottom: 8px; }
 
 [inert] { opacity: .55; }
+
+/* The admin page scrolls as a whole; the plugin list does not get its own scrollbar */
+#admin-catalog.catalog-content {
+  max-height: none;
+  overflow: visible;
+}
