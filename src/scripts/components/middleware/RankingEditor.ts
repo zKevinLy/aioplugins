@@ -1,11 +1,7 @@
 // "Best stream first" and the per-resolution cap, shown under Stream order.
 
 import { MAX_PER_QUALITY } from "../../../lib/middleware-limits.js";
-import { $ } from "../../core/dom.js";
-import { middlewareStore } from "../../state/middleware.js";
-
-const fastestBox = () => $<HTMLInputElement>("#ranking-fastest");
-const limitSelect = () => $<HTMLSelectElement>("#ranking-limit");
+import type { MiddlewareScope } from "./scope.js";
 
 /** Picks the dropdown entry for a saved cap, adding it if it is not offered. */
 function selectLimit(select: HTMLSelectElement, perQuality: number): void {
@@ -18,34 +14,37 @@ function selectLimit(select: HTMLSelectElement, perQuality: number): void {
   select.value = wanted;
 }
 
-function render(): void {
-  const { ranking } = middlewareStore.get();
+export function mountRankingEditor(scope: MiddlewareScope): void {
+  const fastestBox = scope.ui<HTMLInputElement>("ranking-fastest");
+  const limitSelect = scope.ui<HTMLSelectElement>("ranking-limit");
 
-  fastestBox().checked = ranking.preferFastest;
-  selectLimit(limitSelect(), ranking.perQuality);
-}
+  const render = () => {
+    const { ranking } = scope.store.get();
 
-function commit(): void {
-  const limit = Number(limitSelect().value);
+    fastestBox.checked = ranking.preferFastest;
+    selectLimit(limitSelect, ranking.perQuality);
+  };
 
-  middlewareStore.update((settings) => ({
-    ...settings,
-    ranking: {
-      preferFastest: fastestBox().checked,
-      perQuality: Number.isFinite(limit)
-        ? Math.min(MAX_PER_QUALITY, Math.max(0, Math.round(limit)))
-        : settings.ranking.perQuality
-    }
-  }));
-}
+  const commit = () => {
+    const limit = Number(limitSelect.value);
 
-export function mountRankingEditor(): void {
-  for (const control of [fastestBox(), limitSelect()]) {
+    scope.store.update((settings) => ({
+      ...settings,
+      ranking: {
+        preferFastest: fastestBox.checked,
+        perQuality: Number.isFinite(limit)
+          ? Math.min(MAX_PER_QUALITY, Math.max(0, Math.round(limit)))
+          : settings.ranking.perQuality
+      }
+    }));
+  };
+
+  for (const control of [fastestBox, limitSelect]) {
     control.addEventListener("change", commit);
   }
 
   // Redraw when settings arrive from the server or an imported backup.
-  middlewareStore.subscribe(render);
+  scope.store.subscribe(render);
 
   render();
 }

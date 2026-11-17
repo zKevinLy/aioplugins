@@ -2,14 +2,14 @@
 // the session bar and the footer.
 
 import { $ } from "../core/dom.js";
-import type { AppView, MiddlewareTab } from "../core/types.js";
+import type { AdminTab, AppView, MiddlewareTab } from "../core/types.js";
 import { signOut } from "../services/session.js";
 import { runSave } from "./saveFlow.js";
 import { savingStore } from "../state/setup.js";
 import { sourceStore } from "../state/sources.js";
 import { curatedStore, isCuratedLocked } from "../state/curated.js";
 import { sessionReady, userStore } from "../state/session.js";
-import { openReview, showMiddlewareTab, showView, viewStore } from "../state/view.js";
+import { openReview, showAdminTab, showMiddlewareTab, showView, viewStore } from "../state/view.js";
 
 const VIEW_SECTIONS: Record<AppView, string> = {
   configure: "#configure-view",
@@ -28,14 +28,17 @@ const NAV_ITEMS: Record<string, string> = {
   formatting: "#formatting-tab",
   save: "#save-tab",
   account: "#account-nav",
-  admin: "#admin-nav",
+  "admin-plugins": "#admin-plugins-tab",
+  "admin-filters": "#admin-filters-tab",
+  "admin-sorting": "#admin-sorting-tab",
+  "admin-formatting": "#admin-formatting-tab",
   about: "#about-nav",
   support: "#support-nav"
 };
 
 type PageText = { title: string; description: string };
 
-const PAGES: Record<Exclude<AppView, "middleware">, PageText> = {
+const PAGES: Record<Exclude<AppView, "middleware" | "admin">, PageText> = {
   configure: {
     title: "Choose your plugins",
     description: "Select plugin sources and choose the providers you want to use."
@@ -48,10 +51,6 @@ const PAGES: Record<Exclude<AppView, "middleware">, PageText> = {
     title: "Account settings",
     description: "Manage your account and configuration backups."
   },
-  admin: {
-    title: "Curated plugins",
-    description: "Choose the plugins and stream settings that subscribed accounts receive."
-  },
   about: {
     title: "About AIOPlugins",
     description: "Learn about the project, find its source code, and how it works."
@@ -62,6 +61,16 @@ const PAGES: Record<Exclude<AppView, "middleware">, PageText> = {
   }
 };
 
+const ADMIN_PAGES: Record<AdminTab, PageText> = {
+  plugins: {
+    title: "Curated plugins",
+    description: "Choose the plugins that subscribed accounts receive."
+  },
+  filters: { title: "Curated filters", description: "Choose which results subscribed accounts receive." },
+  sorting: { title: "Curated sorting", description: "Choose the order subscribed accounts see results in." },
+  formatting: { title: "Curated formatter", description: "Choose how subscribed accounts see stream details." }
+};
+
 const MIDDLEWARE_PAGES: Record<MiddlewareTab, PageText> = {
   filters: { title: "Filter streams", description: "Choose which provider results reach Nuvio." },
   sorting: { title: "Sort streams", description: "Choose the order of each provider's results." },
@@ -69,13 +78,13 @@ const MIDDLEWARE_PAGES: Record<MiddlewareTab, PageText> = {
 };
 
 function renderView(): void {
-  const { view, tab } = viewStore.get();
+  const { view, tab, adminTab } = viewStore.get();
 
   for (const [name, selector] of Object.entries(VIEW_SECTIONS)) {
     $(selector).hidden = name !== view;
   }
 
-  const activeNav = view === "middleware" ? tab : view;
+  const activeNav = view === "middleware" ? tab : view === "admin" ? `admin-${adminTab}` : view;
 
   for (const [name, selector] of Object.entries(NAV_ITEMS)) {
     const button = $<HTMLButtonElement>(selector);
@@ -84,7 +93,8 @@ function renderView(): void {
     button.setAttribute("aria-current", active ? "page" : "false");
   }
 
-  const page = view === "middleware" ? MIDDLEWARE_PAGES[tab] : PAGES[view];
+  const page =
+    view === "middleware" ? MIDDLEWARE_PAGES[tab] : view === "admin" ? ADMIN_PAGES[adminTab] : PAGES[view];
   $("#page-title").textContent = page.title;
   $("#page-description").textContent = page.description;
 }
@@ -126,7 +136,10 @@ export function mountAppShell(): void {
   $("#save-tab").addEventListener("click", openReview);
   $("#account-menu").addEventListener("click", () => showView("account"));
   $("#account-nav").addEventListener("click", () => showView("account"));
-  $("#admin-nav").addEventListener("click", () => showView("admin"));
+  $("#admin-plugins-tab").addEventListener("click", () => showAdminTab("plugins"));
+  $("#admin-filters-tab").addEventListener("click", () => showAdminTab("filters"));
+  $("#admin-sorting-tab").addEventListener("click", () => showAdminTab("sorting"));
+  $("#admin-formatting-tab").addEventListener("click", () => showAdminTab("formatting"));
   $("#about-nav").addEventListener("click", () => showView("about"));
   $("#support-nav").addEventListener("click", () => showView("support"));
   $("#support-shortcut").addEventListener("click", () => showView("support"));

@@ -1,26 +1,31 @@
 // "Stream filters": the editable list of filter rules.
 
 import type { StreamFilter } from "../../../providers/stream-middleware.js";
-import { $, el } from "../../core/dom.js";
+import { el } from "../../core/dom.js";
 import {
   isStreamFilterOperator,
   UNKNOWN_AWARE_OPERATORS,
   VALUELESS_OPERATORS
 } from "../../core/guards.js";
-import { middlewareStore } from "../../state/middleware.js";
 import { fieldsStore, findField } from "../../state/workspace.js";
 import { createValueEditor, defaultUnknownAction, operatorsFor } from "./fieldInputs.js";
+import type { MiddlewareScope } from "./scope.js";
 
-// The array currently drawn. Edits that keep this array do not redraw, so
-// typing in a value box never loses focus.
-let drawn: StreamFilter[] | null = null;
+// The array currently drawn, per editor. Edits that keep this array do not
+// redraw, so typing in a value box never loses focus.
+const drawn = new WeakMap<MiddlewareScope, StreamFilter[] | null>();
 
-function commit(filters: StreamFilter[], redraw: boolean): void {
-  if (redraw) drawn = null;
-  middlewareStore.update((settings) => ({ ...settings, filters }));
+function commit(scope: MiddlewareScope, filters: StreamFilter[], redraw: boolean): void {
+  if (redraw) drawn.set(scope, null);
+  scope.store.update((settings) => ({ ...settings, filters }));
 }
 
-function renderRule(rule: StreamFilter, index: number, rules: StreamFilter[]): HTMLElement {
+function renderRule(
+  scope: MiddlewareScope,
+  rule: StreamFilter,
+  index: number,
+  rules: StreamFilter[]
+): HTMLElement {
   const fieldSelect = el("select", { className: "filter-field" });
   fieldSelect.append(...fieldsStore.get().map((field) => new Option(field.label, field.key)));
   fieldSelect.value = rule.field;
@@ -37,7 +42,7 @@ function renderRule(rule: StreamFilter, index: number, rules: StreamFilter[]): H
 
   const valueCell = createValueEditor(findField(rule.field), rule.value, (value) => {
     rule.value = value;
-    commit(rules, false);
+    commit(scope, rules, false);
   });
 
   const syncValueVisibility = () => {
@@ -64,7 +69,7 @@ function renderRule(rule: StreamFilter, index: number, rules: StreamFilter[]): H
 
   unknownSelect.addEventListener("change", () => {
     rule.unknown = unknownSelect.value === "keep" ? "keep" : "drop";
-    commit(rules, false);
+    commit(scope, rules, false);
   });
 
   fieldSelect.addEventListener("change", () => {
@@ -78,14 +83,14 @@ function renderRule(rule: StreamFilter, index: number, rules: StreamFilter[]): H
         value: ""
       };
     });
-    commit(next, true);
+    commit(scope, next, true);
   });
 
   operatorSelect.addEventListener("change", () => {
     if (isStreamFilterOperator(operatorSelect.value)) rule.operator = operatorSelect.value;
     syncValueVisibility();
     syncUnknown();
-    commit(rules, false);
+    commit(scope, rules, false);
   });
 
   const remove = el("button", {
@@ -94,7 +99,7 @@ function renderRule(rule: StreamFilter, index: number, rules: StreamFilter[]): H
     attrs: { type: "button", "aria-label": `Remove ${rule.field} filter` }
   });
   remove.addEventListener("click", () => {
-    commit(rules.filter((_, position) => position !== index), true);
+    commit(scope, rules.filter((_, position) => position !== index), true);
   });
 
   return el(
@@ -108,40 +113,41 @@ function renderRule(rule: StreamFilter, index: number, rules: StreamFilter[]): H
   );
 }
 
-function renderRules(): void {
-  const rules = middlewareStore.get().filters;
-  const container = $("#filter-rules");
-  drawn = rules;
+function renderRules(scope: MiddlewareScope): void {
+  const rules = scope.store.get().filters;
+  const container = scope.ui("filter-rules");
+  drawn.set(scope, rules);
 
   if (rules.length === 0) {
     container.replaceChildren(el("p", { className: "field-hint filter-empty", text: "No filters added." }));
     return;
   }
 
-  container.replaceChildren(...rules.map((rule, index) => renderRule(rule, index, rules)));
+  container.replaceChildren(...rules.map((rule, index) => renderRule(scope, rule, index, rules)));
 }
 
-export function mountFilterEditor(): void {
+export function mountFilterEditor(scope: MiddlewareScope): void {
   const refresh = () => {
-    if (middlewareStore.get().filters !== drawn) renderRules();
+    if (scope.store.get().filters !== drawn.get(scope)) renderRules(scope);
   };
 
-  middlewareStore.subscribe(refresh);
+  scope.store.subscribe(refresh);
   // Rules need the field list, which arrives with the workspace.
-  fieldsStore.subscribe(renderRules);
+  fieldsStore.subscribe(() => renderRules(scope));
 
-  $("#add-stream-filter").addEventListener("click", () => {
+  scope.ui("add-stream-filter").addEventListener("click", () => {
     const first = fieldsStore.get()[0];
     if (!first) return;
 
     commit(
+      scope,
       [
-        ...middlewareStore.get().filters,
+        ...scope.store.get().filters,
         { field: first.key, operator: operatorsFor(first)[0]?.[0] ?? "contains", value: "" }
       ],
       true
     );
   });
 
-  renderRules();
+  renderRules(scope);
 }

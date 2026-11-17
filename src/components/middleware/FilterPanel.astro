@@ -1,28 +1,33 @@
-<section id="middleware-filters" class="panel middleware-panel" aria-labelledby="filter-heading">
+---
+// `prefix` keeps element ids unique when the panel is shown more than once
+// (the account's own settings and the admin's curated settings).
+const { prefix = "" } = Astro.props;
+---
+<section id={`${prefix}middleware-filters`} class="panel middleware-panel" data-tab="filters" aria-labelledby={`${prefix}filter-heading`}>
   <div class="panel-head">
     <div>
-      <h2 id="filter-heading">Stream filters</h2>
+      <h2 id={`${prefix}filter-heading`}>Stream filters</h2>
       <p class="panel-subtitle">Remove results that do not match these limits.</p>
     </div>
   </div>
   <div class="panel-body">
-    <div id="filter-rules" class="filter-rules"></div>
-    <button id="add-stream-filter" class="button button-small" type="button">Add filter</button>
+    <div id={`${prefix}filter-rules`} class="filter-rules"></div>
+    <button id={`${prefix}add-stream-filter`} class="button button-small" type="button">Add filter</button>
     <p class="field-hint">All rules must match. Use the same stream metadata fields available to sorting and the formatter. Providers do not always supply every field, so each rule says whether to keep or remove a stream whose value is unknown.</p>
     <div class="probe-options">
       <h3 class="probe-heading">Playback check</h3>
       <label class="check probe-check">
-        <input id="probe-enabled" type="checkbox">
+        <input id={`${prefix}probe-enabled`} type="checkbox">
         <span>Remove streams that cannot be played</span>
       </label>
-      <div id="probe-details" class="probe-details" hidden>
+      <div id={`${prefix}probe-details`} class="probe-details" hidden>
         <label class="check probe-check">
-          <input id="probe-require-seekable" type="checkbox">
+          <input id={`${prefix}probe-require-seekable`} type="checkbox">
           <span>Also remove streams that cannot be seeked</span>
         </label>
         <label class="probe-timeout">
           <span>Wait up to</span>
-          <select id="probe-timeout">
+          <select id={`${prefix}probe-timeout`}>
             <option value="3000">3 seconds</option>
             <option value="5000">5 seconds</option>
             <option value="8000">8 seconds</option>

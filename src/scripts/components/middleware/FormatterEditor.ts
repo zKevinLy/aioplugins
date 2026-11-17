@@ -1,85 +1,13 @@
 // "Stream name and description": templates plus a live preview that is
 // rendered in the browser; no request is sent to the server.
 
-import { $ } from "../../core/dom.js";
 import { errorMessage, parseJsonRecord } from "../../core/guards.js";
 import { buildFormatterPreview } from "../../../lib/formatter-preview.js";
-import { middlewareStore, STREAM_FORMAT_PRESETS } from "../../state/middleware.js";
-import { viewStore } from "../../state/view.js";
+import { STREAM_FORMAT_PRESETS } from "../../state/middleware.js";
 import { fieldsStore } from "../../state/workspace.js";
+import type { MiddlewareScope } from "./scope.js";
 
 const PREVIEW_DELAY_MS = 180;
-
-const nameEditor = () => $<HTMLTextAreaElement>("#stream-name-format");
-const descriptionEditor = () => $<HTMLTextAreaElement>("#stream-description-format");
-
-let timer: ReturnType<typeof setTimeout> | undefined;
-let requestId = 0;
-// True when the preview is out of date but the formatter tab is not showing.
-let stale = true;
-
-function formatterVisible(): boolean {
-  const { view, tab } = viewStore.get();
-  return view === "middleware" && tab === "formatting";
-}
-
-function setPreviewState(text: string, className: string): void {
-  const state = $("#formatter-preview-state");
-  state.textContent = text;
-  state.className = `formatter-preview-state ${className}`.trim();
-}
-
-async function renderPreview(): Promise<void> {
-  const current = ++requestId;
-  stale = false;
-
-  const name = $("#formatter-preview-name");
-  const description = $("#formatter-preview-description");
-
-  try {
-    const stream = parseJsonRecord(
-      $<HTMLTextAreaElement>("#formatter-stream-data").value,
-      "Stream data must be a JSON object."
-    );
-    const metadata = parseJsonRecord(
-      $<HTMLTextAreaElement>("#formatter-metadata").value,
-      "Metadata must be a JSON object."
-    );
-    stream.filename = $<HTMLInputElement>("#formatter-filename").value.trim();
-
-    const { nameFormat, descriptionFormat } = middlewareStore.get();
-    const result = buildFormatterPreview({
-      nameFormat,
-      descriptionFormat,
-      stream,
-      metadata
-    });
-
-    if (current !== requestId) return;
-
-    name.textContent = result.name || "(empty output)";
-    description.textContent = result.description || "(empty output)";
-    $("#formatter-parsed-fields").textContent = JSON.stringify(result.parsed, null, 2);
-    setPreviewState("Updated", "ready");
-  } catch (error) {
-    if (current !== requestId) return;
-
-    name.textContent = "Preview unavailable";
-    description.textContent = "Preview unavailable";
-    $("#formatter-parsed-fields").textContent = "{}";
-    setPreviewState(errorMessage(error), "error");
-  }
-}
-
-/** Re-renders soon, but only when the tab can be seen. */
-function schedulePreview(): void {
-  clearTimeout(timer);
-  stale = true;
-  setPreviewState("Updating", "");
-
-  if (!formatterVisible()) return;
-  timer = setTimeout(() => void renderPreview(), PREVIEW_DELAY_MS);
-}
 
 /**
  * The template text for one field. A fallback label uses the same
@@ -97,23 +25,85 @@ function tokenFor(key: string, mode: string, label: string): string {
   return `{stream.${key}::exists["${token}"||"${safe}"]}`;
 }
 
-function syncTemplates(): void {
-  const { nameFormat, descriptionFormat } = middlewareStore.get();
+export function mountFormatterEditor(scope: MiddlewareScope): void {
+  const { ui } = scope;
+  const nameEditor = ui<HTMLTextAreaElement>("stream-name-format");
+  const descriptionEditor = ui<HTMLTextAreaElement>("stream-description-format");
 
-  // Only touch a box whose text really changed, or the caret would jump.
-  if (nameEditor().value !== nameFormat) nameEditor().value = nameFormat;
-  if (descriptionEditor().value !== descriptionFormat) descriptionEditor().value = descriptionFormat;
-}
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let requestId = 0;
+  // True when the preview is out of date but the formatter panel is not showing.
+  let stale = true;
 
-export function mountFormatterEditor(): void {
-  const formatField = $<HTMLSelectElement>("#format-field");
+  const setPreviewState = (text: string, className: string) => {
+    const state = ui("formatter-preview-state");
+    state.textContent = text;
+    state.className = `formatter-preview-state ${className}`.trim();
+  };
+
+  const renderPreview = () => {
+    const current = ++requestId;
+    stale = false;
+
+    const name = ui("formatter-preview-name");
+    const description = ui("formatter-preview-description");
+
+    try {
+      const stream = parseJsonRecord(
+        ui<HTMLTextAreaElement>("formatter-stream-data").value,
+        "Stream data must be a JSON object."
+      );
+      const metadata = parseJsonRecord(
+        ui<HTMLTextAreaElement>("formatter-metadata").value,
+        "Metadata must be a JSON object."
+      );
+      stream.filename = ui<HTMLInputElement>("formatter-filename").value.trim();
+
+      const { nameFormat, descriptionFormat } = scope.store.get();
+      const result = buildFormatterPreview({ nameFormat, descriptionFormat, stream, metadata });
+
+      if (current !== requestId) return;
+
+      name.textContent = result.name || "(empty output)";
+      description.textContent = result.description || "(empty output)";
+      ui("formatter-parsed-fields").textContent = JSON.stringify(result.parsed, null, 2);
+      setPreviewState("Updated", "ready");
+    } catch (error) {
+      if (current !== requestId) return;
+
+      name.textContent = "Preview unavailable";
+      description.textContent = "Preview unavailable";
+      ui("formatter-parsed-fields").textContent = "{}";
+      setPreviewState(errorMessage(error), "error");
+    }
+  };
+
+  /** Re-renders soon, but only when the panel can be seen. */
+  const schedulePreview = () => {
+    clearTimeout(timer);
+    stale = true;
+    setPreviewState("Updating", "");
+
+    if (!scope.formatterVisible()) return;
+    timer = setTimeout(renderPreview, PREVIEW_DELAY_MS);
+  };
+
+  const syncTemplates = () => {
+    const { nameFormat, descriptionFormat } = scope.store.get();
+
+    // Only touch a box whose text really changed, or the caret would jump.
+    if (nameEditor.value !== nameFormat) nameEditor.value = nameFormat;
+    if (descriptionEditor.value !== descriptionFormat) descriptionEditor.value = descriptionFormat;
+  };
+
+  const formatField = ui<HTMLSelectElement>("format-field");
 
   fieldsStore.subscribe((fields) => {
     formatField.replaceChildren(...fields.map((field) => new Option(field.label, field.key)));
   });
 
   let lastNames = "";
-  middlewareStore.subscribe(({ nameFormat, descriptionFormat }) => {
+  scope.store.subscribe(({ nameFormat, descriptionFormat }) => {
     syncTemplates();
     const signature = `${nameFormat}\u0000${descriptionFormat}`;
     if (signature !== lastNames) {
@@ -122,44 +112,40 @@ export function mountFormatterEditor(): void {
     }
   });
 
-  viewStore.subscribe(() => {
-    if (stale && formatterVisible()) schedulePreview();
+  scope.onNavigate(() => {
+    if (stale && scope.formatterVisible()) schedulePreview();
   });
 
-  nameEditor().addEventListener("input", () => {
-    middlewareStore.update((settings) => ({ ...settings, nameFormat: nameEditor().value }));
+  nameEditor.addEventListener("input", () => {
+    scope.store.update((settings) => ({ ...settings, nameFormat: nameEditor.value }));
   });
 
-  descriptionEditor().addEventListener("input", () => {
-    middlewareStore.update((settings) => ({ ...settings, descriptionFormat: descriptionEditor().value }));
+  descriptionEditor.addEventListener("input", () => {
+    scope.store.update((settings) => ({ ...settings, descriptionFormat: descriptionEditor.value }));
   });
 
-  for (const selector of ["#formatter-filename", "#formatter-stream-data", "#formatter-metadata"]) {
-    $(selector).addEventListener("input", schedulePreview);
+  for (const id of ["formatter-filename", "formatter-stream-data", "formatter-metadata"]) {
+    ui(id).addEventListener("input", schedulePreview);
   }
 
-  $("#apply-format-preset").addEventListener("click", () => {
-    const preset = $<HTMLSelectElement>("#format-preset").value;
+  ui("apply-format-preset").addEventListener("click", () => {
+    const preset = ui<HTMLSelectElement>("format-preset").value;
     const template = STREAM_FORMAT_PRESETS[preset] ?? STREAM_FORMAT_PRESETS.detailed ?? "";
-    middlewareStore.update((settings) => ({ ...settings, descriptionFormat: template }));
+    scope.store.update((settings) => ({ ...settings, descriptionFormat: template }));
   });
 
-  const unknownMode = $<HTMLSelectElement>("#format-unknown");
+  const unknownMode = ui<HTMLSelectElement>("format-unknown");
   unknownMode.addEventListener("change", () => {
-    $("#format-unknown-label-field").hidden = unknownMode.value !== "label";
+    ui("format-unknown-label-field").hidden = unknownMode.value !== "label";
   });
 
-  $("#insert-format-field").addEventListener("click", () => {
-    const target = $<HTMLSelectElement>("#format-target").value;
-    const editor = target === "stream-name-format" ? nameEditor() : descriptionEditor();
+  ui("insert-format-field").addEventListener("click", () => {
+    const target = ui<HTMLSelectElement>("format-target").value;
+    const editor = target === "stream-name-format" ? nameEditor : descriptionEditor;
     const start = editor.selectionStart ?? editor.value.length;
     const end = editor.selectionEnd ?? start;
 
-    const token = tokenFor(
-      formatField.value,
-      unknownMode.value,
-      $<HTMLInputElement>("#format-unknown-label").value
-    );
+    const token = tokenFor(formatField.value, unknownMode.value, ui<HTMLInputElement>("format-unknown-label").value);
     editor.setRangeText(token, start, end, "end");
     editor.focus();
     editor.dispatchEvent(new Event("input"));

@@ -1,19 +1,23 @@
 // Admin: choose the plugins and stream settings that everyone following the
-// curated list receives. It keeps its own selection, separate from the
-// account's, so editing the default never touches the admin's own setup.
+// curated list receives. It keeps its own selection and its own settings,
+// separate from the account's, so editing the default never touches the
+// admin's own setup. The settings use the same editors as the Filters,
+// Sorting and Formatter screens.
 
 import { $, el } from "../core/dom.js";
 import { ApiError } from "../core/api.js";
-import { errorMessage, isRecord, parseProfileBackup } from "../core/guards.js";
+import { errorMessage, parseProfileBackup } from "../core/guards.js";
 import { setStatus } from "../core/status.js";
 import type { DiscoveredSource, LoadedSource, SavedSource } from "../core/types.js";
 import { loadCurated, publishCurated } from "../services/curated.js";
 import { refreshWorkspace } from "../services/session.js";
 import { discoverSource, loadSources, suggestedSources, type SourceRequest } from "../services/sources.js";
 import { curatedStore } from "../state/curated.js";
+import { adminMiddlewareStore, middlewarePayload, toMiddlewareSettings } from "../state/middleware.js";
 import { userStore } from "../state/session.js";
 import { isSelectable, pruneSelection, sourceKey } from "../state/sources.js";
 import { viewStore } from "../state/view.js";
+import { mountCuratedMiddlewareEditors, showPanel } from "./MiddlewarePanel.js";
 import { renderProviderListItem } from "./ProviderListItem.js";
 
 const sources = new Map<string, LoadedSource>();
@@ -25,7 +29,6 @@ let incomplete = false;
 
 const catalog = () => $("#admin-catalog");
 const search = () => $<HTMLInputElement>("#admin-search");
-const middlewareInput = () => $<HTMLTextAreaElement>("#admin-middleware");
 
 function selectedCount(): number {
   const ids = new Set<string>();
@@ -150,7 +153,7 @@ async function load(force: boolean): Promise<void> {
     if (loaded) {
       for (const [key, source] of sources) ticks.set(key, new Set(source.selected));
     } else {
-      middlewareInput().value = JSON.stringify(curated.middleware, null, 2);
+      adminMiddlewareStore.set(toMiddlewareSettings(curated.middleware));
       for (const source of curated.sources) ticks.set(sourceKey(source), new Set(source.providerIds));
     }
 
@@ -211,7 +214,7 @@ async function importBackup(file: File): Promise<void> {
   for (const { source, request } of found) upsert(source, request.providerIds ?? []);
 
   if (backup.middleware !== undefined) {
-    middlewareInput().value = JSON.stringify(backup.middleware, null, 2);
+    adminMiddlewareStore.set(toMiddlewareSettings(backup.middleware));
   }
 
   render();
@@ -226,20 +229,6 @@ async function importBackup(file: File): Promise<void> {
 }
 
 async function publish(): Promise<void> {
-  let middleware: unknown;
-
-  try {
-    middleware = JSON.parse(middlewareInput().value.trim() || "{}");
-  } catch {
-    setStatus("admin", "The stream settings are not valid JSON.", "error");
-    return;
-  }
-
-  if (!isRecord(middleware)) {
-    setStatus("admin", "The stream settings must be a JSON object.", "error");
-    return;
-  }
-
   if (incomplete) {
     setStatus("admin", "Some sources did not load, so their plugins may be missing. Choose Reload sources first.", "error");
     return;
@@ -252,7 +241,7 @@ async function publish(): Promise<void> {
   setStatus("admin", "Verifying the selected plugins and publishing…");
 
   try {
-    const result = await publishCurated(payload(), middleware);
+    const result = await publishCurated(payload(), middlewarePayload(adminMiddlewareStore));
 
     $("#admin-followers").textContent =
       `${result.followers.following} of ${result.followers.total} accounts subscribed`;
@@ -279,17 +268,25 @@ async function publish(): Promise<void> {
 }
 
 export function mountAdminPanel(): void {
+  mountCuratedMiddlewareEditors();
+
+  const root = $("#admin-view");
+  const renderTabs = () => showPanel(root, viewStore.get().adminTab);
+
   // Load when the screen is opened, not at sign-in: most accounts never see it.
+  // Every admin tab reads the same draft, so whichever opens first loads it.
   viewStore.subscribe(({ view }) => {
     if (view === "admin" && !loaded && !busy && userStore.get()?.isAdmin) void load(false);
+    renderTabs();
   });
+  renderTabs();
 
   userStore.subscribe((user) => {
     if (user?.isAdmin) return;
     sources.clear();
     order = [];
     loaded = false;
-    middlewareInput().value = "";
+    adminMiddlewareStore.set(toMiddlewareSettings(undefined));
     render();
   });
 

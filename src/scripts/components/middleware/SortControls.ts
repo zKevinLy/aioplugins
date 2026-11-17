@@ -3,24 +3,26 @@
 
 import type { StreamFieldDefinition, StreamSort } from "../../../providers/stream-middleware.js";
 import { MAX_SORTS } from "../../../lib/middleware-limits.js";
-import { $, el } from "../../core/dom.js";
-import { middlewareStore } from "../../state/middleware.js";
+import { el } from "../../core/dom.js";
 import { fieldsStore, findField } from "../../state/workspace.js";
 import { sortDirectionLabels } from "./fieldInputs.js";
+import type { MiddlewareScope } from "./scope.js";
 
 type Control = "field" | "direction" | "unknown" | "up" | "down" | "remove";
 
 // Fields worth suggesting first when a level is added.
 const PREFERRED_FIELDS = ["resolution", "quality", "size", "seeders"];
 
-// The array currently drawn. Changes made here redraw once, with focus kept;
-// the store subscriber only redraws for changes that came from elsewhere.
-let drawn: StreamSort[] | null = null;
+type Focus = { index: number; control: Control };
 
-function commit(sorts: StreamSort[], focus?: { index: number; control: Control }): void {
-  drawn = sorts;
-  middlewareStore.update((settings) => ({ ...settings, sorts }));
-  render(focus);
+// The array currently drawn, per editor. Changes made here redraw once, with
+// focus kept; the store subscriber only redraws for changes from elsewhere.
+const drawn = new WeakMap<MiddlewareScope, StreamSort[] | null>();
+
+function commit(scope: MiddlewareScope, sorts: StreamSort[], focus?: Focus): void {
+  drawn.set(scope, sorts);
+  scope.store.update((settings) => ({ ...settings, sorts }));
+  render(scope, focus);
 }
 
 /** Text sorts read best A → Z; everything else is "best first". */
@@ -39,9 +41,14 @@ function nextField(sorts: StreamSort[]): StreamFieldDefinition | undefined {
   return free[0];
 }
 
-function renderLevel(sort: StreamSort, index: number, sorts: StreamSort[]): HTMLElement {
+function renderLevel(
+  scope: MiddlewareScope,
+  sort: StreamSort,
+  index: number,
+  sorts: StreamSort[]
+): HTMLElement {
   const take = (change: Partial<StreamSort>, focus: Control) =>
-    commit(sorts.map((entry, position) => (position === index ? { ...entry, ...change } : entry)), {
+    commit(scope, sorts.map((entry, position) => (position === index ? { ...entry, ...change } : entry)), {
       index,
       control: focus
     });
@@ -100,7 +107,7 @@ function renderLevel(sort: StreamSort, index: number, sorts: StreamSort[]): HTML
     const [moved] = next.splice(index, 1);
     if (!moved) return;
     next.splice(target, 0, moved);
-    commit(next, { index: target, control });
+    commit(scope, next, { index: target, control });
   };
 
   const button = (control: "up" | "down" | "remove", text: string, label: string) =>
@@ -120,7 +127,7 @@ function renderLevel(sort: StreamSort, index: number, sorts: StreamSort[]): HTML
 
   const remove = button("remove", "Remove", `Remove sort level ${index + 1}`);
   remove.addEventListener("click", () =>
-    commit(sorts.filter((_, position) => position !== index), {
+    commit(scope, sorts.filter((_, position) => position !== index), {
       index: Math.min(index, sorts.length - 2),
       control: "remove"
     })
@@ -137,12 +144,12 @@ function renderLevel(sort: StreamSort, index: number, sorts: StreamSort[]): HTML
   );
 }
 
-function focusControl(focus: { index: number; control: Control } | undefined): void {
+function focusControl(scope: MiddlewareScope, focus: Focus | undefined): void {
   if (!focus) return;
 
-  const row = $("#sort-levels").children[focus.index];
+  const row = scope.ui("sort-levels").children[focus.index];
   if (!row) {
-    $("#add-stream-sort").focus();
+    scope.ui("add-stream-sort").focus();
     return;
   }
 
@@ -160,43 +167,44 @@ function focusControl(focus: { index: number; control: Control } | undefined): v
   target?.focus();
 }
 
-function render(focus?: { index: number; control: Control }): void {
-  const { sorts } = middlewareStore.get();
-  drawn = sorts;
-  const container = $("#sort-levels");
+function render(scope: MiddlewareScope, focus?: Focus): void {
+  const { sorts } = scope.store.get();
+  drawn.set(scope, sorts);
+  const container = scope.ui("sort-levels");
 
   container.replaceChildren(
     ...(sorts.length === 0
       ? [el("p", { className: "field-hint sort-empty", text: "No sorting. Streams stay in the provider's order." })]
-      : sorts.map((sort, index) => renderLevel(sort, index, sorts)))
+      : sorts.map((sort, index) => renderLevel(scope, sort, index, sorts)))
   );
 
-  const add = $<HTMLButtonElement>("#add-stream-sort");
+  const add = scope.ui<HTMLButtonElement>("add-stream-sort");
   add.disabled = sorts.length >= MAX_SORTS || !nextField(sorts);
   add.textContent = sorts.length === 0 ? "Add sort" : "Add another level";
 
-  focusControl(focus);
+  focusControl(scope, focus);
 }
 
-export function mountSortControls(): void {
+export function mountSortControls(scope: MiddlewareScope): void {
   // Levels need the field list, which arrives with the workspace.
-  fieldsStore.subscribe(() => render());
+  fieldsStore.subscribe(() => render(scope));
 
   // Settings can change from outside (loading a profile, importing a backup).
-  middlewareStore.subscribe(({ sorts }) => {
-    if (sorts !== drawn) render();
+  scope.store.subscribe(({ sorts }) => {
+    if (sorts !== drawn.get(scope)) render(scope);
   });
 
-  $("#add-stream-sort").addEventListener("click", () => {
-    const { sorts } = middlewareStore.get();
+  scope.ui("add-stream-sort").addEventListener("click", () => {
+    const { sorts } = scope.store.get();
     const field = nextField(sorts);
     if (!field || sorts.length >= MAX_SORTS) return;
 
     commit(
+      scope,
       [...sorts, { field: field.key, direction: defaultDirection(field), unknown: "last" }],
       { index: sorts.length, control: "field" }
     );
   });
 
-  render();
+  render(scope);
 }

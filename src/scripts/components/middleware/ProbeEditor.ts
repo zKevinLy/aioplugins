@@ -1,12 +1,7 @@
 // "Playback check": drop streams that Nuvio's own probe finds unplayable.
 
 import { MAX_PROBE_TIMEOUT_MS, MIN_PROBE_TIMEOUT_MS } from "../../../lib/middleware-limits.js";
-import { $ } from "../../core/dom.js";
-import { middlewareStore } from "../../state/middleware.js";
-
-const enabledBox = () => $<HTMLInputElement>("#probe-enabled");
-const seekableBox = () => $<HTMLInputElement>("#probe-require-seekable");
-const timeoutSelect = () => $<HTMLSelectElement>("#probe-timeout");
+import type { MiddlewareScope } from "./scope.js";
 
 /** Picks the dropdown entry closest to a saved timeout, adding it if it is not offered. */
 function selectTimeout(select: HTMLSelectElement, timeoutMs: number): void {
@@ -20,37 +15,41 @@ function selectTimeout(select: HTMLSelectElement, timeoutMs: number): void {
   select.value = wanted;
 }
 
-function render(): void {
-  const { probe } = middlewareStore.get();
+export function mountProbeEditor(scope: MiddlewareScope): void {
+  const enabledBox = scope.ui<HTMLInputElement>("probe-enabled");
+  const seekableBox = scope.ui<HTMLInputElement>("probe-require-seekable");
+  const timeoutSelect = scope.ui<HTMLSelectElement>("probe-timeout");
 
-  enabledBox().checked = probe.enabled;
-  seekableBox().checked = probe.requireSeekable;
-  selectTimeout(timeoutSelect(), probe.timeoutMs);
-  $("#probe-details").hidden = !probe.enabled;
-}
+  const render = () => {
+    const { probe } = scope.store.get();
 
-function commit(): void {
-  const timeout = Number(timeoutSelect().value);
+    enabledBox.checked = probe.enabled;
+    seekableBox.checked = probe.requireSeekable;
+    selectTimeout(timeoutSelect, probe.timeoutMs);
+    scope.ui("probe-details").hidden = !probe.enabled;
+  };
 
-  middlewareStore.update((settings) => ({
-    ...settings,
-    probe: {
-      enabled: enabledBox().checked,
-      requireSeekable: seekableBox().checked,
-      timeoutMs: Number.isFinite(timeout)
-        ? Math.min(MAX_PROBE_TIMEOUT_MS, Math.max(MIN_PROBE_TIMEOUT_MS, timeout))
-        : settings.probe.timeoutMs
-    }
-  }));
-}
+  const commit = () => {
+    const timeout = Number(timeoutSelect.value);
 
-export function mountProbeEditor(): void {
-  for (const control of [enabledBox(), seekableBox(), timeoutSelect()]) {
+    scope.store.update((settings) => ({
+      ...settings,
+      probe: {
+        enabled: enabledBox.checked,
+        requireSeekable: seekableBox.checked,
+        timeoutMs: Number.isFinite(timeout)
+          ? Math.min(MAX_PROBE_TIMEOUT_MS, Math.max(MIN_PROBE_TIMEOUT_MS, timeout))
+          : settings.probe.timeoutMs
+      }
+    }));
+  };
+
+  for (const control of [enabledBox, seekableBox, timeoutSelect]) {
     control.addEventListener("change", commit);
   }
 
   // Redraw when settings arrive from the server or an imported backup.
-  middlewareStore.subscribe(render);
+  scope.store.subscribe(render);
 
   render();
 }

@@ -15,7 +15,7 @@ import {
   MIN_PROBE_TIMEOUT_MS
 } from "../../lib/middleware-limits.js";
 import { isRecord, isStreamFilter, isStreamSort, VALUELESS_OPERATORS } from "../core/guards.js";
-import { createStore } from "../core/store.js";
+import { createStore, type Store } from "../core/store.js";
 import type { MiddlewareSettings } from "../core/types.js";
 
 function nonEmpty(value: unknown): string | undefined {
@@ -82,15 +82,23 @@ export function toMiddlewareSettings(value: unknown): MiddlewareSettings {
   };
 }
 
-export const middlewareStore = createStore<MiddlewareSettings>(toMiddlewareSettings(undefined));
+export function createMiddlewareStore(value?: unknown): Store<MiddlewareSettings> {
+  return createStore<MiddlewareSettings>(toMiddlewareSettings(value));
+}
+
+/** The signed-in account's own settings. */
+export const middlewareStore = createMiddlewareStore();
+
+/** The settings an admin is drafting for the curated list; never the admin's own. */
+export const adminMiddlewareStore = createMiddlewareStore();
 
 function isFilterComplete(filter: StreamFilter): boolean {
   return VALUELESS_OPERATORS.includes(filter.operator) || filter.value.trim() !== "";
 }
 
 /** The settings as they should be saved: unfinished filter rows are left out. */
-export function middlewarePayload(): MiddlewareSettings {
-  const settings = middlewareStore.get();
+export function middlewarePayload(store: Store<MiddlewareSettings> = middlewareStore): MiddlewareSettings {
+  const settings = store.get();
 
   return {
     ...settings,

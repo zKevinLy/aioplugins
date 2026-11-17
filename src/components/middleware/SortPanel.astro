@@ -1,23 +1,28 @@
-<section id="middleware-sorting" class="panel middleware-panel" aria-labelledby="sorting-heading" hidden>
+---
+// `prefix` keeps element ids unique when the panel is shown more than once
+// (the account's own settings and the admin's curated settings).
+const { prefix = "" } = Astro.props;
+---
+<section id={`${prefix}middleware-sorting`} class="panel middleware-panel" data-tab="sorting" aria-labelledby={`${prefix}sorting-heading`} hidden>
   <div class="panel-head">
     <div>
-      <h2 id="sorting-heading">Stream order</h2>
+      <h2 id={`${prefix}sorting-heading`}>Stream order</h2>
       <p class="panel-subtitle">Sort each provider's results before Nuvio displays them. Each level only orders streams that the levels above it left tied.</p>
     </div>
   </div>
   <div class="panel-body">
-    <div id="sort-levels" class="sort-levels"></div>
-    <button id="add-stream-sort" class="button button-small" type="button">Add sort</button>
+    <div id={`${prefix}sort-levels`} class="sort-levels"></div>
+    <button id={`${prefix}add-stream-sort`} class="button button-small" type="button">Add sort</button>
     <p class="field-hint">Streams that tie on every level keep the provider's order. A value is unknown when the provider left it out or wrote a placeholder such as Unknown or N/A; unknown streams go to the end you choose, whichever direction the level sorts.</p>
     <div class="probe-options">
       <h3 class="probe-heading">Best stream first</h3>
       <label class="check probe-check">
-        <input id="ranking-fastest" type="checkbox">
+        <input id={`${prefix}ranking-fastest`} type="checkbox">
         <span>Among streams the sort cannot tell apart, put the fastest first</span>
       </label>
       <label class="probe-timeout">
         <span>Show at most</span>
-        <select id="ranking-limit">
+        <select id={`${prefix}ranking-limit`}>
           <option value="0">all</option>
           <option value="1">1 stream</option>
           <option value="2">2 streams</option>

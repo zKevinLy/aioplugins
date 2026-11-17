@@ -1,7 +1,12 @@
-<section id="middleware-formatting" class="panel middleware-panel" aria-labelledby="formatter-heading" hidden>
+---
+// `prefix` keeps element ids unique when the panel is shown more than once
+// (the account's own settings and the admin's curated settings).
+const { prefix = "" } = Astro.props;
+---
+<section id={`${prefix}middleware-formatting`} class="panel middleware-panel" data-tab="formatting" aria-labelledby={`${prefix}formatter-heading`} hidden>
   <div class="panel-head">
     <div>
-      <h2 id="formatter-heading">Stream name and description</h2>
+      <h2 id={`${prefix}formatter-heading`}>Stream name and description</h2>
       <p class="panel-subtitle">Set the short stream label separately from its release details.</p>
     </div>
   </div>
@@ -10,8 +15,8 @@
       <div class="formatter-editor">
         <div class="field-row formatter-presets">
           <div class="field">
-            <label for="format-preset">Description preset</label>
-            <select id="format-preset">
+            <label for={`${prefix}format-preset`}>Description preset</label>
+            <select id={`${prefix}format-preset`}>
               <option value="detailed">Detailed</option>
               <option value="compact">Compact</option>
               <option value="title">Title only</option>
@@ -19,47 +24,47 @@
           </div>
           <div class="field formatter-action">
             <label aria-hidden="true">&nbsp;</label>
-            <button id="apply-format-preset" class="button button-small" type="button">Use format</button>
+            <button id={`${prefix}apply-format-preset`} class="button button-small" type="button">Use format</button>
           </div>
         </div>
         <div class="field-row formatter-insert">
           <div class="field">
-            <label for="format-field">Insert stream field</label>
-            <select id="format-field"></select>
+            <label for={`${prefix}format-field`}>Insert stream field</label>
+            <select id={`${prefix}format-field`}></select>
           </div>
           <div class="field">
-            <label for="format-target">Insert into</label>
-            <select id="format-target">
+            <label for={`${prefix}format-target`}>Insert into</label>
+            <select id={`${prefix}format-target`}>
               <option value="stream-name-format">Name</option>
               <option value="stream-description-format" selected>Description</option>
             </select>
           </div>
           <div class="field">
-            <label for="format-unknown">If the value is unknown</label>
-            <select id="format-unknown">
+            <label for={`${prefix}format-unknown`}>If the value is unknown</label>
+            <select id={`${prefix}format-unknown`}>
               <option value="blank" selected>Leave it blank</option>
               <option value="skip">Skip it and its spacing</option>
               <option value="label">Show a label instead</option>
             </select>
           </div>
-          <div id="format-unknown-label-field" class="field" hidden>
-            <label for="format-unknown-label">Label</label>
-            <input id="format-unknown-label" type="text" value="Unknown" maxlength="40" spellcheck="false">
+          <div id={`${prefix}format-unknown-label-field`} class="field" hidden>
+            <label for={`${prefix}format-unknown-label`}>Label</label>
+            <input id={`${prefix}format-unknown-label`} type="text" value="Unknown" maxlength="40" spellcheck="false">
           </div>
           <div class="field formatter-action">
             <label aria-hidden="true">&nbsp;</label>
-            <button id="insert-format-field" class="button button-small" type="button">Insert token</button>
+            <button id={`${prefix}insert-format-field`} class="button button-small" type="button">Insert token</button>
           </div>
         </div>
         <p class="field-hint">Providers do not always supply every field. The unknown option controls what the inserted token shows when the provider left the field out or wrote a placeholder such as Unknown or N/A.</p>
         <p class="field-hint">The description is delivered in the field Nuvio TV and Nuvio Desktop both display, and nothing else is added: the card shows exactly what your templates produce.</p>
         <div class="field">
-          <label for="stream-name-format">Name template</label>
-          <textarea id="stream-name-format" rows="3" spellcheck="false"></textarea>
+          <label for={`${prefix}stream-name-format`}>Name template</label>
+          <textarea class="format-template format-template-name" id={`${prefix}stream-name-format`} rows="3" spellcheck="false"></textarea>
         </div>
         <div class="field">
-          <label for="stream-description-format">Description template</label>
-          <textarea id="stream-description-format" rows="12" spellcheck="false"></textarea>
+          <label for={`${prefix}stream-description-format`}>Description template</label>
+          <textarea class="format-template format-template-description" id={`${prefix}stream-description-format`} rows="12" spellcheck="false"></textarea>
           <p class="field-hint">AIOStreams formatter syntax is supported, including nested groups, conditions, and modifiers. Common release fields are inferred from provider filenames when possible; other fields need to be supplied by the provider.</p>
         </div>
       </div>
@@ -67,33 +72,33 @@
       <aside class="formatter-preview" aria-label="Formatter live preview">
         <div class="formatter-preview-heading">
           <h3>Live preview</h3>
-          <span id="formatter-preview-state" class="formatter-preview-state">Waiting</span>
+          <span id={`${prefix}formatter-preview-state`} class="formatter-preview-state">Waiting</span>
         </div>
         <div class="formatter-preview-output">
           <span class="formatter-preview-source">4KHDHub · 1080p</span>
           <div class="formatter-preview-line">
             <span class="formatter-preview-label">Name</span>
-            <p id="formatter-preview-name" aria-live="polite">Rendering preview…</p>
+            <p class="formatter-preview-name" id={`${prefix}formatter-preview-name`} aria-live="polite">Rendering preview…</p>
           </div>
           <div class="formatter-preview-line">
             <span class="formatter-preview-label">Description</span>
-            <p id="formatter-preview-description" aria-live="polite">Rendering preview…</p>
+            <p id={`${prefix}formatter-preview-description`} aria-live="polite">Rendering preview…</p>
           </div>
         </div>
 
         <details class="formatter-sample-section" open>
           <summary>Parsed file data</summary>
           <div class="field">
-            <label for="formatter-filename">Filename</label>
-            <input id="formatter-filename" type="text" value="Movie.Title.2023.2160p.BluRay.HEVC.DV.TrueHD.Atmos.7.1.iTA.ENG-GROUP.mkv" spellcheck="false">
+            <label for={`${prefix}formatter-filename`}>Filename</label>
+            <input id={`${prefix}formatter-filename`} type="text" value="Movie.Title.2023.2160p.BluRay.HEVC.DV.TrueHD.Atmos.7.1.iTA.ENG-GROUP.mkv" spellcheck="false">
           </div>
-          <pre id="formatter-parsed-fields" class="formatter-parsed-fields">Waiting for parsed fields…</pre>
+          <pre id={`${prefix}formatter-parsed-fields`} class="formatter-parsed-fields">Waiting for parsed fields…</pre>
         </details>
 
         <details class="formatter-sample-section">
           <summary>Stream data</summary>
-          <label for="formatter-stream-data">Sample values</label>
-          <textarea id="formatter-stream-data" rows="7" spellcheck="false">&#123;
+          <label for={`${prefix}formatter-stream-data`}>Sample values</label>
+          <textarea id={`${prefix}formatter-stream-data`} rows="7" spellcheck="false">&#123;
   "type": "http",
   "cached": true,
   "size": 515100000,
@@ -106,8 +111,8 @@
 
         <details class="formatter-sample-section">
           <summary>Metadata</summary>
-          <label for="formatter-metadata">Sample values</label>
-          <textarea id="formatter-metadata" rows="6" spellcheck="false">&#123;
+          <label for={`${prefix}formatter-metadata`}>Sample values</label>
+          <textarea id={`${prefix}formatter-metadata`} rows="6" spellcheck="false">&#123;
   "title": "Movie Title",
   "year": 2023,
   "type": "movie",

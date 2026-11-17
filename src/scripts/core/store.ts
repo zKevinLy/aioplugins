@@ -3,7 +3,7 @@
 
 type Listener<T> = (value: T) => void;
 
-interface Store<T> {
+export interface Store<T> {
   get(): T;
   set(next: T): void;
   update(change: (current: T) => T): void;

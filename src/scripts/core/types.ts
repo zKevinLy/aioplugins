@@ -126,4 +126,6 @@ export interface ProfileBackup {
 
 export type AppView = "configure" | "middleware" | "save" | "account" | "admin" | "about" | "support";
 export type MiddlewareTab = "filters" | "sorting" | "formatting";
+/** The admin screen reuses the middleware tabs next to its own plugin list. */
+export type AdminTab = "plugins" | MiddlewareTab;
 export type StatusKind = "" | "success" | "error";
